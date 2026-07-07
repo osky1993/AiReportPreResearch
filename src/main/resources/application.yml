@@ -1,0 +1,90 @@
+server:
+  port: 8080
+
+spring:
+  # 本地密钥从 application-local.yml 导入（该文件已 gitignore，不入库）；不存在也不报错
+  config:
+    import: "optional:application-local.yml"
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:23306}/${DB_NAME:reportbi}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+# ---- LLM 配置：供应商无关 ----
+# 切换供应商/模型只需改这三项（DeepSeek/通义/Moonshot/OpenAI 等 OpenAI 兼容协议通用）：
+#   - base-url：各家的 OpenAI 兼容端点
+#   - model：模型名
+#   - api-key：禁止硬编码！通过环境变量 LLM_API_KEY 或 application-local.yml 注入
+llm:
+  base-url: ${LLM_BASE_URL:https://api.deepseek.com}
+  api-key: ${LLM_API_KEY:}
+  model: ${LLM_MODEL:deepseek-v4-pro}
+  temperature: 0
+  timeout-seconds: 60
+  max-fix-rounds: 2          # 校验失败后让模型自我修正的最大轮数
+
+# 要分析的业务库（schema 自动反射自该库）
+schema:
+  database: reportbi
+  # 元数据表排除：这些表不进入 NL2SQL 的表白名单与 prompt schema（口径资产表 + 报告流水线状态表）
+  exclude-tables: ${SCHEMA_EXCLUDE_TABLES:caliber_asset,report_run,report_step,report_fact}
+  linking:
+    mode: ${SCHEMA_LINKING_MODE:vector}   # full=全量注入 | vector=向量召回TopK
+    top-k: ${SCHEMA_LINKING_TOP_K:6}       # 向量召回的表数量（再加外键闭包补全）；表多时需调大避免裁掉正确表
+    fk-hops: ${SCHEMA_LINKING_FK_HOPS:1}   # 外键闭包跳数（多跳JOIN路径补全）；大库建议 2
+
+# 动态 few-shot：按问题相似度从示例库(resources/fewshot/examples.json)选 Top-N 注入 prompt
+fewshot:
+  enabled: true
+  top-n: 3
+
+# 评估隔离：评估时排除与评估问题相似度≥该阈值的 few-shot 示例，防答案泄漏、衡量真实泛化
+# （仅评估生效；生产查询不排除——给用户看高相关已解样例是好事）
+eval:
+  fewshot-leakage-threshold: ${EVAL_FEWSHOT_LEAKAGE_THRESHOLD:0.9}
+  # 评估 case 并行度：1=串行。调大前先确认 LLM 供应商 QPS 配额——触发限流会把准确率打成假象；
+  # 同时受 Hikari 连接池（默认 10）约束，并行度建议 ≤9
+  parallelism: ${EVAL_PARALLELISM:8}
+
+# 业务术语/指标语义层：术语口径字典(resources/glossary/terms.json)按问题相关性选 Top-N 注入 prompt
+glossary:
+  enabled: true
+  top-n: ${GLOSSARY_TOP_N:5}   # 术语数 ≤ top-n 时全量注入(零 embed)；调到 ≥ 术语数即回退旧全量行为；改后需重启
+
+# 护栏：跨币种货币聚合检测（非阻塞警告）
+guard:
+  currency:
+    enabled: true
+    money-fields: amount,balance   # 视为"原币金额"的字段（聚合时若未限定/分组 currency 则告警）
+    rate-fields: rate_to_cny       # 视为"汇率"的字段：fieldExpr 里乘了它=已折算本位币，不再告警
+
+# 口径资产 / 人在回路：被核验采纳的「问题->MQL」沉淀为资产，再次提问时按语义召回分档复用
+#   · 双档：score≥tau-hit=命中(直取复用MQL,不调LLM) | [tau-miss,tau-hit)=候选(转澄清) | <tau-miss=未命中(走生成)
+#   · 阈值随 EmbeddingClient 实现而异，切 provider 后【必须】用 GET /api/caliber/recall 重标定（手册见 README）：
+#     local 哈希(字面匹配)经验值 0.92/0.75；DashScope text-embedding-v4 实测标定 0.90/0.65
+#     （v4 实测：近义改写 0.91~0.94、松散相关 0.76~0.78、无关 ≤0.43；沿用 local 值会把部分改写误判成候选）
+caliber:
+  enabled: true
+  tau-hit: ${CALIBER_TAU_HIT:0.92}
+  tau-miss: ${CALIBER_TAU_MISS:0.75}
+
+# 向量化供应商：local=本地哈希向量(离线默认) | openai=OpenAI兼容embedding接口
+# 注意：切换 provider/model 必须重启（所有向量索引在内存、启动时重建，混用维度分数无意义）
+embedding:
+  provider: ${EMBEDDING_PROVIDER:local}
+  base-url: ${EMBEDDING_BASE_URL:https://api.openai.com}
+  model: ${EMBEDDING_MODEL:text-embedding-3-small}
+  api-key: ${EMBEDDING_API_KEY:}
+  timeout-seconds: ${EMBEDDING_TIMEOUT_SECONDS:30}  # 单请求超时；<=0=不设(测试用，勿在生产关闭)
+  retries: ${EMBEDDING_RETRIES:1}                   # 网络类失败的重试次数（解析失败不重试）
+  batch-size: ${EMBEDDING_BATCH_SIZE:10}            # 批量分片上限；10=DashScope text-embedding-v4 单请求上限，OpenAI 官方可调大
+
+# 报告流水线（ideaV2 核心路径 6 步编排层）
+report:
+  max-rewrite-rounds: 2   # ⑥证据审计违规后回灌 LLM 重写的最大轮数，超限失败关闭（与 llm.max-fix-rounds 对齐）
+
+logging:
+  level:
+    com.treasury.nl2sql: INFO
+    org.jooq.Constants: WARN

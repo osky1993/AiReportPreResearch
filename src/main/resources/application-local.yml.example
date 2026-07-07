@@ -1,0 +1,23 @@
+# 模板：复制为 application-local.yml 并填入真实值（application-local.yml 不入库）。
+#   cp application-local.yml.example application-local.yml
+# 或者改用环境变量（DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD、LLM_*），二选一即可。
+spring:
+  datasource:
+    password: "你的数据库密码"
+    # 连接默认 127.0.0.1:23306/chatbi、user=root；非默认值在此覆盖完整 url：
+    # url: jdbc:mysql://127.0.0.1:3306/chatbi?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true
+    # username: root
+
+llm:
+  api-key: "你的-LLM-API-KEY"
+  # 模型名必须与你的 key 匹配！仓库默认是 deepseek-v4-pro，
+  # 用官方 DeepSeek 请改 deepseek-chat；切其它供应商示例：
+  # base-url: https://dashscope.aliyuncs.com/compatible-mode
+  # model: qwen-max
+
+# 如需启用真实 embedding 模型（向量召回），在此配置：
+# embedding:
+#   provider: openai
+#   base-url: https://api.openai.com
+#   model: text-embedding-3-small
+#   api-key: "你的-EMBEDDING-API-KEY"

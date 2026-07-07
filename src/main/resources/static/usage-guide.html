@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>功能使用说明 · NL2MQL2SQL 演示</title>
+<style>
+  :root { --accent:#2563eb; --bg:#f6f7f9; --card:#fff; --border:#e3e6ea; --muted:#6b7280; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:#1f2937; line-height:1.75;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:980px; margin:0 auto; padding:24px 32px 80px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h1 .arrow { color:var(--accent); }
+  h2 { font-size:17px; margin:34px 0 10px; padding-left:10px; border-left:4px solid var(--accent); }
+  h3 { font-size:14.5px; margin:18px 0 6px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:8px; }
+  .back { display:inline-block; margin-left:12px; padding:4px 12px; border-radius:999px;
+    background:#eef2ff; color:var(--accent); border:1px solid #dbe3ff; font-size:12.5px;
+    font-weight:600; text-decoration:none; vertical-align:3px; }
+  .back:hover { background:#e0e7ff; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:18px 22px; margin:14px 0; box-shadow:0 1px 2px rgba(0,0,0,.03); }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; margin:8px 0; }
+  th,td { border:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#f3f4f6; font-weight:600; white-space:nowrap; }
+  code, kbd { background:#eef2ff; color:#1d4ed8; border-radius:5px; padding:1px 6px;
+    font-size:12.5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  kbd { background:#f3f4f6; color:#374151; border:1px solid var(--border); }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px;
+    font-weight:600; white-space:nowrap; }
+  .hit { background:#dcfce7; color:#166534; }
+  .gen { background:#fef9c3; color:#854d0e; }
+  .clarify { background:#ffedd5; color:#9a3412; }
+  .fail { background:#fee2e2; color:#991b1b; }
+  .tip { background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;
+    padding:10px 14px; font-size:13px; margin:10px 0; }
+  .warn { background:#fffbeb; border:1px solid #fde68a; border-radius:8px;
+    padding:10px 14px; font-size:13px; margin:10px 0; }
+  ul, ol { margin:6px 0; padding-left:22px; }
+  li { margin:3px 0; }
+  .why { color:var(--muted); font-size:12.5px; }
+  .flow { background:#0f172a; color:#e2e8f0; border-radius:8px; padding:12px 16px;
+    font-size:13px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    overflow:auto; white-space:pre; line-height:1.9; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>功能使用说明 <span class="arrow">·</span> NL2MQL2SQL 演示
+    <a class="back" href="index.html">← 返回演示页</a>
+  </h1>
+  <div class="sub">这套系统把中文问题先翻译成结构化中间表示（MQL），经字段白名单校验后再确定性地编译成 SQL 执行；答案被人工核验采纳后会沉淀为「口径资产」，同类问题下次直接复用——越用越准。</div>
+
+  <h2>一、如何开始查询</h2>
+  <div class="card">
+    <ol>
+      <li>在左侧输入框用<b>中文</b>描述想查什么，点 <b>查询</b> 或按 <kbd>Ctrl/⌘ + Enter</kbd>。</li>
+      <li>不知道问什么？展开输入框下方按能力分组的<b>示例问法</b>（基础查询、多表 JOIN、跨币种折算、窗口函数……），点任意一条即自动填入并执行。</li>
+      <li>右侧结果卡会给出三层信息：<b>编译出的 SQL</b>、<b>查询结果表</b>，以及可展开的 <b>MQL 中间表示</b>（模型对问题的结构化理解，排错时最值得看）。</li>
+    </ol>
+    <div class="tip">💡 <b>怎么问更稳：</b>把时间范围、币种、想要的输出列说清楚（如「2026年6月人民币的净流入」而不是「最近净流入」）。业务黑话不用展开——「可用余额」「净流入」「折人民币」这类术语，系统内置了术语字典，会按标准口径翻译。</div>
+  </div>
+
+  <h2>二、四种结果状态，分别该做什么</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>状态</th><th>含义</th><th>你该做什么 · 为什么</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="badge hit">✅ 命中已核验口径</span></td>
+          <td>问题与某条<b>已核验</b>的历史口径高度相似，直接复用其 MQL，<b>没有调用大模型</b>——最快、最稳。</td>
+          <td>对照页面显示的「复用口径原问法」和你的当前问题：<b>若日期、阈值等参数不一致，点「口径不符 → 模型重新生成」</b>。<div class="why">为什么：命中是「逐字复用」，历史口径里写死的 2026-06 不会自动变成你新问的 2026-05，需要人眼把这道关。</div></td>
+        </tr>
+        <tr>
+          <td><span class="badge gen">🟡 新生成 · 待核验</span></td>
+          <td>没有可复用口径，由大模型新生成（经白名单校验与最多两轮自我修正）。</td>
+          <td>核对 SQL 和结果：正确 → 点「<b>✔ 采用并沉淀为口径</b>」；不对 → 点「✘ 驳回」。<div class="why">为什么：采纳后这条问答就成为已核验资产，之后同类问题直接命中免调模型；驳回则丢弃，不污染资产库。核验是唯一入库闸门，宁缺毋滥。</div></td>
+        </tr>
+        <tr>
+          <td><span class="badge clarify">🟠 需澄清</span></td>
+          <td>与某条历史口径「像但不够像」（落在候选区间），系统不敢直接复用、也不想盲目重新生成。</td>
+          <td>三选一：确认就是那个意思 → 「复用该候选口径」；确有差异 → 补充差异后重新提问；都不是 → 「送模型生成」。<div class="why">为什么：模糊地带交给人来裁决，比机器硬猜更可靠，这正是「人在回路」的设计。</div></td>
+        </tr>
+        <tr>
+          <td><span class="badge fail">❌ 失败</span></td>
+          <td>自我修正轮次用尽仍无法生成合法查询。</td>
+          <td>看错误信息，把问题拆小、说得更具体（明确表/字段所指的业务对象），再试。也可用下方调试按钮定位卡在哪一环（见第四节）。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>三、不同场景怎么用</h2>
+  <div class="card">
+    <h3>场景 A：日常取数（大多数情况）</h3>
+    <p>直接问。命中口径立即回答；没命中就走模型生成，你核对无误后<b>顺手点「采用并沉淀」</b>——这一下就是在给整个团队攒资产，下次任何人问同类问题都免等模型、结果口径一致。</p>
+    <h3>场景 B：换参数复问（同一口径、不同日期/阈值）</h3>
+    <p>比如上月问过「2026年6月净流入」，这次想要 5 月的。命中口径时<b>务必核对原问法里的参数</b>，不一致就点「口径不符 → 模型重新生成」，再把新结果沉淀为一条新口径。</p>
+    <h3>场景 C：探索复杂问法（JOIN、开窗、跨币种折算等）</h3>
+    <p>先从示例分组里找最接近的一条跑通，再在其问法基础上改写。示例覆盖了系统支持的全部能力域（否定判空、去重、CASE 分档、子查询、窗口排名/累计/环比、UNION 合并……），照着已验证的句式改，比凭空造句成功率高得多。</p>
+    <h3>场景 D：答错了 / 答不出，想弄清原因</h3>
+    <p>用页面下方「高级 / 调试」按钮把幕后过程拆开看（详见第四节），推荐排查顺序：</p>
+    <div class="flow">答案不对
+ ├─ 1. 口径召回   → 是不是误命中了别人沉淀的旧口径？（HIT 但参数不符）
+ ├─ 2. Schema召回 → 模型有没有"看到"正确的表？（漏表 = 必错）
+ ├─ 3. Few-shot   → 参考示例是否相干？（被带偏 / 无覆盖）
+ └─ 4. 展开 MQL   → 模型对问题的结构化理解哪里歪了 → 针对性改写问法</div>
+  </div>
+
+  <h2>四、页面下方「高级 / 调试」按钮详解</h2>
+  <div class="card">
+    <p style="margin-top:0;">这一排按钮<b>不参与查询本身</b>，是把一次查询的「幕后三步」拆开观察的窗口。其中标注「用当前问题」的三个，会以上方输入框里的文本为输入——<b>先填好问题再点</b>。</p>
+    <table>
+      <thead><tr><th>按钮</th><th>做什么</th><th>什么时候点 · 为什么</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>Schema召回</b><br><code>/linking</code></td>
+          <td>显示针对当前问题，系统从数据库里挑了<b>哪些表</b>的结构注入给模型（相关表召回 + 外键闭包补全 + 术语声明表强制并入）。</td>
+          <td><b>排错第一站。</b>答错时先看模型「视野」里有没有正确的表——模型只能用被召回的表作答，<b>漏召必错</b>，且这种错靠改问法措辞就能修（把表的业务名说得更明确）。</td>
+        </tr>
+        <tr>
+          <td><b>Few-shot</b><br><code>/fewshot</code></td>
+          <td>显示按相似度为当前问题选中的<b>参考示例</b>（问题→MQL 对）。模型会模仿这些示例的写法生成。</td>
+          <td>生成的 MQL / SQL 结构怪异时点它：若选中的示例和你的问题不相干，说明模型被带偏或示例库对这类问法<b>没有覆盖</b>——换一个更贴近示例句式的问法，往往立刻就对。</td>
+        </tr>
+        <tr>
+          <td><b>口径召回</b><br><code>/caliber/recall</code></td>
+          <td>显示当前问题与<b>已沉淀口径资产</b>的相似度分数及分档判定：HIT（直接复用）/ CANDIDATE（需澄清）/ MISS（走生成）。</td>
+          <td>两个用途：① 弄清「为什么这个问题命中了/没命中口径」——比如明明沉淀过却走了生成，看分数就知道差在哪；② 换 embedding 模型后<b>标定阈值</b>：拿近义改写、松散相关、无关三类问法实测分数，据此调 tau-hit / tau-miss。</td>
+        </tr>
+        <tr>
+          <td><b>跑评估集</b><br><code>/eval</code></td>
+          <td>对金标准评估集（人工核对过参考答案的问题集）全量回归，报告执行准确率与逐题通过情况。</td>
+          <td>改过术语、示例、配置或升级模型后点一次，确认整体能力<b>没有退步</b>。注意：每题都会真实调用大模型，全量跑完需要几分钟——任务在后台异步执行（默认 3 路并行，`eval.parallelism` 可调），页面会显示「已完成 X/总数」的实时进度条，跑完自动展示报告。</td>
+        </tr>
+        <tr>
+          <td><b>术语字典</b><br><code>/glossary</code></td>
+          <td>列出系统内置的业务术语及其标准口径（含别名）。</td>
+          <td>想知道「可用余额」「净流入」这类词被系统按什么公式理解时看它；提问时优先使用字典里的术语，口径最有保障。</td>
+        </tr>
+        <tr>
+          <td><b>库表结构</b><br><code>/schema</code></td>
+          <td>以 ER 图（含主外键连线）或表格查看示例库的全部表、字段、类型与注释。</td>
+          <td>提问前想了解「库里到底有什么数据可查」时看它；也可用来核对 Schema召回 的结果是否漏了该用的表。</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="warn">⚠️ 一句话记住三个「用当前问题」按钮的分工：<b>Schema召回</b>看模型「看见了哪些表」，<b>Few-shot</b>看模型「参考了哪些例子」，<b>口径召回</b>看「有没有现成答案可抄」。三者分别对应生成链路的三个前置环节，答案不对时按此顺序过一遍，基本就能定位问题出在哪。</div>
+  </div>
+</div>
+</body>
+</html>

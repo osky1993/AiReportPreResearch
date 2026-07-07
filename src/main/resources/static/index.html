@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NL2MQL2SQL 演示</title>
+<style>
+  :root { --accent:#2563eb; --bg:#f6f7f9; --card:#fff; --border:#e3e6ea; --muted:#6b7280; --code:#0f172a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:#1f2937;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1760px; margin:0 auto; padding:24px 32px 60px; }
+  /* 宽屏（≈1920）双栏：左侧提问、右侧结果；窄屏自动堆叠 */
+  .main-grid { display:grid; grid-template-columns:460px minmax(0,1fr); gap:18px; align-items:start; }
+  .main-grid .query-card { position:sticky; top:16px; }
+  @media (max-width:1200px) { .main-grid { grid-template-columns:1fr; }
+    .main-grid .query-card { position:static; } }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h1 .arrow { color:var(--accent); }
+  h1 .doc-btn { display:inline-block; margin-left:12px; padding:4px 12px; border-radius:999px;
+    background:#eef2ff; color:var(--accent); border:1px solid #dbe3ff; font-size:12.5px;
+    font-weight:600; text-decoration:none; vertical-align:3px; }
+  h1 .doc-btn:hover { background:#e0e7ff; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:16px 18px; margin-bottom:16px; box-shadow:0 1px 2px rgba(0,0,0,.03); }
+  textarea { width:100%; min-height:64px; border:1px solid var(--border); border-radius:8px;
+    padding:10px 12px; font-size:15px; resize:vertical; font-family:inherit; }
+  textarea:focus { outline:2px solid var(--accent); border-color:var(--accent); }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:9px 18px;
+    font-size:14px; cursor:pointer; font-weight:600; }
+  button:hover { filter:brightness(1.07); }
+  button:disabled { opacity:.55; cursor:not-allowed; }
+  button.ghost { background:#eef2ff; color:var(--accent); }
+  button.gray { background:#eef0f3; color:#374151; }
+  .chips { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { background:#eef2ff; color:var(--accent); border:1px solid #dbe3ff; border-radius:999px;
+    padding:5px 12px; font-size:12.5px; cursor:pointer; }
+  .chip:hover { background:#e0e7ff; }
+  .chip-group { margin-top:6px; }
+  .chip-group .chips { margin-top:6px; }
+  .chip-cat { font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.5px; }
+  details.chip-group > summary.chip-cat { cursor:pointer; user-select:none; padding:3px 0; list-style:none; }
+  details.chip-group > summary.chip-cat::before { content:"▸"; display:inline-block; margin-right:5px;
+    transition:transform .15s; }
+  details.chip-group[open] > summary.chip-cat::before { transform:rotate(90deg); }
+  details.chip-group > summary.chip-cat::-webkit-details-marker { display:none; }
+  details.chip-group > summary.chip-cat:hover { color:var(--accent); }
+  .chip-cat .cnt { font-weight:400; opacity:.75; }
+  .label { font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.4px; margin:14px 0 6px; }
+  .pbar { height:8px; background:#e5e7eb; border-radius:999px; overflow:hidden; margin-top:10px; }
+  .pbar-fill { height:100%; background:var(--accent); border-radius:999px; transition:width .5s; }
+  pre { background:#0f172a; color:#e2e8f0; border-radius:8px; padding:12px 14px; margin:0;
+    overflow:auto; font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+  pre.sql { background:#0b3b2e; }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; }
+  th,td { border:1px solid var(--border); padding:7px 10px; text-align:left; }
+  th { background:#f3f4f6; font-weight:600; }
+  tr:nth-child(even) td { background:#fafbfc; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+  .ok { background:#dcfce7; color:#166534; }
+  .fail { background:#fee2e2; color:#991b1b; }
+  .hit { background:#dcfce7; color:#166534; }
+  .gen { background:#fef9c3; color:#854d0e; }
+  .clarify { background:#ffedd5; color:#9a3412; }
+  .meta { color:var(--muted); font-size:12.5px; }
+  .info { background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; border-radius:8px;
+    padding:10px 12px; font-size:13.5px; margin-top:8px; }
+  .warn { background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:8px;
+    padding:10px 12px; font-size:13.5px; margin-top:6px; }
+  .err { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; border-radius:8px;
+    padding:10px 12px; font-size:13.5px; }
+  details { margin-top:8px; } summary { cursor:pointer; font-size:13px; color:var(--accent); }
+  .hidden { display:none; }
+  .spin::after { content:"⏳ 处理中…"; color:var(--muted); font-size:13px; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
+  .hr { height:1px; background:var(--border); margin:16px 0; border:0; }
+
+  /* ER 图 */
+  .er-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .er-toolbar .seg { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .er-toolbar .seg button { background:#fff; color:#374151; border:0; border-radius:0; padding:6px 14px; font-weight:600; }
+  .er-toolbar .seg button.active { background:var(--accent); color:#fff; }
+  .er-wrap { position:relative; overflow:auto; border:1px solid var(--border); border-radius:10px;
+    background:#fbfcfe; padding:18px; }
+  .er-canvas { position:relative; }
+  .er-svg { position:absolute; top:0; left:0; pointer-events:none; overflow:visible; z-index:0; }
+  .er-table { position:absolute; z-index:1; width:230px; background:var(--card);
+    border:1px solid #cbd5e1; border-radius:10px; box-shadow:0 2px 8px rgba(15,23,42,.08);
+    font-size:12.5px; overflow:hidden; }
+  .er-table .th { background:var(--accent); color:#fff; padding:7px 10px; font-weight:700; font-size:13px; }
+  .er-table .th small { display:block; font-weight:400; opacity:.85; font-size:11px; margin-top:1px; }
+  .er-table .col { display:flex; justify-content:space-between; gap:8px; padding:4px 10px;
+    border-top:1px solid #eef1f5; }
+  .er-table .col.pk { background:#fffbeb; }
+  .er-table .col .cn { font-weight:600; color:#1f2937; }
+  .er-table .col .ct { color:var(--muted); font-size:11.5px; }
+  .er-table .col .k { font-size:10px; font-weight:700; margin-left:4px; padding:0 4px; border-radius:4px; }
+  .er-table .col .k.pk { background:#fde68a; color:#92400e; }
+  .er-table .col .k.fk { background:#dbeafe; color:#1d4ed8; }
+  .er-legend { color:var(--muted); font-size:12px; margin-left:auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>NL2MQL2SQL <span class="arrow">·</span> 自然语言查数据库
+    <a class="doc-btn" href="NL2MQL2SQL技术说明-lastRelease.pdf" target="_blank" rel="noopener">📄 技术说明 PDF</a>
+    <a class="doc-btn" href="usage-guide.html" target="_blank" rel="noopener">📖 功能使用说明</a>
+  </h1>
+  <div class="sub">自然语言 →（召回已核验口径 / LLM）MQL 结构化中间表示 →（jOOQ）SQL → 执行 · 人在回路沉淀，越用越准 · treasury 资金示例库</div>
+
+  <div class="main-grid">
+    <div class="card query-card">
+      <textarea id="q" placeholder="用中文提问，例如：余额最高的3个账户，列出账户名称和余额">余额最高的3个账户，列出账户名称和余额</textarea>
+      <div class="row" style="margin-top:10px;">
+        <button id="askBtn" onclick="runQuery()">查询</button>
+        <span class="meta">Ctrl/⌘ + Enter 也可提交</span>
+      </div>
+      <div id="examples"></div>
+    </div>
+
+    <div class="card" id="result"><span class="meta">结果会显示在这里。</span></div>
+  </div>
+
+  <div class="card">
+    <div class="label" style="margin-top:0;">高级 / 调试</div>
+    <div class="toolbar">
+      <button class="gray" onclick="callDebug('eval')">跑评估集 /eval</button>
+      <button class="gray" onclick="callDebug('glossary')">术语字典 /glossary</button>
+      <button class="ghost" onclick="callDebug('linking')">Schema召回 /linking（用当前问题）</button>
+      <button class="ghost" onclick="callDebug('fewshot')">Few-shot /fewshot（用当前问题）</button>
+      <button class="ghost" onclick="callDebug('caliber/recall')">口径召回 /caliber/recall（用当前问题）</button>
+      <button class="gray" onclick="callDebug('schema')">📊 库表结构 /schema（ER 图）</button>
+    </div>
+    <div id="debug" style="margin-top:12px;"></div>
+  </div>
+</div>
+
+<script>
+// 按 MQL(IR) 能力场景分组的典型示例（问法均经金标准/冒烟实测可跑通）
+const EXAMPLE_GROUPS = [
+  { cat: "基础查询 · 条件组合", items: [
+    "余额最高的3个账户，列出账户名称和余额",
+    "余额超过500万、或者状态是冻结的账户，列出名称、余额、状态",
+    "列出 美元的收入流水 或者 欧元的支出流水，含币种、方向、金额"
+  ]},
+  { cat: "多表 JOIN · 自连接", items: [
+    "列出每个账户名称及其2026年6月的收入合计，从高到低，取前5",
+    "找出余额比工资专户还高的账户，列出账户名称和余额",
+    "列出全部账户名称和各自2026年6月的支出笔数，从未支出的账户也要在列表里、笔数记为0"
+  ]},
+  { cat: "聚合 · 派生指标 · 业务口径", items: [
+    "当前人民币的可用余额合计是多少",
+    "2026年6月人民币的净流入是多少"
+  ]},
+  { cat: "跨币种折算 · 行级表达式", items: [
+    "全部账户余额折人民币共多少",
+    "2026年6月所有收入折成人民币后合计是多少"
+  ]},
+  { cat: "时间维度（按月 / 按季 / 按年）", items: [
+    "按月份统计2026年人民币支出总额，列出月份和金额，按月份排序",
+    "每一年各开立了几个账户"
+  ]},
+  { cat: "否定条件 · 判空（NOT IN / IS NULL）", items: [
+    "哪些账户一笔交易都没有？列出账户名称",
+    "不是人民币、也不是美元的账户，列出名称和币种",
+    "找出没有留下对手方信息的交易，要日期、方向和金额"
+  ]},
+  { cat: "去重 DISTINCT", items: [
+    "交易流水中出现过哪些币种？去重列出",
+    "有交易流水的账户有几个？"
+  ]},
+  { cat: "CASE 分档打标签", items: [
+    "按余额分档统计账户数：1000万及以上为高，100万及以上为中，其余为低",
+    "给每个账户打余额档位标签：1000万及以上为大额，其余为普通，列出账户名称和档位"
+  ]},
+  { cat: "子查询（标量 / IN）", items: [
+    "余额高于全行平均余额的账户，列出账户名称和余额",
+    "有销售回款（SALES）流水的账户名称"
+  ]},
+  { cat: "窗口函数（组内排名 / 累计 / 环比）", items: [
+    "每个币种中余额排名前2的账户，列出币种、账户名称、余额及组内排名，按币种升序、余额降序排列",
+    "2026年6月人民币收入的按日累计：列出交易日期、金额和截至当日的累计收入，按日期排列",
+    "2026年人民币每个月的收入总额及其上一个月的收入总额，按月份先后排列"
+  ]},
+  { cat: "UNION 多段合并", items: [
+    "把账户名称和流水表里出现过的交易对手方合并成一份去重名单，按名称排序",
+    "账户表和交易流水表各有多少条记录？合并成两行输出，只要数量这一列"
+  ]}
+];
+
+const $ = id => document.getElementById(id);
+
+// fetch 并解析 JSON；服务端/网关返回 HTML 错误页（如 502/504 超时）时给出人话报错，而非 JSON 解析崩溃
+async function fetchJson(url, opts) {
+  const r = await fetch(url, opts);
+  const text = await r.text();
+  try { return JSON.parse(text); }
+  catch (e) {
+    const gateway = (r.status === 502 || r.status === 504) ? '，可能是网关超时（后端任务或仍在运行）' : '';
+    throw new Error(`服务端返回了非 JSON 响应（HTTP ${r.status}）${gateway}`);
+  }
+}
+
+function initExamples() {
+  $('examples').innerHTML = EXAMPLE_GROUPS.map(g =>
+    `<details class="chip-group"><summary class="chip-cat">${escapeHtml(g.cat)} <span class="cnt">(${g.items.length})</span></summary>`
+    + `<div class="chips">`
+    + g.items.map(q => `<span class="chip" onclick="useExample(this)">${escapeHtml(q)}</span>`).join('')
+    + `</div></details>`).join('');
+}
+function useExample(el) { $('q').value = el.textContent; runQuery(); }
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+let LAST_Q = '';       // 当前问题（供重生成 / 核验沉淀）
+let LAST_TRACE = null; // 当前 trace（含 mql），供采纳沉淀
+
+function runQuery() { const q = $('q').value.trim(); if (q) ask(q, false); }
+
+// 带人在回路的提问：bypass=true 时跳过口径召回、强制走 LLM 生成（人工判定命中口径不符后重生成）
+async function ask(q, bypass) {
+  LAST_Q = q;
+  const btn = $('askBtn'); btn.disabled = true;
+  $('result').innerHTML = '<span class="spin"></span>';
+  try {
+    renderAssisted(await fetchJson('/api/ask', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ question: q, bypassCaliber: bypass })
+    }));
+  } catch (e) {
+    $('result').innerHTML = `<div class="err">请求失败：${escapeHtml(e.message)}（服务是否已启动？）</div>`;
+  } finally { btn.disabled = false; }
+}
+
+// 按状态分档渲染：HIT 命中直取 / GENERATED 待核验 / CLARIFY 需澄清 / FAILED 失败
+function renderAssisted(resp) {
+  LAST_TRACE = resp.trace || null;
+  let html = '';
+  if (resp.state === 'HIT') {
+    html += `<div class="row"><span class="badge hit">✅ 命中已核验口径</span>`
+          + `<span class="meta">来源 ${resp.source} · 相似度 ${resp.confidence.toFixed(3)} · 资产 #${resp.assetId} · 未调用大模型</span></div>`;
+    html += `<div class="info">复用口径原问法：<b>${escapeHtml(resp.matchedQuestion)}</b><br>当前问题：<b>${escapeHtml(LAST_Q)}</b>`
+          + `<div class="meta" style="margin-top:4px;text-transform:none;">若两者口径/参数不一致（如日期、阈值），请点下方「口径不符」改用模型重新生成。</div></div>`;
+    html += renderTrace(resp.trace);
+    html += `<div class="row" style="margin-top:12px;"><button class="gray" onclick="regenerate()">口径不符 → 模型重新生成</button></div>`;
+  } else if (resp.state === 'GENERATED') {
+    html += `<div class="row"><span class="badge gen">🟡 新生成 · 待核验</span>`
+          + `<span class="meta">来源 ${resp.source} · 自我修正 fixRounds=${resp.trace ? resp.trace.fixRounds : 0}</span></div>`;
+    html += renderTrace(resp.trace);
+    html += `<div class="row" style="margin-top:12px;">`
+          + `<button onclick="verify(true)">✔ 采用并沉淀为口径</button>`
+          + `<button class="gray" onclick="verify(false)">✘ 驳回</button></div>`;
+  } else if (resp.state === 'CLARIFY') {
+    html += `<div class="row"><span class="badge clarify">🟠 需澄清</span>`;
+    if (resp.assetId) html += `<span class="meta">候选资产 #${resp.assetId} · 相似度 ${resp.confidence.toFixed(3)}</span>`;
+    html += `</div>`;
+    html += `<div class="warn">${escapeHtml(resp.clarifyPrompt)}</div>`;
+    html += `<div class="row" style="margin-top:10px;">`;
+    if (resp.assetId) html += `<button onclick="reuseCandidate(${resp.assetId})">复用该候选口径</button>`;
+    html += `<button class="gray" onclick="focusQuestion()">补充${resp.assetId?'差异':''}后重新提问</button>`;
+    if (resp.assetId) html += `<button class="ghost" onclick="regenerate()">都不是→送模型生成</button>`;
+    html += `</div>`;
+  } else { // FAILED
+    html += `<div class="row"><span class="badge fail">失败</span>`
+          + `<span class="meta">自我修正 fixRounds=${resp.trace ? resp.trace.fixRounds : 0}</span></div>`;
+    if (resp.trace && resp.trace.errors && resp.trace.errors.length) {
+      html += `<div class="err">${resp.trace.errors.map(escapeHtml).join('<br>')}</div>`;
+    }
+  }
+  $('result').innerHTML = html;
+}
+
+// 渲染一个 NlQueryResult trace 的 SQL/结果/MQL（HIT 与 GENERATED 共用）
+function renderTrace(d) {
+  if (!d) return '';
+  let html = '';
+  if (d.warnings && d.warnings.length) html += d.warnings.map(w => `<div class="warn">⚠️ ${escapeHtml(w)}</div>`).join('');
+  if (d.sql) html += `<div class="label">编译出的 SQL</div><pre class="sql">${escapeHtml(d.sql)}</pre>`;
+  if (d.rows) html += `<div class="label">查询结果（${d.rows.length} 行）</div>${renderTable(d.rows)}`;
+  html += `<details><summary>查看 MQL 中间表示（结构化 JSON）</summary><pre>${escapeHtml(JSON.stringify(d.mql, null, 2))}</pre></details>`;
+  return html;
+}
+
+function regenerate() { ask(LAST_Q, true); }        // 命中口径不符 → 强制重生成
+function focusQuestion() { $('q').focus(); $('q').select(); }
+
+// 核验闸门：采纳→沉淀 / 驳回→丢弃
+async function verify(accept) {
+  if (accept && (!LAST_TRACE || !LAST_TRACE.mql)) return;
+  try {
+    const d = await fetchJson('/api/verify', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ question: LAST_Q, mql: LAST_TRACE ? LAST_TRACE.mql : null, accept })
+    });
+    $('result').insertAdjacentHTML('beforeend',
+      `<div class="${d.precipitated ? 'info' : 'err'}" style="margin-top:12px;">${escapeHtml(d.message)}`
+      + `${d.precipitated ? ' —— 再次提同类问题即可命中直取。' : ''}</div>`);
+  } catch (e) {
+    $('result').insertAdjacentHTML('beforeend', `<div class="err" style="margin-top:12px;">核验请求失败：${escapeHtml(e.message)}</div>`);
+  }
+}
+
+// 候选澄清 →「复用该候选口径」：按 assetId 直取
+async function reuseCandidate(assetId) {
+  const btn = $('askBtn'); btn.disabled = true;
+  $('result').innerHTML = '<span class="spin"></span>';
+  try {
+    renderAssisted(await fetchJson('/api/reuse', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ assetId, question: LAST_Q })
+    }));
+  } catch (e) {
+    $('result').innerHTML = `<div class="err">请求失败：${escapeHtml(e.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+function renderTable(rows) {
+  if (!rows.length) return '<div class="meta">（无数据）</div>';
+  const cols = [];
+  rows.forEach(r => Object.keys(r).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
+  let h = '<table><thead><tr>' + cols.map(c => `<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead><tbody>';
+  h += rows.map(r => '<tr>' + cols.map(c => `<td>${escapeHtml(r[c])}</td>`).join('') + '</tr>').join('');
+  return h + '</tbody></table>';
+}
+
+async function callDebug(kind) {
+  const box = $('debug');
+  clearTimeout(_evalTimer);   // 切换调试视图时停掉评估轮询，避免异步覆盖
+  box.innerHTML = '<span class="spin"></span>';
+  try {
+    let resp;
+    if (kind === 'eval') {
+      await runEval(box);
+    } else if (kind === 'glossary') {
+      resp = await fetchJson('/api/glossary');
+      box.innerHTML = renderGlossary(resp);
+    } else if (kind === 'schema') {
+      resp = await fetchJson('/api/schema');
+      renderSchema(resp);
+    } else {
+      const q = $('q').value.trim();
+      if (!q) { box.innerHTML = '<div class="meta">请先在上方输入一个问题。</div>'; return; }
+      const url = `/api/${kind}?question=` + encodeURIComponent(q);
+      resp = await fetchJson(url);
+      box.innerHTML = `<div class="label" style="margin-top:0;">/${kind} · ${escapeHtml(q)}</div>`
+        + `<pre>${escapeHtml(JSON.stringify(resp, null, 2))}</pre>`;
+    }
+  } catch (e) {
+    box.innerHTML = `<div class="err">请求失败：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+// ---- 评估集：异步任务 + 轮询进度（同步跑全量会被网关读超时截断）----
+let _evalTimer = null;
+
+async function runEval(box) {
+  const start = await fetchJson('/api/eval/start', { method:'POST' });
+  if (!start.started) box.innerHTML = `<div class="meta">${escapeHtml(start.message)}</div>`;
+  await pollEval(box);
+}
+
+async function pollEval(box) {
+  try {
+    const s = await fetchJson('/api/eval/status');
+    if (s.running) {
+      const pct = s.total ? Math.round(s.done / s.total * 100) : 0;
+      box.innerHTML =
+        `<div class="row"><span class="spin"></span>
+           <span class="meta">评估运行中 · 已完成 ${s.done}/${s.total || '?'} · 用时 ${Math.round(s.elapsedMs/1000)}s</span></div>
+         <div class="pbar"><div class="pbar-fill" style="width:${pct}%;"></div></div>
+         ${s.currentQuestion ? `<div class="meta" style="margin-top:6px;">当前：${escapeHtml(s.currentQuestion)}</div>` : ''}`;
+      _evalTimer = setTimeout(() => pollEval(box), 2000);
+    } else if (s.error) {
+      box.innerHTML = `<div class="err">评估任务失败：${escapeHtml(s.error)}</div>`;
+    } else if (s.report) {
+      box.innerHTML = `<div class="meta" style="margin-bottom:6px;">全量 ${s.total} 条 · 总用时 ${Math.round(s.elapsedMs/1000)}s</div>`
+        + renderEval(s.report);
+    } else {
+      box.innerHTML = '<div class="meta">尚无评估记录，请点「跑评估集」启动。</div>';
+    }
+  } catch (e) {
+    // 轮询中的偶发网络错误不终止任务展示，稍后重试
+    box.innerHTML = `<div class="warn">进度查询失败（${escapeHtml(e.message)}），2 秒后重试……任务仍在后台运行。</div>`;
+    _evalTimer = setTimeout(() => pollEval(box), 2000);
+  }
+}
+
+function renderEval(d) {
+  let h = `<div class="row"><span class="badge ${d.passed===d.total?'ok':'fail'}">准确率 ${d.passed}/${d.total} = ${(d.accuracy*100).toFixed(1)}%</span></div>`;
+  h += '<table><thead><tr><th>ID</th><th>通过</th><th>fix</th><th>问题</th></tr></thead><tbody>';
+  h += d.cases.map(c => `<tr><td>${c.id}</td><td>${c.pass?'✅':'❌'}</td><td>${c.fixRounds}</td><td>${escapeHtml(c.question)}</td></tr>`).join('');
+  return h + '</tbody></table>';
+}
+
+function renderGlossary(terms) {
+  let h = '<table><thead><tr><th>术语</th><th>别名</th><th>口径</th></tr></thead><tbody>';
+  h += terms.map(t => `<tr><td>${escapeHtml(t.term)}</td><td>${escapeHtml((t.aliases||[]).join('、'))}</td><td>${escapeHtml(t.definition)}</td></tr>`).join('');
+  return h + '</tbody></table>';
+}
+
+// ---- 库表结构：ER 图 + 表格视图 ----
+let SCHEMA = null;
+
+function renderSchema(d) {
+  SCHEMA = d;
+  const box = $('debug');
+  box.innerHTML =
+    `<div class="er-toolbar">
+       <span class="label" style="margin:0;">库表结构 · ${escapeHtml(d.database)}</span>
+       <span class="seg">
+         <button id="tabEr" class="active" onclick="schemaView('er')">ER 图</button>
+         <button id="tabTbl" onclick="schemaView('table')">表格</button>
+       </span>
+       <span class="er-legend">${d.tables.length} 张表 · ${d.foreignKeys.length} 条外键 ·
+         <span style="color:#92400e;font-weight:700;">PK</span> 主键
+         <span style="color:#1d4ed8;font-weight:700;">FK</span> 外键 · 连线=外键引用</span>
+     </div>
+     <div id="schemaBody"></div>`;
+  schemaView('er');
+}
+
+function schemaView(mode) {
+  const er = $('tabEr'), tbl = $('tabTbl');
+  if (er && tbl) { er.classList.toggle('active', mode==='er'); tbl.classList.toggle('active', mode==='table'); }
+  $('schemaBody').innerHTML = mode === 'er' ? renderErDiagram(SCHEMA) : renderSchemaTables(SCHEMA);
+  if (mode === 'er') requestAnimationFrame(() => drawErEdges(SCHEMA));
+}
+
+// 每行表数：按可用宽度自适应（1920 宽屏可排 5~6 列），至少 1 列
+function erPerRow() {
+  const host = $('schemaBody') || $('debug');
+  const w = (host && host.clientWidth) || 1040;
+  const n = SCHEMA ? SCHEMA.tables.length : 3;
+  return Math.max(1, Math.min(n, Math.floor((w - 12) / 270)));
+}
+
+function renderErDiagram(d) {
+  // 网格布局：卡片绝对定位，随后用 SVG 连外键
+  const perRow = erPerRow(), colW = 270, pad = 6;
+  const cards = d.tables.map((t, i) => {
+    const x = pad + (i % perRow) * colW;
+    const y = pad + Math.floor(i / perRow) * 0; // 行高在测量后再排，先给初值
+    const cols = t.columns.map(c => {
+      const badges = (c.primaryKey ? '<span class="k pk">PK</span>' : '')
+                   + (c.foreignKey ? '<span class="k fk">FK</span>' : '');
+      return `<div class="col${c.primaryKey?' pk':''}" data-col="${escapeHtml(t.name)}.${escapeHtml(c.name)}">
+                <span class="cn">${escapeHtml(c.name)}${badges}</span>
+                <span class="ct">${escapeHtml(c.dataType)}</span>
+              </div>`;
+    }).join('');
+    return `<div class="er-table" id="ert_${cssId(t.name)}" data-table="${escapeHtml(t.name)}" style="left:${x}px;top:0;">
+              <div class="th">${escapeHtml(t.name)}${t.comment?`<small>${escapeHtml(t.comment)}</small>`:''}</div>
+              ${cols}
+            </div>`;
+  }).join('');
+  return `<div class="er-wrap"><div class="er-canvas" id="erCanvas">
+            <svg class="er-svg" id="erSvg"></svg>${cards}
+          </div></div>`;
+}
+
+// 基于真实测量高度做贪心行内堆叠布局，再画外键连线
+function drawErEdges(d) {
+  const canvas = $('erCanvas'); if (!canvas) return;
+  const perRow = erPerRow(), colW = 270, gapY = 26, pad = 6;
+  const cards = d.tables.map(t => document.getElementById('ert_' + cssId(t.name)));
+  // 逐行按本行最高卡片推进 y
+  let rowTop = pad, maxH = 0;
+  cards.forEach((el, i) => {
+    if (i % perRow === 0 && i > 0) { rowTop += maxH + gapY; maxH = 0; }
+    el.style.top = rowTop + 'px';
+    maxH = Math.max(maxH, el.offsetHeight);
+  });
+  canvas.style.height = (rowTop + maxH + pad) + 'px';
+  canvas.style.width = (pad + perRow * colW) + 'px';
+
+  const svg = $('erSvg');
+  const base = canvas.getBoundingClientRect();
+  const rel = r => ({ l:r.left-base.left, r:r.right-base.left, t:r.top-base.top, cy:(r.top+r.bottom)/2-base.top });
+  let paths = `<defs><marker id="erArrow" markerWidth="9" markerHeight="9" refX="7" refY="3"
+      orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#64748b"/></marker></defs>`;
+  d.foreignKeys.forEach(fk => {
+    const from = document.querySelector(`[data-col="${cssAttr(fk.table+'.'+fk.column)}"]`);
+    const toTbl = document.getElementById('ert_' + cssId(fk.refTable));
+    if (!from || !toTbl) return;
+    const a = rel(from.getBoundingClientRect());
+    const b = rel(toTbl.getBoundingClientRect());
+    // 从源列就近的一侧出发，连到目标表就近的一侧
+    const fromRight = (a.l < b.l);
+    const x1 = fromRight ? a.r : a.l, y1 = a.cy;
+    const x2 = fromRight ? b.l : (b.l + toTbl.offsetWidth), y2 = b.t + 16;
+    const dx = Math.max(30, Math.abs(x2 - x1) / 2);
+    const c1 = fromRight ? x1 + dx : x1 - dx;
+    const c2 = fromRight ? x2 - dx : x2 + dx;
+    paths += `<path d="M${x1},${y1} C${c1},${y1} ${c2},${y2} ${x2},${y2}"
+        fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#erArrow)"/>
+      <circle cx="${x1}" cy="${y1}" r="3" fill="#1d4ed8"/>`;
+  });
+  svg.innerHTML = paths;
+}
+
+function renderSchemaTables(d) {
+  const fkBy = {};
+  d.foreignKeys.forEach(fk => { fkBy[fk.table+'.'+fk.column] = fk.refTable+'.'+fk.refColumn; });
+  return d.tables.map(t => {
+    let h = `<div class="label">${escapeHtml(t.name)}${t.comment?` · <span class="meta" style="text-transform:none;">${escapeHtml(t.comment)}</span>`:''}</div>`;
+    h += '<table><thead><tr><th>列</th><th>类型</th><th>键</th><th>注释</th></tr></thead><tbody>';
+    h += t.columns.map(c => {
+      const key = (c.primaryKey?'PK ':'') + (c.foreignKey?('FK→'+escapeHtml(fkBy[t.name+'.'+c.name]||'')):'');
+      return `<tr><td><b>${escapeHtml(c.name)}</b></td><td class="meta">${escapeHtml(c.dataType)}</td>`
+           + `<td>${key||''}</td><td class="meta" style="text-transform:none;">${escapeHtml(c.comment)}</td></tr>`;
+    }).join('');
+    return h + '</tbody></table>';
+  }).join('<div style="height:14px;"></div>');
+}
+
+function cssId(s) { return String(s).replace(/[^a-zA-Z0-9_-]/g, '_'); }
+function cssAttr(s) { return String(s).replace(/"/g, '\\"'); }
+
+// 窗口尺寸变化时，若正显示 ER 图则按新宽度重排（防抖）
+let _erResizeT = null;
+window.addEventListener('resize', () => {
+  if (!SCHEMA) return;
+  const er = $('tabEr');
+  if (!er || !er.classList.contains('active')) return;
+  clearTimeout(_erResizeT);
+  _erResizeT = setTimeout(() => schemaView('er'), 150);
+});
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runQuery();
+});
+initExamples();
+</script>
+</body>
+</html>

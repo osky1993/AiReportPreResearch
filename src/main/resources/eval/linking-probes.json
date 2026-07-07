@@ -1,0 +1,14 @@
+[
+  { "question": "本月营收有多少",                       "expectedTables": ["cash_transaction"] },
+  { "question": "各账户的可用余额",                       "expectedTables": ["account"] },
+  { "question": "美元对人民币汇率",                       "expectedTables": ["currency_rate"] },
+  { "question": "每个法人实体属于哪个组织",               "expectedTables": ["legal_entity", "organization"] },
+  { "question": "各成本中心下面有哪些员工",               "expectedTables": ["cost_center", "employee"] },
+  { "question": "待审批的付款单",                         "expectedTables": ["payment_order"] },
+  { "question": "发票明细里都开了哪些货品",               "expectedTables": ["invoice_line", "product"] },
+  { "question": "贷款的还款计划",                         "expectedTables": ["loan", "loan_repayment"] },
+  { "question": "今年各成本中心的预算总额",               "expectedTables": ["budget", "cost_center"] },
+  { "question": "外汇交易买卖了哪些币种",                 "expectedTables": ["fx_deal"] },
+  { "question": "对手方的联系人电话",                     "expectedTables": ["counterparty", "counterparty_contact"] },
+  { "question": "合同签约的对手方",                       "expectedTables": ["contract", "counterparty"] }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "term": "折人民币",
+    "aliases": ["折合人民币", "折CNY", "本位币", "人民币口径", "统一折算", "换算成人民币"],
+    "definition": "把原币金额按最新汇率折算成人民币再汇总。口径：join currency_rate（on 本表.currency = currency_rate.currency），并在 filter 里用标量子查询把 currency_rate.rate_date 限定为最新一天（{\"field\":\"currency_rate.rate_date\",\"op\":\"=\",\"subquery\":{\"table\":\"currency_rate\",\"metrics\":[{\"op\":\"max\",\"field\":\"rate_date\",\"alias\":\"latest\"}]}}，防多日汇率使行数翻倍）；指标用行级表达式聚合：{\"op\":\"sum\",\"fieldExpr\":{\"left\":\"金额列\",\"arith\":\"*\",\"right\":\"currency_rate.rate_to_cny\"},\"alias\":\"total_cny\"}。已折算的结果无需再按币种分组。",
+    "tables": ["currency_rate", "account", "cash_transaction"]
+  },
+  {
+    "term": "可用余额",
+    "aliases": ["可动用余额", "可用资金"],
+    "definition": "账户当前可动用的余额。口径：account.balance，且仅统计 status='ACTIVE' 的账户（FROZEN 冻结、CLOSED 销户不计入）。",
+    "tables": ["account"]
+  },
+  {
+    "term": "在途资金",
+    "aliases": ["在途金额", "未结算资金"],
+    "definition": "尚未完成结算、处于在途状态的资金。口径：cash_transaction 中 status='IN_TRANSIT' 的 amount。",
+    "tables": ["cash_transaction"]
+  },
+  {
+    "term": "已结算流水",
+    "aliases": ["已到账", "已清算"],
+    "definition": "已完成结算的流水。口径：cash_transaction 中 status='SETTLED'。",
+    "tables": ["cash_transaction"]
+  },
+  {
+    "term": "进账",
+    "aliases": ["收款", "收入", "流入"],
+    "definition": "资金流入。口径：cash_transaction 中 direction='IN'。",
+    "tables": ["cash_transaction"]
+  },
+  {
+    "term": "出账",
+    "aliases": ["付款", "支出", "流出"],
+    "definition": "资金流出。口径：cash_transaction 中 direction='OUT'。",
+    "tables": ["cash_transaction"]
+  },
+  {
+    "term": "销售回款",
+    "aliases": ["营收", "销售收入"],
+    "definition": "销售相关的资金流入。口径：cash_transaction 中 direction='IN' 且 category='SALES'。",
+    "tables": ["cash_transaction"]
+  },
+  {
+    "term": "工资支出",
+    "aliases": ["薪资发放", "发工资"],
+    "definition": "工资类支出。口径：cash_transaction 中 direction='OUT' 且 category='PAYROLL'。",
+    "tables": ["cash_transaction"]
+  },
+  {
+    "term": "净流入",
+    "aliases": ["净现金流", "净流量", "收支净额"],
+    "definition": "收入合计减支出合计。口径：派生指标 expr，left=sum(amount where direction='IN')、arith='-'、right=sum(amount where direction='OUT')。注意单币种统计（跨币种须先限定或分币种）。",
+    "tables": ["cash_transaction"]
+  },
+  {
+    "term": "结算户",
+    "aliases": ["活期户", "对公结算账户"],
+    "definition": "结算类账户。口径：account 中 account_type='SETTLEMENT'。",
+    "tables": ["account"]
+  },
+  {
+    "term": "定期存款",
+    "aliases": ["定存", "存款户"],
+    "definition": "定期存款账户。口径：account 中 account_type='DEPOSIT'。",
+    "tables": ["account"]
+  }
+]

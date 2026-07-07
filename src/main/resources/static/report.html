@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>司库资金周报 · 智能报告流水线演示</title>
+<style>
+:root{--accent:#2563eb;--bg:#f6f7f9;--card:#fff;--line:#e5e7eb;--text:#111827;--muted:#6b7280;
+      --ok:#059669;--warn:#d97706;--bad:#dc2626;--violet:#7c3aed;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+.wrap{max-width:1280px;margin:0 auto;padding:20px}
+header{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+header h1{font-size:20px}
+header .sub{color:var(--muted);font-size:12px}
+header a{margin-left:auto;color:var(--accent);text-decoration:none;font-size:12px}
+.grid{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h2{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;resize:vertical;min-height:64px}
+input[type=text]{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}
+button{border:0;border-radius:8px;padding:7px 14px;font:inherit;cursor:pointer;background:var(--accent);color:#fff}
+button.ghost{background:#eef2ff;color:var(--accent)}
+button.danger{background:#fee2e2;color:var(--bad)}
+button.okbtn{background:#d1fae5;color:var(--ok)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{background:#eef2ff;color:var(--accent);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer}
+.chip:hover{background:#e0e7ff}
+.runitem{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
+.runitem:hover{border-color:var(--accent)}
+.runitem.sel{border-color:var(--accent);box-shadow:0 0 0 2px #dbeafe}
+.runitem .q{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.runitem .meta{color:var(--muted);font-size:11px;display:flex;gap:8px;margin-top:2px}
+.badge{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:600}
+.b-await{background:#fef3c7;color:var(--warn)}
+.b-run{background:#dbeafe;color:var(--accent)}
+.b-block{background:#fee2e2;color:var(--bad)}
+.b-pub{background:#d1fae5;color:var(--ok)}
+.b-rej{background:#f3f4f6;color:var(--muted)}
+.pipe{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}
+.pstep{flex:1;min-width:96px;text-align:center;border-radius:8px;padding:6px 4px;background:#f3f4f6;color:var(--muted);font-size:12px;border:1px solid var(--line)}
+.pstep .n{font-weight:700;font-size:12px}
+.pstep.done{background:#d1fae5;color:var(--ok);border-color:#a7f3d0}
+.pstep.cur{background:#dbeafe;color:var(--accent);border-color:#bfdbfe}
+.pstep.blocked{background:#fee2e2;color:var(--bad);border-color:#fecaca}
+.hitl{border:1px dashed var(--violet);color:var(--violet);background:#f5f3ff}
+.hitl.done{background:#ede9fe;border-color:#c4b5fd}
+.chapter{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+.chapter h3{font-size:13px;margin-bottom:6px}
+.chapter label{display:inline-flex;align-items:center;gap:4px;background:#f9fafb;border:1px solid var(--line);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px;cursor:pointer}
+.chapter label.off{opacity:.45;text-decoration:line-through}
+.unres{background:#fef2f2;border:1px solid #fecaca;color:var(--bad);border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:8px}
+.blockbox{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-bottom:10px}
+.blockbox .r{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--bad);white-space:pre-wrap;word-break:break-all}
+.report{background:#fff;border:1px solid var(--line);border-radius:8px;padding:18px 22px}
+.report h2{font-size:16px;margin:14px 0 8px;border-left:3px solid var(--accent);padding-left:8px}
+.report p{margin:6px 0}
+.report ul{margin:6px 0 6px 20px}
+.factref{background:#eef2ff;color:var(--accent);border-radius:4px;padding:0 4px;font-size:11px;cursor:pointer;font-family:ui-monospace,Menlo,monospace}
+.factref:hover{background:#dbeafe}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;background:#f9fafb}
+tr.facthl>td{background:#fef9c3}
+.factdetail{background:#f9fafb;border-radius:6px;padding:8px;margin:4px 0;font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:pre-wrap;word-break:break-all}
+.auditline{display:flex;gap:16px;flex-wrap:wrap;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px}
+.auditline b{color:var(--ok)}
+.muted{color:var(--muted);font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+details.step{border:1px solid var(--line);border-radius:6px;margin-bottom:4px;font-size:12px}
+details.step summary{padding:5px 8px;cursor:pointer;display:flex;gap:8px;align-items:center}
+details.step pre{background:#f9fafb;padding:6px 8px;overflow:auto;max-height:220px;font-size:11px}
+.err{color:var(--bad);font-size:12px;margin-top:6px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>司库资金周报 · 智能报告流水线</h1>
+  <span class="sub">锁口径(人) → 结构化取数 → 程序造事实 → LLM 照事实写 → 程序核数字 → 人签发</span>
+  <a href="/">← NL2SQL 查询演示</a>
+</header>
+
+<div class="grid">
+<div>
+  <div class="card">
+    <h2>① 发起报告需求</h2>
+    <textarea id="reqText" placeholder="例：生成 2026 年第 26 周的司库资金周报，和上周对比"></textarea>
+    <div class="chips">
+      <span class="chip" onclick="fillReq('生成 2026 年第 26 周的司库资金周报，和上周对比')">2026 年第 26 周周报</span>
+      <span class="chip" onclick="fillReq('出一份 2026-W25 的资金周报')">2026-W25 周报</span>
+      <span class="chip" onclick="fillReq('生成 2026 年 6 月的资金月报')">月报（演示失败关闭）</span>
+    </div>
+    <div class="row">
+      <button id="createBtn" onclick="createRun()">发起（① 大纲生成）</button>
+      <span class="muted">① 为同步 LLM 调用，约 5~20 秒</span>
+    </div>
+    <div class="err" id="createErr"></div>
+  </div>
+  <div class="card">
+    <h2>运行列表 <button class="ghost" style="margin-left:auto;padding:3px 10px;font-size:12px" onclick="loadRuns()">刷新</button></h2>
+    <div id="runList" class="muted">加载中…</div>
+  </div>
+</div>
+
+<div id="detailPane">
+  <div class="card muted">← 发起一个报告需求，或从运行列表选择一条查看</div>
+</div>
+</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let RUNS = [], CUR = null, TIMER = null, OUTLINE_EDIT = null;
+
+const STATUS_META = {
+  AWAITING_OUTLINE_APPROVAL: ['待确认大纲 · 卡点1', 'b-await'],
+  RUNNING: ['流水线执行中', 'b-run'],
+  BLOCKED: ['失败关闭 · 转人工', 'b-block'],
+  AWAITING_PUBLISH_APPROVAL: ['待审批发布 · 卡点2', 'b-await'],
+  PUBLISHED: ['已签发', 'b-pub'],
+  REJECTED: ['已驳回', 'b-rej'],
+};
+const PHASES = [
+  ['OUTLINE','① 大纲'],['SPEC','② 语义解析'],['FETCH','③ 安全取数'],
+  ['FACT','④ 事实构建'],['WRITE','⑤ 章节撰写'],['AUDIT','⑥ 证据审计'],
+];
+
+function fillReq(t){ $('reqText').value = t; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+
+async function api(path, opts){
+  const resp = await fetch('/api/report'+path, opts ? {headers:{'Content-Type':'application/json'},...opts} : undefined);
+  const body = await resp.json().catch(()=>({}));
+  if(!resp.ok) throw new Error(body.error || ('HTTP '+resp.status));
+  return body;
+}
+
+async function loadRuns(){
+  try{
+    RUNS = await api('/runs');
+    $('runList').innerHTML = RUNS.length ? RUNS.map(r=>{
+      const [label,cls] = STATUS_META[r.status]||[r.status,'b-rej'];
+      return `<div class="runitem ${CUR&&CUR.run.runId===r.runId?'sel':''}" onclick="selectRun(${r.runId})">
+        <div class="q">#${r.runId} ${esc(r.requestText)}</div>
+        <div class="meta"><span class="badge ${cls}">${label}</span><span>${esc(r.periodLabel||'')}</span><span>${esc((r.createdAt||'').replace('T',' ').slice(0,16))}</span></div>
+      </div>`;
+    }).join('') : '<span class="muted">暂无运行记录</span>';
+  }catch(e){ $('runList').innerHTML = '<span class="err">'+esc(e.message)+'</span>'; }
+}
+
+async function createRun(){
+  const text = $('reqText').value.trim();
+  $('createErr').textContent = '';
+  if(!text){ $('createErr').textContent='请填写报告需求'; return; }
+  $('createBtn').disabled = true; $('createBtn').textContent = '① 大纲生成中…';
+  try{
+    const d = await api('/runs', {method:'POST', body: JSON.stringify({requestText:text})});
+    CUR = d; OUTLINE_EDIT = null;
+    render(); loadRuns();
+  }catch(e){ $('createErr').textContent = e.message; }
+  finally{ $('createBtn').disabled=false; $('createBtn').textContent='发起（① 大纲生成）'; }
+}
+
+async function selectRun(id){
+  try{ CUR = await api('/runs/'+id); OUTLINE_EDIT = null; render(); loadRuns(); }
+  catch(e){ alert(e.message); }
+}
+
+async function refreshCur(){
+  if(!CUR) return;
+  const keepEdit = OUTLINE_EDIT;
+  CUR = await api('/runs/'+CUR.run.runId);
+  OUTLINE_EDIT = CUR.run.status==='AWAITING_OUTLINE_APPROVAL' ? keepEdit : null;
+  render();
+}
+
+function schedulePoll(){
+  clearTimeout(TIMER);
+  if(CUR && CUR.run.status==='RUNNING'){
+    TIMER = setTimeout(async ()=>{ try{ await refreshCur(); await loadRuns(); }catch(e){} schedulePoll(); }, 1500);
+  }
+}
+
+/* ---------- 渲染 ---------- */
+function render(){
+  const d = CUR;
+  if(!d){ $('detailPane').innerHTML=''; return; }
+  const r = d.run;
+  const [label,cls] = STATUS_META[r.status]||[r.status,'b-rej'];
+  let html = `<div class="card">
+    <h2>Run #${r.runId} <span class="badge ${cls}">${label}</span>
+      <span class="muted" style="margin-left:auto">报告期 ${esc(r.periodLabel||'-')}（对比期 ${esc(fmtD(r.compareStart))}~${esc(fmtD(r.compareEnd))}）</span></h2>
+    <div class="muted">需求：${esc(r.requestText)}</div>
+    ${pipeHtml(r,d.steps)}
+  </div>`;
+
+  if(r.status==='BLOCKED') html += blockedHtml(r);
+  if(r.status==='AWAITING_OUTLINE_APPROVAL') html += outlineHtml(r);
+  if(r.status==='RUNNING') html += `<div class="card"><h2>流水线执行中…</h2><div class="muted">当前步骤 ${esc(r.phase)}，页面每 1.5 秒自动刷新。⑤ 为 LLM 调用，约 30~90 秒。</div></div>`;
+  if(['AWAITING_PUBLISH_APPROVAL','PUBLISHED','REJECTED'].includes(r.status) && r.reportMd) html += reportHtml(r,d);
+  html += stepsHtml(d.steps);
+  $('detailPane').innerHTML = html;
+  schedulePoll();
+}
+
+function fmtD(s){ return s ? String(s) : '-'; }
+
+function pipeHtml(r, steps){
+  const stepState = {};
+  (steps||[]).forEach(s=>{ stepState[s.phase] = s.status; });   // 取每 phase 最后一条
+  const curIdx = PHASES.findIndex(p=>p[0]===r.phase);
+  let cells = PHASES.map((p,i)=>{
+    let cls = '';
+    if(stepState[p[0]]==='OK') cls = 'done';
+    if(r.status==='RUNNING' && i===curIdx) cls = 'cur';
+    if(r.status==='BLOCKED' && i===curIdx) cls = 'blocked';
+    return `<div class="pstep ${cls}"><div class="n">${p[1]}</div></div>`;
+  });
+  const hitl1done = !!r.outlineApprovedAt, hitl2done = r.status==='PUBLISHED';
+  cells.splice(1,0,`<div class="pstep hitl ${hitl1done?'done':''}"><div class="n">🔒 卡点1 确认口径</div></div>`);
+  cells.push(`<div class="pstep hitl ${hitl2done?'done':''}"><div class="n">✍️ 卡点2 审批签发</div></div>`);
+  return `<div class="pipe">${cells.join('')}</div>`;
+}
+
+/* ---------- BLOCKED（失败关闭） ---------- */
+function blockedHtml(r){
+  return `<div class="card"><h2>⛔ 失败关闭（BLOCKED @ ${esc(r.phase)}）</h2>
+    <div class="blockbox"><div class="r">${esc(r.blockedReason)}</div></div>
+    <div class="muted">按「失败关闭」原则，系统停止并转人工：修复外部条件后可断点续跑；若口径本身有误请打回重新生成大纲。</div>
+    <div class="row">
+      <button onclick="resumeRun()">断点续跑（从 ${esc(r.phase)} 分段重跑）</button>
+      <input type="text" id="reviseText" placeholder="打回意见（如：改为第 25 周）" style="flex:1;min-width:200px">
+      <button class="danger" onclick="regenerate()">打回大纲（重跑①）</button>
+    </div><div class="err" id="actErr"></div></div>`;
+}
+
+/* ---------- HITL 卡点1：大纲确认 ---------- */
+function outlineHtml(r){
+  const o = OUTLINE_EDIT || (OUTLINE_EDIT = JSON.parse(r.outlineJson));
+  let ch = o.chapters.map((c,ci)=>`
+    <div class="chapter"><h3>${esc(c.title)} ${c.comparison?'<span class="badge b-run">环比</span>':''}</h3>
+      <div class="muted" style="margin-bottom:4px">${esc(c.guidance)}</div>
+      ${c.metricIds.map(m=>`<label class="${c._off&&c._off.includes(m)?'off':''}">
+        <input type="checkbox" ${c._off&&c._off.includes(m)?'':'checked'} onchange="toggleMetric(${ci},'${m}')"> ${esc(m)}</label>`).join('')}
+    </div>`).join('');
+  const unres = (o.unresolved&&o.unresolved.length)
+    ? `<div class="unres">⚠️ 以下需求表述映射不到指标语义定义（不猜测补全）：${o.unresolved.map(esc).join('；')}<br>可忽略继续，或在打回意见中澄清后重新生成。</div>` : '';
+  return `<div class="card"><h2>🔒 HITL 卡点1：确认大纲与口径（确认后口径锁死，后面全是机器活）</h2>
+    ${unres}${ch}
+    <div class="row">
+      审批人 <input type="text" id="approver1" value="demo" style="width:100px">
+      <button class="okbtn" onclick="approveOutline()">确认口径，启动 ②~⑥</button>
+      <input type="text" id="reviseText" placeholder="打回意见（如：改为第 25 周）" style="flex:1;min-width:160px">
+      <button class="danger" onclick="regenerate()">打回重新生成</button>
+    </div><div class="err" id="actErr"></div></div>`;
+}
+
+function toggleMetric(ci, m){
+  const c = OUTLINE_EDIT.chapters[ci];
+  c._off = c._off || [];
+  c._off.includes(m) ? c._off.splice(c._off.indexOf(m),1) : c._off.push(m);
+  render();
+}
+
+async function approveOutline(){
+  const o = JSON.parse(JSON.stringify(OUTLINE_EDIT));
+  o.chapters.forEach(c=>{ if(c._off){ c.metricIds = c.metricIds.filter(m=>!c._off.includes(m)); delete c._off; } });
+  await act(`/runs/${CUR.run.runId}/outline/approve`, {approver: $('approver1').value, outline: o});
+}
+async function regenerate(){
+  await act(`/runs/${CUR.run.runId}/outline/regenerate`, {revisedRequest: $('reviseText') ? $('reviseText').value : ''});
+}
+async function resumeRun(){ await act(`/runs/${CUR.run.runId}/resume`, {}); }
+
+async function act(path, body){
+  const errEl = $('actErr'); if(errEl) errEl.textContent='';
+  try{
+    CUR = await api(path, {method:'POST', body: JSON.stringify(body)});
+    OUTLINE_EDIT = null; render(); loadRuns();
+  }catch(e){ if($('actErr')) $('actErr').textContent = e.message; else alert(e.message); }
+}
+
+/* ---------- 报告 + 证据 + HITL 卡点2 ---------- */
+function reportHtml(r, d){
+  const audit = r.auditJson ? JSON.parse(r.auditJson) : null;
+  const auditLine = audit ? `<div class="auditline">
+      <span>⑥ 证据审计：<b>${audit.passed?'通过':'未通过'}</b></span>
+      <span>核对数字 <b>${audit.totalNumbers}</b> 个</span>
+      <span>一致 <b>${audit.matchedNumbers}</b> 个（一致率 <b>${(audit.totalNumbers?100*audit.matchedNumbers/audit.totalNumbers:100).toFixed(0)}%</b>）</span>
+      <span>LLM 重写 <b>${audit.rewriteRounds}</b> 轮</span></div>` : '';
+  const actions = r.status==='AWAITING_PUBLISH_APPROVAL' ? `
+    <div class="row">审批人 <input type="text" id="approver2" value="demo" style="width:100px">
+      <button class="okbtn" onclick="approvePublish()">✍️ 审批发布</button>
+      <input type="text" id="rejectReason" placeholder="驳回原因" style="flex:1;min-width:160px">
+      <button class="danger" onclick="rejectPublish()">驳回</button></div><div class="err" id="actErr"></div>`
+    : (r.status==='PUBLISHED' ? `<div class="muted" style="margin-top:8px">✅ ${esc(r.publishApprovedBy)} 于 ${esc((r.publishApprovedAt||'').replace('T',' ').slice(0,19))} 签发</div>`
+       : `<div class="muted" style="margin-top:8px">已驳回：${esc(r.blockedReason||'')}</div>`);
+  return `<div class="card"><h2>报告${r.status==='PUBLISHED'?'（已签发）':'终稿'} <span class="muted" style="margin-left:auto">点击 [fact_xxx] 查看证据</span></h2>
+      ${auditLine}<div class="report">${mdToHtml(r.reportMd)}</div>${actions}</div>
+    <div class="card"><h2>证据：事实记录（FactRecord，${d.facts.length} 条）</h2>${factsTable(d.facts)}</div>`;
+}
+
+async function approvePublish(){ await act(`/runs/${CUR.run.runId}/publish/approve`, {approver: $('approver2').value}); }
+async function rejectPublish(){ await act(`/runs/${CUR.run.runId}/publish/reject`, {approver: $('approver2').value, reason: $('rejectReason').value}); }
+
+/** 极简 markdown：## 标题 / - 列表 / 段落；[fact_xxx] → 可点击证据引用。 */
+function mdToHtml(md){
+  const lines = String(md).split('\n');
+  let html='', inUl=false;
+  for(const line of lines){
+    const t = line.trim();
+    if(inUl && !t.startsWith('- ')){ html+='</ul>'; inUl=false; }
+    if(!t){ continue; }
+    if(t.startsWith('## ')){ html += '<h2>'+inline(t.slice(3))+'</h2>'; }
+    else if(t.startsWith('# ')){ html += '<h2>'+inline(t.slice(2))+'</h2>'; }
+    else if(t.startsWith('- ')){ if(!inUl){ html+='<ul>'; inUl=true; } html += '<li>'+inline(t.slice(2))+'</li>'; }
+    else html += '<p>'+inline(t)+'</p>';
+  }
+  if(inUl) html+='</ul>';
+  return html;
+}
+function inline(s){
+  return esc(s)
+    .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
+    .replace(/\[(fact_[A-Za-z0-9_]+)\]/g,'<span class="factref" onclick="showFact(\'$1\')">[$1]</span>');
+}
+
+function factsTable(facts){
+  return `<table><tr><th>fact_key</th><th>指标</th><th>周期</th><th>值</th><th>展示</th><th>类型</th><th>质量</th></tr>
+    ${facts.map(f=>`<tr id="fact-${f.factKey}" onclick="toggleFactDetail('${f.factKey}')" style="cursor:pointer">
+      <td class="factref" style="background:none">${f.factKey}</td><td>${esc(f.metricName)}</td>
+      <td>${esc(f.periodLabel)}</td><td>${f.value}</td><td>${esc(f.displayValue)}</td>
+      <td>${f.factType}${f.derivedFrom?'<span class="muted">←'+esc(f.derivedFrom)+'</span>':''}</td>
+      <td>${f.qualityStatus}</td></tr>
+      <tr id="factd-${f.factKey}" style="display:none"><td colspan="7">
+        ${f.sqlText?`<div class="factdetail">SQL: ${esc(f.sqlText)}\nsql_hash: ${esc(f.sqlHash)}\nresult_hash: ${esc(f.resultHash)}</div>`:'<div class="factdetail">程序派生事实（无 SQL）：来源 '+esc(f.derivedFrom||'')+'</div>'}
+        ${f.specJson?`<div class="factdetail">MetricQuerySpec: ${esc(f.specJson)}</div>`:''}
+      </td></tr>`).join('')}</table>`;
+}
+function toggleFactDetail(key){
+  const el = $('factd-'+key);
+  if(el) el.style.display = el.style.display==='none' ? '' : 'none';
+}
+function showFact(key){
+  document.querySelectorAll('tr.facthl').forEach(t=>t.classList.remove('facthl'));
+  const row = $('fact-'+key);
+  if(row){ row.classList.add('facthl'); const det=$('factd-'+key); if(det) det.style.display='';
+    row.scrollIntoView({behavior:'smooth', block:'center'}); }
+}
+
+/* ---------- 步骤留痕 ---------- */
+function stepsHtml(steps){
+  if(!steps || !steps.length) return '';
+  return `<div class="card"><h2>步骤留痕（report_step，最小运行状态）</h2>
+    ${steps.map(s=>`<details class="step"><summary>
+        <b>${esc(s.phase)}</b> <span class="muted">attempt ${s.attempt}</span>
+        <span class="badge ${s.status==='OK'?'b-pub':s.status==='BLOCKED'?'b-block':'b-run'}">${s.status}</span>
+        <span class="muted" style="margin-left:auto">${esc((s.startedAt||'').replace('T',' ').slice(0,19))}</span></summary>
+      ${s.errorText?`<pre style="color:var(--bad)">${esc(s.errorText)}</pre>`:''}
+      ${s.inputJson?`<pre>输入: ${esc(trunc(s.inputJson))}</pre>`:''}
+      ${s.outputJson?`<pre>输出: ${esc(trunc(s.outputJson))}</pre>`:''}
+    </details>`).join('')}</div>`;
+}
+function trunc(s){ return s.length>3000 ? s.slice(0,3000)+' …(截断)' : s; }
+
+loadRuns();
+</script>
+</body>
+</html>

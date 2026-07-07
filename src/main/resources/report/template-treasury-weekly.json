@@ -1,0 +1,35 @@
+{
+  "templateId": "treasury-weekly",
+  "name": "司库资金周报",
+  "keywords": ["周报", "资金周报", "司库周报", "每周资金报告", "资金情况周报"],
+  "chapters": [
+    {
+      "chapterId": "summary",
+      "title": "一、核心结论",
+      "metrics": ["cny_total_balance", "week_txn_amount_cny", "week_net_inflow_cny"],
+      "comparison": "week_over_week",
+      "guidance": "用 3~5 句话概括本周资金全貌与最重要的变化：整体头寸水平、交易总量、净流入方向及其环比变化。只引用提供给本章的事实，不下因果结论。"
+    },
+    {
+      "chapterId": "position",
+      "title": "二、账户与头寸",
+      "metrics": ["cny_total_balance", "active_account_count", "frozen_account_count", "deposit_balance"],
+      "comparison": null,
+      "guidance": "描述余额结构与账户健康度：活跃账户规模、人民币头寸构成（含定期存款占位）。若存在冻结账户必须点名提示。"
+    },
+    {
+      "chapterId": "cashflow",
+      "title": "三、交易与收支",
+      "metrics": ["week_txn_count", "week_txn_amount_cny", "week_inflow_amount_cny", "week_outflow_amount_cny", "week_net_inflow_cny", "payroll_out_amount", "tax_txn_count"],
+      "comparison": "week_over_week",
+      "guidance": "陈述本周交易活动与收支结构：交易笔数与总额、流入流出与净流入、工资/税款等主要支出事项，并给出环比变化。"
+    },
+    {
+      "chapterId": "risk",
+      "title": "四、风险与待办",
+      "metrics": ["in_transit_txn_count", "large_txn_count", "pending_payment_count", "loan_outstanding_balance", "due_repayment_count"],
+      "comparison": null,
+      "guidance": "逐项列出需要关注的事项：在途交易、大额交易、待审批付款单、贷款余额与未偿还还款计划。只陈述事实与数量，不猜测原因。"
+    }
+  ]
+}
