@@ -101,15 +101,28 @@
   .er-table .col .k.pk { background:#fde68a; color:#92400e; }
   .er-table .col .k.fk { background:#dbeafe; color:#1d4ed8; }
   .er-legend { color:var(--muted); font-size:12px; margin-left:auto; }
+  /* ---------- 顶部导航条（各演示页统一） ---------- */
+  .topnav{ background:#fff; border-bottom:1px solid #e3e6ea; padding:10px 28px;
+    display:flex; align-items:center; gap:6px; font-size:13px; }
+  .topnav .brand{ font-weight:800; color:#0f172a; margin-right:16px; }
+  .topnav .brand .dot{ display:inline-block; width:10px; height:10px; background:#2563eb;
+    border-radius:3px; margin-right:7px; }
+  .topnav a{ color:#475569; text-decoration:none; font-weight:600; padding:5px 13px; border-radius:999px; }
+  .topnav a:hover{ background:#eef2ff; color:#2563eb; }
+  .topnav a.cur{ background:#2563eb; color:#fff; }
 </style>
 </head>
 <body>
+<nav class="topnav">
+  <span class="brand"><span class="dot"></span>智能报告流水线演示</span>
+  <a href="/" class="cur">NL2SQL 查询</a>
+  <a href="/report.html">报告生成</a>
+  <a href="/template-admin.html">模板管理</a>
+  <a href="/metric-wizard.html">指标制作向导</a>
+</nav>
 <div class="wrap">
   <h1>NL2MQL2SQL <span class="arrow">·</span> 自然语言查数据库
     <a class="doc-btn" href="usage-guide.html" target="_blank" rel="noopener">📖 功能使用说明</a>
-    <a class="doc-btn" href="report.html">📊 报告生成</a>
-    <a class="doc-btn" href="template-admin.html">🗂 模板管理</a>
-    <a class="doc-btn" href="metric-wizard.html">🧪 指标制作向导</a>
   </h1>
   <div class="sub">自然语言 →（召回已核验口径 / LLM）MQL 结构化中间表示 →（jOOQ）SQL → 执行 · 人在回路沉淀，越用越准 · treasury 资金示例库</div>
 

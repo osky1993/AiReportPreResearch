@@ -45,15 +45,26 @@
   .flow { background:#0f172a; color:#e2e8f0; border-radius:8px; padding:12px 16px;
     font-size:13px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
     overflow:auto; white-space:pre; line-height:1.9; }
+  /* ---------- 顶部导航条（各演示页统一） ---------- */
+  .topnav{ background:#fff; border-bottom:1px solid #e3e6ea; padding:10px 28px;
+    display:flex; align-items:center; gap:6px; font-size:13px; }
+  .topnav .brand{ font-weight:800; color:#0f172a; margin-right:16px; }
+  .topnav .brand .dot{ display:inline-block; width:10px; height:10px; background:#2563eb;
+    border-radius:3px; margin-right:7px; }
+  .topnav a{ color:#475569; text-decoration:none; font-weight:600; padding:5px 13px; border-radius:999px; }
+  .topnav a:hover{ background:#eef2ff; color:#2563eb; }
 </style>
 </head>
 <body>
+<nav class="topnav">
+  <span class="brand"><span class="dot"></span>智能报告流水线演示</span>
+  <a href="/">NL2SQL 查询</a>
+  <a href="/report.html">报告生成</a>
+  <a href="/template-admin.html">模板管理</a>
+  <a href="/metric-wizard.html">指标制作向导</a>
+</nav>
 <div class="wrap">
-  <h1>使用说明 <span class="arrow">·</span> 智能报告流水线
-    <a class="back" href="report.html">← 报告生成</a>
-    <a class="back" href="template-admin.html">← 模板管理</a>
-    <a class="back" href="metric-wizard.html">← 指标向导</a>
-  </h1>
+  <h1>使用说明 <span class="arrow">·</span> 智能报告流水线</h1>
   <div class="sub">这套系统让 AI 写报告，但一个数字都不许它编：人先<b>锁口径</b>（确认大纲），程序按锁死的口径取数并<b>造事实</b>，大模型只照着事实写文字，程序逐个<b>核数字</b>（一致率必须 100%），最后由人签发。本页分三部分：<a href="#report">报告生成</a> · <a href="#template">模板管理</a> · <a href="#wizard">指标制作向导</a>。</div>
 
   <h2 id="report">一、报告生成页（report.html）</h2>

@@ -52,15 +52,30 @@ th{color:var(--muted);font-weight:600;background:#f9fafb}
 .errlist{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;font-size:12px;color:var(--bad);margin-top:8px}
 .okmsg{color:var(--ok);font-size:12px;margin-top:6px}
 pre.body{background:#f9fafb;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:11px;overflow:auto;max-height:320px;white-space:pre-wrap;word-break:break-all}
+/* ---------- 顶部导航条（各演示页统一） ---------- */
+.topnav{ background:#fff; border-bottom:1px solid #e3e6ea; padding:10px 28px;
+  display:flex; align-items:center; gap:6px; font-size:13px; }
+.topnav .brand{ font-weight:800; color:#0f172a; margin-right:16px; }
+.topnav .brand .dot{ display:inline-block; width:10px; height:10px; background:#2563eb;
+  border-radius:3px; margin-right:7px; }
+.topnav a{ color:#475569; text-decoration:none; font-weight:600; padding:5px 13px; border-radius:999px; }
+.topnav a:hover{ background:#eef2ff; color:#2563eb; }
+.topnav a.cur{ background:#2563eb; color:#fff; }
 </style>
 </head>
 <body>
+<nav class="topnav">
+  <span class="brand"><span class="dot"></span>智能报告流水线演示</span>
+  <a href="/">NL2SQL 查询</a>
+  <a href="/report.html">报告生成</a>
+  <a href="/template-admin.html" class="cur">模板管理</a>
+  <a href="/metric-wizard.html">指标制作向导</a>
+</nav>
 <div class="wrap">
 <header>
   <h1>报告模板管理</h1>
   <span class="sub">列表 · 新建 · 编辑 · 保存校验 · 发布/下架 · 版本历史（服务端把关，保存=新版本 DRAFT，行不可变）</span>
-  <a href="/report-usage-guide.html#template" target="_blank" rel="noopener" style="margin-left:auto">📖 使用说明</a>
-  <a href="/report.html" style="margin-left:0">← 报告流水线演示</a>
+  <a href="/report-usage-guide.html#template" target="_blank" rel="noopener">📖 使用说明</a>
 </header>
 
 <div class="grid">

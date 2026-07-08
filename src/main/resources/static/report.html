@@ -73,16 +73,30 @@ details.step{border:1px solid var(--line);border-radius:6px;margin-bottom:4px;fo
 details.step summary{padding:5px 8px;cursor:pointer;display:flex;gap:8px;align-items:center}
 details.step pre{background:#f9fafb;padding:6px 8px;overflow:auto;max-height:220px;font-size:11px}
 .err{color:var(--bad);font-size:12px;margin-top:6px;white-space:pre-wrap}
+/* ---------- 顶部导航条（各演示页统一） ---------- */
+.topnav{ background:#fff; border-bottom:1px solid #e3e6ea; padding:10px 28px;
+  display:flex; align-items:center; gap:6px; font-size:13px; }
+.topnav .brand{ font-weight:800; color:#0f172a; margin-right:16px; }
+.topnav .brand .dot{ display:inline-block; width:10px; height:10px; background:#2563eb;
+  border-radius:3px; margin-right:7px; }
+.topnav a{ color:#475569; text-decoration:none; font-weight:600; padding:5px 13px; border-radius:999px; }
+.topnav a:hover{ background:#eef2ff; color:#2563eb; }
+.topnav a.cur{ background:#2563eb; color:#fff; }
 </style>
 </head>
 <body>
+<nav class="topnav">
+  <span class="brand"><span class="dot"></span>智能报告流水线演示</span>
+  <a href="/">NL2SQL 查询</a>
+  <a href="/report.html" class="cur">报告生成</a>
+  <a href="/template-admin.html">模板管理</a>
+  <a href="/metric-wizard.html">指标制作向导</a>
+</nav>
 <div class="wrap">
 <header>
-  <h1>司库资金周报 · 智能报告流水线</h1>
+  <h1>报告生成 · 智能报告流水线</h1>
   <span class="sub">锁口径(人) → 结构化取数 → 程序造事实 → LLM 照事实写 → 程序核数字 → 人签发</span>
-  <a href="/report-usage-guide.html#report" target="_blank" rel="noopener" style="margin-left:auto">📖 使用说明</a>
-  <a href="/template-admin.html" style="margin-left:0">模板管理 →</a>
-  <a href="/" style="margin-left:0">← NL2SQL 查询演示</a>
+  <a href="/report-usage-guide.html#report" target="_blank" rel="noopener">📖 使用说明</a>
 </header>
 
 <div class="grid">

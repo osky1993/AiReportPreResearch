@@ -43,13 +43,26 @@
   .flow { background:#0f172a; color:#e2e8f0; border-radius:8px; padding:12px 16px;
     font-size:13px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
     overflow:auto; white-space:pre; line-height:1.9; }
+  /* ---------- 顶部导航条（各演示页统一） ---------- */
+  .topnav{ background:#fff; border-bottom:1px solid #e3e6ea; padding:10px 28px;
+    display:flex; align-items:center; gap:6px; font-size:13px; }
+  .topnav .brand{ font-weight:800; color:#0f172a; margin-right:16px; }
+  .topnav .brand .dot{ display:inline-block; width:10px; height:10px; background:#2563eb;
+    border-radius:3px; margin-right:7px; }
+  .topnav a{ color:#475569; text-decoration:none; font-weight:600; padding:5px 13px; border-radius:999px; }
+  .topnav a:hover{ background:#eef2ff; color:#2563eb; }
 </style>
 </head>
 <body>
+<nav class="topnav">
+  <span class="brand"><span class="dot"></span>智能报告流水线演示</span>
+  <a href="/">NL2SQL 查询</a>
+  <a href="/report.html">报告生成</a>
+  <a href="/template-admin.html">模板管理</a>
+  <a href="/metric-wizard.html">指标制作向导</a>
+</nav>
 <div class="wrap">
-  <h1>功能使用说明 <span class="arrow">·</span> NL2MQL2SQL 演示
-    <a class="back" href="index.html">← 返回演示页</a>
-  </h1>
+  <h1>功能使用说明 <span class="arrow">·</span> NL2MQL2SQL 演示</h1>
   <div class="sub">这套系统把中文问题先翻译成结构化中间表示（MQL），经字段白名单校验后再确定性地编译成 SQL 执行；答案被人工核验采纳后会沉淀为「口径资产」，同类问题下次直接复用——越用越准。</div>
 
   <h2>一、如何开始查询</h2>
