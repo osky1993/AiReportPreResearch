@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报告模板管理 · 智能报告流水线</title>
+<style>
+:root{--accent:#2563eb;--bg:#f6f7f9;--card:#fff;--line:#e5e7eb;--text:#111827;--muted:#6b7280;
+      --ok:#059669;--warn:#d97706;--bad:#dc2626;--violet:#7c3aed;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+.wrap{max-width:1280px;margin:0 auto;padding:20px}
+header{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+header h1{font-size:20px}
+header .sub{color:var(--muted);font-size:12px}
+header a{margin-left:auto;color:var(--accent);text-decoration:none;font-size:12px}
+.grid{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h2{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;resize:vertical;min-height:48px}
+input[type=text]{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}
+select{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;background:#fff}
+button{border:0;border-radius:8px;padding:7px 14px;font:inherit;cursor:pointer;background:var(--accent);color:#fff}
+button.ghost{background:#eef2ff;color:var(--accent)}
+button.danger{background:#fee2e2;color:var(--bad)}
+button.okbtn{background:#d1fae5;color:var(--ok)}
+button.mini{padding:2px 8px;font-size:12px;border-radius:6px}
+button:disabled{opacity:.5;cursor:not-allowed}
+.tplitem{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
+.tplitem:hover{border-color:var(--accent)}
+.tplitem.sel{border-color:var(--accent);box-shadow:0 0 0 2px #dbeafe}
+.tplitem .q{font-size:13px;font-weight:600}
+.tplitem .meta{color:var(--muted);font-size:11px;display:flex;gap:8px;margin-top:2px;flex-wrap:wrap}
+.badge{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:600}
+.b-draft{background:#fef3c7;color:var(--warn)}
+.b-pub{background:#d1fae5;color:var(--ok)}
+.b-dep{background:#f3f4f6;color:var(--muted)}
+.b-seed{background:#ede9fe;color:var(--violet)}
+.chapter{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+.chapter.badch{border-color:var(--bad);box-shadow:0 0 0 2px #fee2e2}
+.chapter h3{font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.chapter label.metric{display:inline-flex;align-items:center;gap:4px;background:#f9fafb;border:1px solid var(--line);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px;cursor:pointer}
+.field{margin:6px 0}
+.field .fl{font-size:12px;color:var(--muted);margin-bottom:2px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;background:#f9fafb}
+.muted{color:var(--muted);font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.err{color:var(--bad);font-size:12px;margin-top:6px;white-space:pre-wrap}
+.errlist{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;font-size:12px;color:var(--bad);margin-top:8px}
+.okmsg{color:var(--ok);font-size:12px;margin-top:6px}
+pre.body{background:#f9fafb;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:11px;overflow:auto;max-height:320px;white-space:pre-wrap;word-break:break-all}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>报告模板管理</h1>
+  <span class="sub">列表 · 新建 · 编辑 · 保存校验 · 发布/下架 · 版本历史（服务端把关，保存=新版本 DRAFT，行不可变）</span>
+  <a href="/report.html">← 报告流水线演示</a>
+</header>
+
+<div class="grid">
+<div>
+  <div class="card">
+    <h2>模板列表
+      <button class="ghost mini" style="margin-left:auto" onclick="loadList()">刷新</button>
+      <button class="mini" onclick="newTemplate()">＋ 新建模板</button>
+    </h2>
+    <div id="tplList" class="muted">加载中…</div>
+  </div>
+</div>
+
+<div id="mainPane">
+  <div class="card muted">← 从列表选择一个模板编辑，或点「新建模板」</div>
+</div>
+</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let LIST = [], METRICS = [], CUR = null, EDIT = null, IS_NEW = false, ERRORS = [], OKMSG = '';
+
+const ST = { DRAFT:['草稿','b-draft'], PUBLISHED:['已发布','b-pub'], DEPRECATED:['已下架','b-dep'] };
+
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+
+async function api(path, opts){
+  const resp = await fetch('/api/report'+path, opts ? {headers:{'Content-Type':'application/json'},...opts} : undefined);
+  const body = await resp.json().catch(()=>({}));
+  if(!resp.ok){ const e = new Error(body.error || ('HTTP '+resp.status)); e.details = body.details||[]; throw e; }
+  return body;
+}
+
+/* ---------- 列表 ---------- */
+async function loadList(){
+  try{
+    LIST = await api('/templates');
+    $('tplList').innerHTML = LIST.length ? LIST.map(t=>{
+      const [lb,cls] = ST[t.latestStatus]||[t.latestStatus,'b-dep'];
+      return `<div class="tplitem ${CUR===t.templateId?'sel':''}" onclick="openTpl('${t.templateId}')">
+        <div class="q">${esc(t.name)} <span class="muted">${esc(t.templateId)}</span></div>
+        <div class="meta">
+          <span class="badge ${cls}">最新 v${t.latestVersion} ${lb}</span>
+          ${t.publishedVersion?`<span class="badge b-pub">线上 v${t.publishedVersion}</span>`:'<span class="badge b-dep">未上线</span>'}
+          ${t.source==='SEED'?'<span class="badge b-seed">种子</span>':''}
+          <span>${esc((t.updatedAt||'').replace('T',' ').slice(0,16))}</span>
+        </div></div>`;
+    }).join('') : '库中暂无模板';
+  }catch(e){ $('tplList').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+
+/* ---------- 打开 / 新建 ---------- */
+async function openTpl(id){
+  CUR = id; IS_NEW = false; ERRORS = []; OKMSG='';
+  const d = await api('/templates/'+id);
+  EDIT = JSON.parse(JSON.stringify(d.latest));
+  EDIT._versions = d.versions;
+  render(); loadList();
+}
+
+function newTemplate(){
+  CUR = null; IS_NEW = true; ERRORS = []; OKMSG='';
+  EDIT = { templateId:'', name:'', keywords:[], chapters:[
+    { chapterId:'ch1', title:'一、', metrics:[], comparison:null, guidance:'', stylePrompt:'' } ] };
+  EDIT._versions = [];
+  render(); loadList();
+}
+
+/* ---------- 编辑器渲染 ---------- */
+function errAt(prefix){ return ERRORS.filter(e=>e.location===prefix || e.location.startsWith(prefix+'.') || e.location.startsWith(prefix+'[')); }
+
+function render(){
+  if(!EDIT){ $('mainPane').innerHTML = '<div class="card muted">← 从列表选择一个模板编辑，或点「新建模板」</div>'; return; }
+  const chapterErr = i => errAt('chapters['+i+']');
+  let chaptersHtml = EDIT.chapters.map((c,i)=>`
+    <div class="chapter ${chapterErr(i).length?'badch':''}">
+      <h3>章节 ${i+1}
+        <button class="ghost mini" onclick="moveCh(${i},-1)" ${i===0?'disabled':''}>↑</button>
+        <button class="ghost mini" onclick="moveCh(${i},1)" ${i===EDIT.chapters.length-1?'disabled':''}>↓</button>
+        <button class="danger mini" style="margin-left:auto" onclick="delCh(${i})">删除本章</button>
+      </h3>
+      <div class="row" style="margin-top:0">
+        <div class="field"><div class="fl">chapterId</div><input type="text" value="${esc(c.chapterId)}" onchange="setCh(${i},'chapterId',this.value)"></div>
+        <div class="field" style="flex:1"><div class="fl">章节标题</div><input type="text" style="width:100%" value="${esc(c.title)}" onchange="setCh(${i},'title',this.value)"></div>
+        <div class="field"><div class="fl">环比对比</div>
+          <select onchange="setCh(${i},'comparison',this.value||null)">
+            <option value="" ${!c.comparison?'selected':''}>无</option>
+            <option value="week_over_week" ${c.comparison==='week_over_week'?'selected':''}>week_over_week</option>
+          </select></div>
+      </div>
+      <div class="field"><div class="fl">指标（勾选，选项来自指标资产）</div>
+        ${METRICS.map(m=>`<label class="metric"><input type="checkbox" ${c.metrics.includes(m.metricId)?'checked':''}
+          onchange="toggleMetric(${i},'${m.metricId}')"> ${esc(m.name)} <span class="muted">${esc(m.metricId)}</span></label>`).join('')}
+      </div>
+      <div class="field"><div class="fl">写作指引 guidance</div>
+        <textarea onchange="setCh(${i},'guidance',this.value)">${esc(c.guidance||'')}</textarea></div>
+      <div class="field"><div class="fl">✍️ 风格提示词 stylePrompt（只影响文风；数字安全由 ⑥ 审计死代码兜底）</div>
+        <textarea onchange="setCh(${i},'stylePrompt',this.value)">${esc(c.stylePrompt||'')}</textarea></div>
+      ${chapterErr(i).map(e=>`<div class="err">✖ ${esc(e.location)}：${esc(e.message)}</div>`).join('')}
+    </div>`).join('');
+
+  const topErrs = ERRORS.filter(e=>!e.location.startsWith('chapters'));
+  const versions = EDIT._versions||[];
+  $('mainPane').innerHTML = `
+  <div class="card">
+    <h2>${IS_NEW?'新建模板':'编辑模板（保存 = 产生新版本 DRAFT）'}</h2>
+    <div class="row" style="margin-top:0">
+      <div class="field"><div class="fl">templateId（小写字母/数字/连字符）</div>
+        <input type="text" value="${esc(EDIT.templateId)}" ${IS_NEW?'':'disabled'} onchange="EDIT.templateId=this.value"></div>
+      <div class="field" style="flex:1"><div class="fl">模板名称</div>
+        <input type="text" style="width:100%" value="${esc(EDIT.name)}" onchange="EDIT.name=this.value"></div>
+    </div>
+    <div class="field"><div class="fl">匹配关键词（逗号分隔，必填——运行期召回依赖）</div>
+      <input type="text" style="width:100%" value="${esc((EDIT.keywords||[]).join('，'))}" onchange="setKeywords(this.value)"></div>
+    ${chaptersHtml}
+    <div class="row"><button class="ghost" onclick="addCh()">＋ 添加章节</button></div>
+    ${topErrs.length?`<div class="errlist">${topErrs.map(e=>`✖ ${esc(e.location||'-')}：${esc(e.message)}`).join('<br>')}</div>`:''}
+    ${OKMSG?`<div class="okmsg">${esc(OKMSG)}</div>`:''}
+    <div class="row">
+      备注 <input type="text" id="remark" placeholder="版本备注（可空）" style="flex:1;min-width:140px">
+      <button class="ghost" onclick="doValidate()">校验（干跑）</button>
+      <button class="okbtn" onclick="doSave()">${IS_NEW?'新建（v1 DRAFT）':'保存（新版本 DRAFT）'}</button>
+    </div>
+    <div class="err" id="opErr"></div>
+  </div>
+  ${IS_NEW?'':versionsCard(versions)}
+  <div id="versionView"></div>`;
+}
+
+function versionsCard(versions){
+  return `<div class="card"><h2>版本历史（只读；被 run 引用过的版本永不物理删除）</h2>
+    <table><tr><th>版本</th><th>状态</th><th>来源</th><th>创建人</th><th>时间</th><th>备注</th><th>操作</th></tr>
+    ${versions.map(v=>{
+      const [lb,cls] = ST[v.status]||[v.status,'b-dep'];
+      return `<tr><td>v${v.version}</td><td><span class="badge ${cls}">${lb}</span></td>
+        <td>${esc(v.source)}</td><td>${esc(v.createdBy||'-')}</td>
+        <td>${esc((v.createdAt||'').replace('T',' ').slice(0,16))}</td><td>${esc(v.remark||'')}</td>
+        <td><button class="ghost mini" onclick="viewVersion(${v.version})">查看</button>
+          ${v.status==='DRAFT'?`<button class="okbtn mini" onclick="doPublish(${v.version})">发布</button>`:''}
+          ${v.status!=='DEPRECATED'?`<button class="danger mini" onclick="doDeprecate(${v.version})">下架</button>`:''}
+        </td></tr>`;
+    }).join('')}</table>
+    <div class="muted" style="margin-top:6px">发布 = DRAFT→PUBLISHED（旧线上版本自动下架，运行匹配即时生效）；下架线上版本 = 从运行匹配摘除（在跑 run 用快照不受影响）。</div>
+  </div>`;
+}
+
+/* ---------- 编辑操作 ---------- */
+function setCh(i,k,v){ EDIT.chapters[i][k]=v; }
+function toggleMetric(i,m){
+  const arr = EDIT.chapters[i].metrics;
+  arr.includes(m) ? arr.splice(arr.indexOf(m),1) : arr.push(m);
+}
+function setKeywords(v){ EDIT.keywords = v.split(/[,，]/).map(s=>s.trim()).filter(Boolean); }
+function addCh(){ EDIT.chapters.push({chapterId:'ch'+(EDIT.chapters.length+1), title:'', metrics:[], comparison:null, guidance:'', stylePrompt:''}); render(); }
+function delCh(i){ EDIT.chapters.splice(i,1); render(); }
+function moveCh(i,d){ const c=EDIT.chapters.splice(i,1)[0]; EDIT.chapters.splice(i+d,0,c); render(); }
+
+function payload(){
+  const t = JSON.parse(JSON.stringify(EDIT)); delete t._versions;
+  t.chapters.forEach(c=>{ if(!c.stylePrompt) delete c.stylePrompt; if(!c.guidance) c.guidance=''; });
+  return { template: t, createdBy: 'admin-page', remark: $('remark') ? $('remark').value : '' };
+}
+
+/* ---------- 服务端交互 ---------- */
+async function doValidate(){
+  ERRORS=[]; OKMSG='';
+  try{
+    const r = await api('/templates/validate', {method:'POST', body: JSON.stringify(payload())});
+    if(r.valid){ OKMSG='✓ 校验通过（干跑，未写库）'; } else { ERRORS = r.errors; }
+  }catch(e){ ERRORS = e.details.length ? e.details : [{location:'', message:e.message}]; }
+  render();
+}
+
+async function doSave(){
+  ERRORS=[]; OKMSG='';
+  try{
+    const r = IS_NEW
+      ? await api('/templates', {method:'POST', body: JSON.stringify(payload())})
+      : await api('/templates/'+EDIT.templateId, {method:'PUT', body: JSON.stringify(payload())});
+    OKMSG = `✓ 已保存：${r.templateId} v${r.version}（${r.status}）`;
+    await openTpl(r.templateId); OKMSG = `✓ 已保存：${r.templateId} v${r.version}（${r.status}）`; render();
+  }catch(e){ ERRORS = e.details.length ? e.details : [{location:'', message:e.message}]; render(); }
+}
+
+async function doPublish(v){
+  ERRORS=[]; OKMSG='';
+  try{
+    const r = await api('/templates/'+CUR+'/publish', {method:'POST', body: JSON.stringify({version:v})});
+    await openTpl(r.templateId); OKMSG = `✓ 已发布 v${r.version}（旧线上版本自动下架，匹配即时生效）`; render();
+  }catch(e){ ERRORS = e.details && e.details.length ? e.details : [{location:'', message:e.message}]; render(); }
+}
+
+async function doDeprecate(v){
+  ERRORS=[]; OKMSG='';
+  try{
+    const r = await api('/templates/'+CUR+'/deprecate', {method:'POST', body: JSON.stringify({version:v})});
+    await openTpl(r.templateId); OKMSG = `✓ 已下架 v${r.version}`; render();
+  }catch(e){ ERRORS = e.details && e.details.length ? e.details : [{location:'', message:e.message}]; render(); }
+}
+
+async function viewVersion(v){
+  const b = await api('/templates/'+CUR+'/versions/'+v);
+  $('versionView').innerHTML = `<div class="card"><h2>v${b.version}（${esc(b.status)}）只读
+      <button class="ghost mini" style="margin-left:auto" onclick="$('versionView').innerHTML=''">关闭</button></h2>
+    <pre class="body">${esc(JSON.stringify(b.template,null,2))}</pre></div>`;
+}
+
+/* ---------- 启动 ---------- */
+(async function init(){
+  try{
+    const a = await api('/assets');
+    METRICS = (a.metrics||[]).map(m=>({metricId:m.metricId, name:m.name}));
+  }catch(e){ /* 指标目录取不到时编辑器仍可用，勾选列表为空 */ }
+  loadList();
+})();
+</script>
+</body>
+</html>
