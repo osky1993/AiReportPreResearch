@@ -194,6 +194,7 @@ function render(){
     <h2>Run #${r.runId} <span class="badge ${cls}">${label}</span>
       <span class="muted" style="margin-left:auto">报告期 ${esc(r.periodLabel||'-')}（对比期 ${esc(fmtD(r.compareStart))}~${esc(fmtD(r.compareEnd))}）</span></h2>
     <div class="muted">需求：${esc(r.requestText)}</div>
+    <div class="muted">模板：${esc(r.templateId||'-')}${r.templateVersion?` <span class="badge b-run">v${r.templateVersion}</span>（创建时固化，续跑不追新版）`:''}</div>
     ${pipeHtml(r,d.steps)}
   </div>`;
 
@@ -243,6 +244,7 @@ function outlineHtml(r){
   let ch = o.chapters.map((c,ci)=>`
     <div class="chapter"><h3>${esc(c.title)} ${c.comparison?'<span class="badge b-run">环比</span>':''}</h3>
       <div class="muted" style="margin-bottom:4px">${esc(c.guidance)}</div>
+      ${c.stylePrompt?`<div class="muted" style="margin-bottom:4px">✍️ 风格：${esc(c.stylePrompt)}</div>`:''}
       ${c.metricIds.map(m=>`<label class="${c._off&&c._off.includes(m)?'off':''}">
         <input type="checkbox" ${c._off&&c._off.includes(m)?'':'checked'} onchange="toggleMetric(${ci},'${m}')"> ${esc(m)}</label>`).join('')}
     </div>`).join('');
