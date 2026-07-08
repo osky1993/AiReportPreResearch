@@ -12,35 +12,45 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * ① 需求 → 大纲（LLM 智能节点，同步）。
- * LLM 只做三件事：识别报告模板、抽取报告期标签（只输出如 2026-W26 的 ISO 周标签，
+ * ① 需求 → 大纲（LLM 智能节点，同步）。三段式模板匹配：
+ *   候选召回（程序：keywords + embedding，见 {@link TemplateMatcher}）
+ *   → LLM 在候选 id 中单选（合并进本步唯一一次 LLM 调用，不加时延）
+ *   → 服务端把关（选出的 id 必须在候选集内，否则失败关闭并携带候选清单）。
+ * LLM 只做三件事：在候选中选模板、抽取报告期标签（只输出如 2026-W26 的 ISO 周标签，
  * **不产日期**——窗口由 PeriodResolver 推导）、把映射不上的指标表述放进 unresolved。
- * 章节树与推荐指标来自模板（固定），LLM 不发明章节；人确认（HITL 卡点1）后口径锁死。
+ * 章节树与推荐指标来自命中模板（固定），LLM 不发明章节；人确认（HITL 卡点1）后口径锁死。
  */
 @Component
 public class OutlineStep {
 
     private static final Logger log = LoggerFactory.getLogger(OutlineStep.class);
 
-    /** 过渡态（P1-T2~T3）：注册表已多模板化，但匹配器未接入前仍钉在周报模板上；P1-T4 由 TemplateMatcher 接管。 */
-    private static final String PINNED_TEMPLATE_ID = "treasury-weekly";
-
     private final LlmClient llm;
     private final ReportAssetService assets;
+    private final TemplateMatcher matcher;
     private final ObjectMapper mapper;
 
-    public OutlineStep(LlmClient llm, ReportAssetService assets, ObjectMapper mapper) {
+    public OutlineStep(LlmClient llm, ReportAssetService assets, TemplateMatcher matcher, ObjectMapper mapper) {
         this.llm = llm;
         this.assets = assets;
+        this.matcher = matcher;
         this.mapper = mapper;
     }
 
     /** @param revisionNote HITL 卡点1 打回时带的修改意见（首次为 null）。 */
     public Outline run(String requestText, String revisionNote) {
+        // 第一段：程序召回候选。给不出候选直接失败关闭，LLM 无从下手也不该猜。
+        List<TemplateMatcher.Candidate> candidates = matcher.recall(requestText);
+        if (candidates.isEmpty()) {
+            throw new PolicyException("需求无法匹配任何报告模板。可用模板：" + allTemplatesText());
+        }
+        log.info("[OUTLINE] 候选召回: {}", TemplateMatcher.describe(candidates));
+
         List<LlmClient.Message> conversation = new ArrayList<>();
-        conversation.add(LlmClient.Message.system(systemPrompt()));
+        conversation.add(LlmClient.Message.system(systemPrompt(candidates)));
         String user = "报告需求：" + requestText
                 + (revisionNote == null ? "" : "\n业务人员打回意见（必须吸收）：" + revisionNote)
                 + "\n请输出解析 JSON。";
@@ -49,14 +59,20 @@ public class OutlineStep {
         JsonNode node = completeWithOneRetry(conversation);
 
         if (node.path("unanswerable").asBoolean(false)) {
-            throw new PolicyException(node.path("reason").asText("需求无法匹配任何报告模板"));
+            throw new PolicyException(node.path("reason").asText("需求无法匹配任何报告模板")
+                    + "；候选模板：" + TemplateMatcher.describe(candidates));
         }
+        // 第三段：服务端把关——选出的模板必须在候选集内，不在则失败关闭，不猜测补全。
         String templateId = node.path("templateId").isTextual() ? node.path("templateId").asText() : null;
-        ReportTemplateDef tpl = pinnedTemplate();
-        if (!tpl.templateId().equals(templateId)) {
-            throw new PolicyException("无法从需求中识别报告模板（模型输出: " + templateId
-                    + "，当前仅支持「" + tpl.name() + "」" + tpl.templateId() + "）");
+        String chosen = templateId;
+        boolean inCandidates = candidates.stream().anyMatch(c -> c.templateId().equals(chosen));
+        if (templateId == null || !inCandidates) {
+            throw new PolicyException("无法从需求中确定报告模板（模型输出: " + templateId
+                    + "）。候选模板：" + TemplateMatcher.describe(candidates));
         }
+        ReportTemplateDef tpl = assets.template(templateId)
+                .orElseThrow(() -> new IllegalStateException("候选模板不在注册表中: " + chosen));
+
         String periodLabel = node.path("periodLabel").isTextual() ? node.path("periodLabel").asText() : null;
         // 解析不了直接失败关闭（PolicyException），不猜测补全
         PeriodResolver.Window window = PeriodResolver.resolve(periodLabel);
@@ -93,31 +109,31 @@ public class OutlineStep {
         }
     }
 
-    private ReportTemplateDef pinnedTemplate() {
-        return assets.template(PINNED_TEMPLATE_ID)
-                .orElseThrow(() -> new IllegalStateException("注册表中缺少模板: " + PINNED_TEMPLATE_ID));
-    }
-
-    private String systemPrompt() {
-        ReportTemplateDef tpl = pinnedTemplate();
-        StringBuilder chapterLines = new StringBuilder();
-        for (ReportTemplateDef.ChapterDef c : tpl.chapters()) {
-            chapterLines.append("  - ").append(c.title()).append("（推荐指标: ")
-                    .append(String.join(", ", c.metrics())).append("）\n");
+    private String systemPrompt(List<TemplateMatcher.Candidate> candidates) {
+        StringBuilder templateLines = new StringBuilder();
+        for (TemplateMatcher.Candidate c : candidates) {
+            ReportTemplateDef tpl = assets.template(c.templateId())
+                    .orElseThrow(() -> new IllegalStateException("候选模板不在注册表中: " + c.templateId()));
+            templateLines.append("- templateId: ").append(tpl.templateId())
+                    .append("（").append(tpl.name()).append("；关键词: ")
+                    .append(String.join("、", tpl.keywords())).append("）\n")
+                    .append("  章节与推荐指标（固定，不需要你改动）：\n");
+            for (ReportTemplateDef.ChapterDef ch : tpl.chapters()) {
+                templateLines.append("    - ").append(ch.title()).append("（推荐指标: ")
+                        .append(String.join(", ", ch.metrics())).append("）\n");
+            }
         }
         return """
-            你是报告需求解析器。从业务人员的自然语言需求中识别报告模板与报告期，只输出一个 JSON 对象，
+            你是报告需求解析器。从业务人员的自然语言需求中选出报告模板并抽取报告期，只输出一个 JSON 对象，
             不要解释、不要 markdown 代码块。
 
-            ## 可用报告模板（当前仅一个）
-            - templateId: %s（%s；关键词: %s）
-              章节与推荐指标（固定，不需要你改动）：
+            ## 候选报告模板（只允许从中单选一个）
             %s
             ## 可用指标目录
             %s
             ## 输出 JSON 结构
             {
-              "templateId": "命中的模板 id；需求与模板明显无关时为 null",
+              "templateId": "命中的模板 id；需求与所有候选模板都明显不符时为 null",
               "periodLabel": "报告期的 ISO 周标签，如 2026-W26；无法确定为 null",
               "unresolved": ["需求中点名要求、但指标目录里找不到对应项的表述（没有则空数组）"],
               "unanswerable": false,
@@ -125,13 +141,20 @@ public class OutlineStep {
             }
 
             ## 规则
+            - templateId 只允许取候选清单中的 id，禁止发明新 id；多个候选都像时选最贴合需求措辞的那个，
+              实在无法区分则 templateId=null 并在 reason 里说明——不要猜。
             - periodLabel 只允许 ISO 周标签（YYYY-Www）。需求说「2026 年第 26 周」→ "2026-W26"。
               需求要求月报/季报/年报，或没有给出可确定的周，则 periodLabel=null 并在 reason 里说明——不要猜。
             - 不要输出任何具体日期，日期窗口由程序推导。
             - 需求里点名的统计口径若能对应指标目录中的某一项，视为已覆盖；对应不上的放进 unresolved 原样列出。
-            - 需求与资金/司库报告完全无关时输出 {"unanswerable": true, "reason": "..."}。
-            """.formatted(tpl.templateId(), tpl.name(), String.join("、", tpl.keywords()),
-                chapterLines, assets.metricCatalogText());
+            - 需求与所有候选模板完全无关时输出 {"unanswerable": true, "reason": "..."}。
+            """.formatted(templateLines, assets.metricCatalogText());
+    }
+
+    private String allTemplatesText() {
+        return assets.allTemplates().stream()
+                .map(t -> t.templateId() + "(" + t.name() + ")")
+                .collect(Collectors.joining("、"));
     }
 
     private static String stripFence(String s) {

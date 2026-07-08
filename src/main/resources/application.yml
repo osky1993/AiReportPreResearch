@@ -83,6 +83,8 @@ embedding:
 # 报告流水线（ideaV2 核心路径 6 步编排层）
 report:
   max-rewrite-rounds: 2   # ⑥证据审计违规后回灌 LLM 重写的最大轮数，超限失败关闭（与 llm.max-fix-rounds 对齐）
+  match:
+    tau: 0.60             # ①模板匹配 embedding 召回阈值（keywords 命中不受此限）；召回为空即失败关闭
 
 logging:
   level:
