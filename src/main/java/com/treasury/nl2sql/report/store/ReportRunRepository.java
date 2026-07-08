@@ -28,7 +28,7 @@ public class ReportRunRepository {
         this.jdbc = jdbc;
     }
 
-    private static final String COLS = "run_id, request_text, template_id, period_label, period_start, period_end, "
+    private static final String COLS = "run_id, request_text, template_id, template_version, period_label, period_start, period_end, "
             + "compare_start, compare_end, status, phase, outline_json, report_md, audit_json, blocked_reason, "
             + "outline_approved_by, outline_approved_at, publish_approved_by, publish_approved_at, created_at, updated_at";
 
@@ -36,6 +36,7 @@ public class ReportRunRepository {
             rs.getLong("run_id"),
             rs.getString("request_text"),
             rs.getString("template_id"),
+            rs.getObject("template_version", Integer.class),
             rs.getString("period_label"),
             toLd(rs, "period_start"),
             toLd(rs, "period_end"),
@@ -77,15 +78,16 @@ public class ReportRunRepository {
         return jdbc.query("SELECT " + COLS + " FROM report_run ORDER BY run_id DESC", MAPPER);
     }
 
-    /** ① 成功：落大纲与周期窗口，进入 HITL 卡点1 等待。 */
-    public void saveOutline(long runId, String templateId, String periodLabel,
+    /** ① 成功：落大纲与周期窗口（含模板版本固化），进入 HITL 卡点1 等待。 */
+    public void saveOutline(long runId, String templateId, Integer templateVersion, String periodLabel,
                             LocalDate periodStart, LocalDate periodEnd,
                             LocalDate compareStart, LocalDate compareEnd, String outlineJson) {
-        jdbc.update("UPDATE report_run SET template_id = ?, period_label = ?, period_start = ?, period_end = ?, "
+        jdbc.update("UPDATE report_run SET template_id = ?, template_version = ?, period_label = ?, "
+                        + "period_start = ?, period_end = ?, "
                         + "compare_start = ?, compare_end = ?, outline_json = ?, "
                         + "status = 'AWAITING_OUTLINE_APPROVAL', phase = 'OUTLINE', blocked_reason = NULL "
                         + "WHERE run_id = ?",
-                templateId, periodLabel, toDate(periodStart), toDate(periodEnd),
+                templateId, templateVersion, periodLabel, toDate(periodStart), toDate(periodEnd),
                 toDate(compareStart), toDate(compareEnd), outlineJson, runId);
     }
 

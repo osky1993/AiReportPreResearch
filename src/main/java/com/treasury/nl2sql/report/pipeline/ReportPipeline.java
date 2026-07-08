@@ -97,7 +97,8 @@ public class ReportPipeline {
             PeriodResolver.Window current = PeriodResolver.resolve(outline.periodLabel());
             PeriodResolver.Window compare = PeriodResolver.previous(current);
             String outlineJson = toJson(outline);
-            runRepo.saveOutline(runId, outline.templateId(), current.label(),
+            runRepo.saveOutline(runId, outline.templateId(), assets.publishedVersion(outline.templateId()),
+                    current.label(),
                     current.start(), current.end(), compare.start(), compare.end(), outlineJson);
             stepRepo.finishOk(stepId, outlineJson);
         } catch (PolicyException e) {
@@ -275,6 +276,17 @@ public class ReportPipeline {
                 && run.updatedAt().isBefore(LocalDateTime.now().minus(STALE_RUNNING));
         if (!RunStatus.BLOCKED.name().equals(run.status()) && !stale) {
             throw new IllegalStateException("仅 BLOCKED（或已停摆的 RUNNING）可断点续跑，当前状态: " + run.status());
+        }
+        // 版本漂移护栏：run 固化的模板版本与注册表当前 PUBLISHED 不一致时提示。
+        // ②~⑥ 全部基于 outline_json 快照续跑（内容天然固化），P1 内版本恒为 1 仅防御；
+        // P2 引入页面发布新版本后升级为失败关闭或按固化版本从库回读。
+        if (run.templateId() != null && run.templateVersion() != null) {
+            Integer current = assets.template(run.templateId()).isPresent()
+                    ? assets.publishedVersion(run.templateId()) : null;
+            if (!run.templateVersion().equals(current)) {
+                log.warn("[RUN-{}] 模板 {} 固化版本 v{} 与注册表当前 PUBLISHED v{} 不一致，续跑仍使用大纲快照（固化口径）",
+                        runId, run.templateId(), run.templateVersion(), current);
+            }
         }
         Phase phase = run.phase() == null ? Phase.OUTLINE : Phase.valueOf(run.phase());
         if (phase == Phase.OUTLINE) {
