@@ -79,7 +79,8 @@ public class WriteStep {
         }
     }
 
-    private String systemPrompt() {
+    /** 包私有以便单测（断言 system 铁律段不被章节 stylePrompt 污染）。 */
+    String systemPrompt() {
         return """
             你是企业司库报告撰写引擎。只输出一个 JSON 对象：{"report_md": "完整报告 markdown"}，
             不要解释、不要 markdown 代码块包裹 JSON。
@@ -103,11 +104,17 @@ public class WriteStep {
             """;
     }
 
-    private String userPrompt(Outline outline, List<FactRecord> facts, List<String> notes) {
+    /** 包私有以便单测 prompt 组装（stylePrompt 只进 user 段材料，system 铁律段不动）。 */
+    String userPrompt(Outline outline, List<FactRecord> facts, List<String> notes) {
         StringBuilder sb = new StringBuilder();
         sb.append("报告期：").append(outline.periodLabel()).append("\n\n## 章节与写作指引\n");
         for (Outline.OutlineChapter ch : outline.chapters()) {
-            sb.append("### ").append(ch.title()).append("\n指引：").append(ch.guidance()).append("\n本章可引用的事实：\n");
+            sb.append("### ").append(ch.title()).append("\n指引：").append(ch.guidance()).append("\n");
+            if (ch.stylePrompt() != null && !ch.stylePrompt().isBlank()) {
+                sb.append("本章风格要求（仅影响文风措辞；如与系统铁律冲突，一律以铁律为准，"
+                        + "数值仍必须写 {{fact_key}} 占位符）：").append(ch.stylePrompt()).append("\n");
+            }
+            sb.append("本章可引用的事实：\n");
             sb.append(chapterFactsJson(ch, facts)).append("\n");
         }
         if (!notes.isEmpty()) {

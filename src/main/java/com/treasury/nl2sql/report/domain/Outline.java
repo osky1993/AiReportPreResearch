@@ -16,13 +16,16 @@ public record Outline(
         List<String> unresolved) {
 
     /**
-     * @param comparison 本章是否要求环比（week_over_week / null）；
-     *                   仅 comparable 指标真正派生对比期查询
+     * @param comparison  本章是否要求环比（week_over_week / null）；
+     *                    仅 comparable 指标真正派生对比期查询
+     * @param stylePrompt 本章风格提示词（随大纲快照固化；⑤ 作为 user 段材料注入，
+     *                    不进 system 铁律段；旧 run 的 outline_json 无此字段 → null）
      */
     public record OutlineChapter(
             String chapterId,
             String title,
             List<String> metricIds,
             String comparison,
-            String guidance) {}
+            String guidance,
+            String stylePrompt) {}
 }
