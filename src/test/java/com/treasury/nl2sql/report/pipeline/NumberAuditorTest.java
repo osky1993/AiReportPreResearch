@@ -132,4 +132,27 @@ class NumberAuditorTest {
         AuditResult audit = NumberAuditor.verifyRendered("余额12,345.68 万元[fact_x]。", f, 0);
         assertFalse(audit.passed());
     }
+
+    // ---------- 外币指标（GF 演练 run#22 暴露的渲染器/审计器格式对齐回归项） ----------
+
+    @Test
+    void foreignCurrencyFactRendersAndVerifiesConsistently() {
+        Map<String, FactRecord> fx = Map.of(
+                "fact_010", fact("fact_010", "200", "USD"),
+                "fact_011", fact("fact_011", "40000", "USD"));
+        assertEquals("200.00 USD", fx.get("fact_010").displayValue());
+        assertEquals("40,000.00 USD", fx.get("fact_011").displayValue());
+
+        String rendered = NumberAuditor.substitute("本期{{fact_010}}，上期{{fact_011}}。", fx);
+        AuditResult audit = NumberAuditor.verifyRendered(rendered, fx, 0);
+        assertTrue(audit.passed(), "外币「数值 USD[fact]」必须被回读核对而非判为裸数字: " + audit.violations());
+        assertEquals(2, audit.matchedNumbers());
+    }
+
+    @Test
+    void tamperedForeignCurrencyValueIsCaught() {
+        Map<String, FactRecord> fx = Map.of("fact_010", fact("fact_010", "200", "USD"));
+        AuditResult audit = NumberAuditor.verifyRendered("本期220.00 USD[fact_010]。", fx, 0);
+        assertFalse(audit.passed(), "外币数值被篡改必须被拦");
+    }
 }

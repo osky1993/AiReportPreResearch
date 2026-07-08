@@ -157,8 +157,9 @@ public class FactBuildStep {
     }
 
     /**
-     * 展示串一次性渲染（⑤ 替换与 ⑥ 回读都以此为准）：
-     * CNY 且 |值|≥1万 → "6,570.00 万元"；CNY → "1,234.56 元"；percent → "+12.5%"；计数 → "4 笔"。
+     * 展示串一次性渲染（⑤ 替换与 ⑥ 回读都以此为准，格式变更必须与 NumberAuditor.RENDERED/parseBack 同步）：
+     * CNY 且 |值|≥1万 → "6,570.00 万元"；CNY → "1,234.56 元"；percent → "+12.5%"；
+     * 外币码（USD/EUR 等 3 位大写）→ "1,234.56 USD"（金额精度，不抹小数）；计数 → "4 笔"。
      */
     static String renderDisplay(BigDecimal value, String unit) {
         DecimalFormat money = new DecimalFormat("#,##0.00");
@@ -171,6 +172,9 @@ public class FactBuildStep {
         if ("percent".equals(unit)) {
             BigDecimal p = value.setScale(1, RoundingMode.HALF_UP);
             return (p.signum() > 0 ? "+" : "") + p.toPlainString() + "%";
+        }
+        if (unit != null && unit.matches("[A-Z]{3}")) {
+            return money.format(value.setScale(2, RoundingMode.HALF_UP)) + " " + unit;
         }
         return value.setScale(0, RoundingMode.HALF_UP).toPlainString() + " " + unit;
     }

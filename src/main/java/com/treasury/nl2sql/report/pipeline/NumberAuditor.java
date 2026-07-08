@@ -29,9 +29,9 @@ public final class NumberAuditor {
     private static final Pattern WHITELIST = Pattern.compile(
             "\\d{4}-\\d{2}-\\d{2}|\\d{4}-W\\d{2}|(?<![\\w-])W\\d{1,2}|第\\s*\\d{1,2}\\s*周|\\d{4}\\s*年");
     private static final Pattern BARE_NUMBER = Pattern.compile("[-+]?\\d[\\d,]*(?:\\.\\d+)?\\s*(?:%|万亿|亿|万)?");
-    /** 终稿里的「数值[fact_xxx]」对（由程序替换产生，格式已知）。 */
+    /** 终稿里的「数值[fact_xxx]」对（由程序替换产生，格式已知；[A-Z]{3} 为外币码如 USD）。 */
     private static final Pattern RENDERED = Pattern.compile(
-            "([-+]?[\\d,]+(?:\\.\\d+)?)\\s*(%|万元|元|笔|个|户|单|项)?\\[(fact_[A-Za-z0-9_]+)\\]");
+            "([-+]?[\\d,]+(?:\\.\\d+)?)\\s*(%|万元|元|笔|个|户|单|项|[A-Z]{3})?\\[(fact_[A-Za-z0-9_]+)\\]");
 
     /** 检查1：草稿禁数扫描 + 占位符引用校验。返回违规清单（空=通过）。 */
     public static List<String> checkDraft(String draft, Map<String, FactRecord> facts) {
@@ -138,6 +138,10 @@ public final class NumberAuditor {
                 return new Parsed(raw, new BigDecimal("0.005"));
             }
             return null;
+        }
+        // 外币码（USD/EUR 等）：单位须一致，金额展示 2 位小数 → 容差半个末位
+        if (factUnit != null && factUnit.matches("[A-Z]{3}")) {
+            return factUnit.equals(unitText) ? new Parsed(raw, new BigDecimal("0.005")) : null;
         }
         // 计数类：单位须与 fact 单位一致（笔/个/户/单/项）
         if (!unitText.equals(factUnit)) {
