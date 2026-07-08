@@ -1,15 +1,18 @@
 -- =====================================================================
--- NL2MQL2SQL 演示库初始化脚本（treasury 资金示例数据）
+-- 演示业务库初始化脚本（treasury 资金示例数据，本项目库名 reportbi）
 -- 用法：
 --   mysql -h127.0.0.1 -P23306 -uroot -p < db/init.sql
--- 说明：可重复执行（先 DROP 再建）。
+-- 说明：可重复执行（先 DROP 再建）。⚠️ 重复执行会清空并重灌全部业务表，
+--   且 caliber_asset（口径资产沉淀）也会被清空——已有演示环境慎重。
+--   · 源自 nl2mql2sqlDemo 的同名脚本（彼处库名 chatbi），本文件已改为本项目的 reportbi。
 --   · 核心三表（account / cash_transaction / currency_rate）：金标准评估依赖，勿改。
 --   · 末尾「司库域扩展表」：20 张表 + 多跳外键链，用于验证 Schema Linking 的
 --     Top-K 裁剪、多跳 FK 闭包（fk-hops≥2）与同义召回（≥20 表规模）。
+--   · 报告流水线的状态表与资产表不在本文件：另见 report-tables.sql / asset-tables.sql。
 -- =====================================================================
 
-CREATE DATABASE IF NOT EXISTS chatbi DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-USE chatbi;
+CREATE DATABASE IF NOT EXISTS reportbi DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE reportbi;
 SET NAMES utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 0;

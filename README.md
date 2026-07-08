@@ -49,9 +49,13 @@ LLM 正文里所有数值只能写 `{{fact_key}}` 占位符（例外：日期、
 
 前置与 `nl2mql2sqlDemo` 完全一致：JDK 17+（建议 21）、MySQL（默认 `127.0.0.1:23306`）、
 LLM 与 embedding 密钥在 `src/main/resources/application-local.yml`（已 gitignore）。
-本项目连 **reportbi** 库（chatbi 的副本，见 `application.yml` 的 `DB_NAME:reportbi`）。
+本项目连 **reportbi** 库（见 `application.yml` 的 `DB_NAME:reportbi`）。
 
 ```bash
+# 0) 建业务库（首次/新环境；建库 reportbi 并灌入 23 张业务表与演示种子数据。
+#    ⚠️ 可重复执行=DROP 重建，会清空业务表与 caliber_asset 口径沉淀，已有环境慎重）
+mysql -h127.0.0.1 -P23306 -uroot -p < db/init.sql
+
 # 1) 建流水线状态表（可重复执行；DROP 重建=清空全部运行记录）
 mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/report-tables.sql
 
