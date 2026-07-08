@@ -2,6 +2,7 @@ package com.treasury.nl2sql.report.api;
 
 import com.treasury.nl2sql.report.asset.ReportTemplateDef;
 import com.treasury.nl2sql.report.asset.TemplateAdminService;
+import com.treasury.nl2sql.report.asset.TemplateDraftService;
 import com.treasury.nl2sql.report.asset.TemplateAdminService.NotFoundException;
 import com.treasury.nl2sql.report.asset.TemplateAdminService.ValidationFailedException;
 import com.treasury.nl2sql.report.asset.TemplateValidator.ValidationError;
@@ -30,10 +31,21 @@ public class TemplateAdminController {
     /** 写请求体：模板定义 + 操作人 + 版本备注。 */
     public record SaveRequest(ReportTemplateDef template, String createdBy, String remark) {}
 
-    private final TemplateAdminService service;
+    /** AI 起草请求体。 */
+    public record DraftRequest(String description, String createdBy) {}
 
-    public TemplateAdminController(TemplateAdminService service) {
+    private final TemplateAdminService service;
+    private final TemplateDraftService draftService;
+
+    public TemplateAdminController(TemplateAdminService service, TemplateDraftService draftService) {
         this.service = service;
+        this.draftService = draftService;
+    }
+
+    /** AI 起草：一句话场景描述 → 模板草案（不落库，前端载入编辑器人工调整后走保存）。 */
+    @PostMapping("/draft")
+    public TemplateDraftService.DraftResult draft(@RequestBody DraftRequest req) {
+        return draftService.draft(req.description());
     }
 
     @GetMapping
