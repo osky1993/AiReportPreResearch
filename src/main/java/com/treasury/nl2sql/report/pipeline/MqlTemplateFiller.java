@@ -13,6 +13,10 @@ import java.util.Map;
  */
 public final class MqlTemplateFiller {
 
+    /** 哨兵日期（启动自检与指标保存链共用，防两处漂移）：填充后能过校验即模板健康。 */
+    public static final Map<String, String> SENTINEL_PARAMS =
+            Map.of("period_start", "2026-06-22", "period_end", "2026-06-28");
+
     private MqlTemplateFiller() {}
 
     public static Mql fill(ObjectMapper mapper, String metricId, JsonNode template, Map<String, String> params) {

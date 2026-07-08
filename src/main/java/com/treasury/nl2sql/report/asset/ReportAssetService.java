@@ -210,8 +210,7 @@ public class ReportAssetService {
         if (m.valueColumn() == null || m.valueColumn().isBlank()) {
             throw new IllegalStateException("指标「" + m.metricId() + "」缺少 valueColumn");
         }
-        Map<String, String> sentinel = Map.of("period_start", "2026-06-22", "period_end", "2026-06-28");
-        Mql mql = MqlTemplateFiller.fill(mapper, m.metricId(), m.mqlTemplate(), sentinel);
+        Mql mql = MqlTemplateFiller.fill(mapper, m.metricId(), m.mqlTemplate(), MqlTemplateFiller.SENTINEL_PARAMS);
         List<String> errors = validator.validate(mql);
         if (!errors.isEmpty()) {
             throw new IllegalStateException("指标「" + m.metricId() + "」的 MQL 模板未通过校验: " + errors);
