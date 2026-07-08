@@ -1,0 +1,22 @@
+{
+  "templateId": "treasury-flash",
+  "name": "资金快报",
+  "keywords": ["快报", "资金快报", "资金速览", "流动性快报", "头寸速览"],
+  "chapters": [
+    {
+      "chapterId": "flash_position",
+      "title": "一、头寸速览",
+      "metrics": ["cny_total_balance", "deposit_balance", "active_account_count"],
+      "comparison": null,
+      "guidance": "用 2~3 句话速览当前资金头寸：人民币总余额、定期存款与活跃账户规模。只引用提供给本章的事实，不展开分析。"
+    },
+    {
+      "chapterId": "flash_cashflow",
+      "title": "二、当期收支",
+      "metrics": ["week_inflow_amount_cny", "week_outflow_amount_cny", "week_net_inflow_cny"],
+      "comparison": "week_over_week",
+      "guidance": "陈述本期资金流入、流出与净流入及其环比变化，突出净流入方向。",
+      "stylePrompt": "电报式短句，每句不超过 20 字，不使用修饰性形容词。"
+    }
+  ]
+}
