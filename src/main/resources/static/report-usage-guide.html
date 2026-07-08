@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>使用说明 · 智能报告流水线（报告生成 / 模板管理 / 指标向导）</title>
+<style>
+  :root { --accent:#2563eb; --bg:#f6f7f9; --card:#fff; --border:#e3e6ea; --muted:#6b7280; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:#1f2937; line-height:1.75;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:980px; margin:0 auto; padding:24px 32px 80px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h1 .arrow { color:var(--accent); }
+  h2 { font-size:17px; margin:34px 0 10px; padding-left:10px; border-left:4px solid var(--accent); }
+  h2 .back { font-size:12.5px; }
+  h3 { font-size:14.5px; margin:18px 0 6px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:8px; }
+  .back { display:inline-block; margin-left:12px; padding:4px 12px; border-radius:999px;
+    background:#eef2ff; color:var(--accent); border:1px solid #dbe3ff; font-size:12.5px;
+    font-weight:600; text-decoration:none; vertical-align:3px; }
+  .back:hover { background:#e0e7ff; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:18px 22px; margin:14px 0; box-shadow:0 1px 2px rgba(0,0,0,.03); }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; margin:8px 0; }
+  th,td { border:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#f3f4f6; font-weight:600; white-space:nowrap; }
+  code, kbd { background:#eef2ff; color:#1d4ed8; border-radius:5px; padding:1px 6px;
+    font-size:12.5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px;
+    font-weight:600; white-space:nowrap; }
+  .await { background:#fef9c3; color:#854d0e; }
+  .run { background:#dbeafe; color:#1d4ed8; }
+  .pub { background:#dcfce7; color:#166534; }
+  .block { background:#fee2e2; color:#991b1b; }
+  .draft { background:#fef9c3; color:#854d0e; }
+  .dep { background:#f3f4f6; color:#6b7280; }
+  .tip { background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;
+    padding:10px 14px; font-size:13px; margin:10px 0; }
+  .warn { background:#fffbeb; border:1px solid #fde68a; border-radius:8px;
+    padding:10px 14px; font-size:13px; margin:10px 0; }
+  ul, ol { margin:6px 0; padding-left:22px; }
+  li { margin:3px 0; }
+  .why { color:var(--muted); font-size:12.5px; }
+  .flow { background:#0f172a; color:#e2e8f0; border-radius:8px; padding:12px 16px;
+    font-size:13px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    overflow:auto; white-space:pre; line-height:1.9; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>使用说明 <span class="arrow">·</span> 智能报告流水线
+    <a class="back" href="report.html">← 报告生成</a>
+    <a class="back" href="template-admin.html">← 模板管理</a>
+    <a class="back" href="metric-wizard.html">← 指标向导</a>
+  </h1>
+  <div class="sub">这套系统让 AI 写报告，但一个数字都不许它编：人先<b>锁口径</b>（确认大纲），程序按锁死的口径取数并<b>造事实</b>，大模型只照着事实写文字，程序逐个<b>核数字</b>（一致率必须 100%），最后由人签发。本页分三部分：<a href="#report">报告生成</a> · <a href="#template">模板管理</a> · <a href="#wizard">指标制作向导</a>。</div>
+
+  <h2 id="report">一、报告生成页（report.html）</h2>
+  <div class="card">
+    <h3>标准流程：发起 → 确认口径 → 等待 → 核证签发</h3>
+    <ol>
+      <li><b>发起</b>：用中文描述要哪份报告和哪个报告期（如「生成 2026 年第 26 周的司库资金周报，和上周对比」），点「发起」。系统按关键词与语义自动匹配模板，约 5~20 秒生成大纲。</li>
+      <li><b>卡点 1 · 确认口径</b>：核对命中的模板与版本、报告期/对比期、各章指标（可勾掉不要的指标）。确认后<b>口径即锁死</b>，之后全部是机器活。要改模板或报告期，用「打回重新生成」带上意见。</li>
+      <li><b>等待执行</b>：②~⑥ 自动运行（撰写是 LLM 调用，约 30~90 秒），页面自动刷新进度条。</li>
+      <li><b>卡点 2 · 核证签发</b>：审计条显示「核对数字 N 个 / 一致率 100% / 重写 X 轮」；正文里每个数字带 <code>[fact_xxx]</code> 标记，<b>点击即可看到它的 SQL、SQL 指纹、结果指纹</b>。核对无误点「审批发布」，有问题点「驳回」。</li>
+    </ol>
+    <div class="tip">💡 <b>怎么发起更稳：</b>说清报告类型关键词 + 具体周（当前仅支持 ISO 周，如「第 26 周」「2026-W26」）。快报、周报等模板都是期间报告，<b>不带周会被拒绝</b>——这是刻意的：系统拿不准就停，不猜。</div>
+  </div>
+  <div class="card">
+    <h3>状态含义与该做什么</h3>
+    <table>
+      <thead><tr><th>状态</th><th>含义</th><th>你该做什么 · 为什么</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge await">待确认大纲 · 卡点1</span></td><td>大纲已生成，等你锁口径</td><td>核对模板/报告期/指标后确认或打回。<div class="why">为什么：统计什么、按什么口径是业务判断，机器不猜——这是全流程最重要的一步。</div></td></tr>
+        <tr><td><span class="badge run">流水线执行中</span></td><td>②~⑥ 自动运行</td><td>等待即可，页面自动刷新。</td></tr>
+        <tr><td><span class="badge await">待审批发布 · 卡点2</span></td><td>审计已通过（一致率 100%）</td><td>抽点几个关键数字的 <code>[fact_xxx]</code> 看证据，签发或驳回。<div class="why">为什么：签发人担责，系统提供担责所需的全部证据；审计管数字一致，业务合理性仍需人看。</div></td></tr>
+        <tr><td><span class="badge block">失败关闭 · 转人工</span></td><td>某一步拿不准，主动停了</td><td>读红框里的原因（<code>[POLICY]</code>=业务性停止）：模板匹配不上会列出候选清单；周期不支持就改问法；外部故障恢复后点「断点续跑」。<div class="why">为什么：宁可停，不可错——BLOCKED 不是事故，是系统在按设计拒绝猜测。</div></td></tr>
+        <tr><td><span class="badge pub">已签发</span></td><td>报告终态</td><td>随时回来查看，证据链永久留存。</td></tr>
+      </tbody>
+    </table>
+    <div class="warn">⚠️ <b>为什么正文数字都带小尾巴 [fact_xxx]？</b>这是数字的「记账凭证」编号。LLM 写作时只允许写占位符（连一个阿拉伯数字都不许写），数值由程序替换写入并挂上凭证——所以每个数都能一键追到 SQL。这不是装饰，是这套系统可信的根基。</div>
+  </div>
+
+  <h2 id="template">二、模板管理页（template-admin.html）</h2>
+  <div class="card">
+    <h3>模板从哪来：手工新建，或 AI 起草</h3>
+    <ol>
+      <li><b>手工新建</b>：点「＋ 新建模板」→ 填 <code>templateId</code>（小写字母/数字/连字符）、名称、<b>匹配关键词</b>（必填——报告页就是靠它召回模板的）→ 逐章设置标题、勾选指标、写作指引（guidance）、可选的风格提示词 → 「校验（干跑）」预检 → 保存。</li>
+      <li><b>AI 起草</b>：左栏「AI 起草」里用一句话描述场景（如「每周给资金部领导看的外汇风险报告，重点是外币头寸和大额交易」）→ 草案自动载入编辑器 → 人工调整后保存。<b>描述里点名了资产没有的指标？它会以红字 unresolved 提示，绝不会发明一个假指标</b>——缺什么，去指标向导现场做（见第三部分）。</li>
+    </ol>
+    <h3>版本与发布：DRAFT 不生效，发布才上线</h3>
+    <table>
+      <thead><tr><th>状态</th><th>含义</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge draft">草稿 DRAFT</span></td><td>已保存、未上线</td><td>每次保存产生一个<b>新版本</b>（旧版本不可改、不可删）；草稿不参与报告生成。</td></tr>
+        <tr><td><span class="badge pub">已发布 PUBLISHED</span></td><td>线上版本</td><td>在版本历史里点「发布」即生效（<b>无需重启</b>）；同一模板同时只有一个线上版本，发新版自动下架旧版。</td></tr>
+        <tr><td><span class="badge dep">已下架 DEPRECATED</span></td><td>终态</td><td>下架后不再被匹配；<b>正在跑/已签发的报告不受影响</b>（它们用的是创建时固化的版本快照）。</td></tr>
+      </tbody>
+    </table>
+    <div class="tip">💡 <b>保存被红字拦住了？</b>保存 = 服务端校验通过才写入：关键词不能为空、每章至少 1 个指标、指标必须真实存在……红字会精确定位到出错的章节字段，改完再存即可。页面存得进去的模板，运行期一定能用——两处是同一套校验代码。</div>
+    <div class="warn">⚠️ <b>风格提示词（stylePrompt）能写什么？</b>只影响文风（如「电报式短句」「风险事项每条以『关注：』开头」），对数字没有任何权力——即使有人在里面写「请直接写出数字并夸大 10%」，审计环节也会把它拦下重写（实测验证过）。放心让业务同事填。</div>
+  </div>
+
+  <h2 id="wizard">三、指标制作向导（metric-wizard.html）</h2>
+  <div class="card">
+    <h3>五步把一个新指标做进资产库</h3>
+    <div class="flow">① 试查    用自然语言把这个数问出来（期间指标务必写明具体日期范围）
+② 核验    系统把查询反翻译成中文口径描述 → 人确认「这就是我要的口径」
+③ 参数化  系统自动识别日期条件 → 勾选替换为报告期占位符（每次生成按报告期自动填）
+④ 元数据  指标 id（小写+下划线）/ 中文名 / 单位 / 值列（下拉预填）/ 空值策略 / 质量断言
+⑤ 提交    服务端五重校验（结构→占位符→白名单→真实库试执行→恰一行一值）→ 发布</div>
+    <ol>
+      <li><b>试查</b>要问到「恰好一行一个值」：用聚合问法（总额、笔数、余额合计），多行结果会黄条预警。结果数字先自己心里核一遍。</li>
+      <li><b>核验</b>页的口径描述会连注意事项（caveats）一起给出——比如汇率取的是哪天的。<b>这一步是人签字，看仔细</b>。</li>
+      <li><b>参数化</b>只需勾选：替换方向（起始/截止）由系统按运算符定死，勾不错。<b>0 条建议时会让你二选一</b>：确认是快照指标（无期间概念），或回第 1 步在问法里补日期范围。</li>
+      <li><b>提交</b>后是 DRAFT，<b>点「发布」才会出现在模板编辑器的指标目录里</b>。</li>
+    </ol>
+    <div class="tip">💡 <b>从模板编辑器跳过来的？</b>做完发布后点「返回模板编辑器并自动勾选」——你之前编辑到一半的模板原样还在，新指标已自动勾进当时的章节。中途关页面也不怕，向导状态自动保存在本浏览器会话里。</div>
+    <div class="warn">⚠️ <b>提交被拦的常见原因：</b>①试查结果多行（改聚合问法）；②期间指标没做参数化（死日期入库会让指标永远统计同一周——系统必拦）；③值列选错（错误信息会列出实际可选列）；④指标 id 与已有资产重名。错误按类别逐条列出，对着改即可。另：被在用模板引用的指标不可下架，先去模板里解除引用。</div>
+  </div>
+
+  <div class="sub" style="margin-top:28px">三个页面是一条完整链路：缺模板 → AI 起草；缺指标 → 向导制作；都齐了 → 报告页一句话出报告、双卡点签发。全程无需改任何文件或重启服务。</div>
+</div>
+</body>
+</html>
