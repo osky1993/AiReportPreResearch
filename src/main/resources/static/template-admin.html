@@ -9,12 +9,12 @@
       --ok:#059669;--warn:#d97706;--bad:#dc2626;--violet:#7c3aed;}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
-.wrap{max-width:1280px;margin:0 auto;padding:20px}
+.wrap{max-width:1760px;margin:0 auto;padding:24px 32px}
 header{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
 header h1{font-size:20px}
 header .sub{color:var(--muted);font-size:12px}
 header a{margin-left:auto;color:var(--accent);text-decoration:none;font-size:12px}
-.grid{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
+.grid{display:grid;grid-template-columns:460px minmax(0,1fr);gap:18px;align-items:start}
 @media(max-width:900px){.grid{grid-template-columns:1fr}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
 .card h2{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
