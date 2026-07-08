@@ -57,7 +57,7 @@ public class FetchStep {
         for (MetricQuerySpec spec : specs) {
             MetricDefinition def = assets.metric(spec.metricId())
                     .orElseThrow(() -> new PolicyException("指标「" + spec.metricId() + "」没有语义定义"));
-            if (def.isDerived()) {
+            if (def.isDerivedMetric()) {
                 throw new PolicyException("派生指标「" + spec.metricId() + "」不应出现在取数规约中（应由 ④ 程序计算）");
             }
             Map<String, String> params = new HashMap<>();

@@ -24,6 +24,9 @@ public class OutlineStep {
 
     private static final Logger log = LoggerFactory.getLogger(OutlineStep.class);
 
+    /** 过渡态（P1-T2~T3）：注册表已多模板化，但匹配器未接入前仍钉在周报模板上；P1-T4 由 TemplateMatcher 接管。 */
+    private static final String PINNED_TEMPLATE_ID = "treasury-weekly";
+
     private final LlmClient llm;
     private final ReportAssetService assets;
     private final ObjectMapper mapper;
@@ -49,7 +52,7 @@ public class OutlineStep {
             throw new PolicyException(node.path("reason").asText("需求无法匹配任何报告模板"));
         }
         String templateId = node.path("templateId").isTextual() ? node.path("templateId").asText() : null;
-        ReportTemplateDef tpl = assets.template();
+        ReportTemplateDef tpl = pinnedTemplate();
         if (!tpl.templateId().equals(templateId)) {
             throw new PolicyException("无法从需求中识别报告模板（模型输出: " + templateId
                     + "，当前仅支持「" + tpl.name() + "」" + tpl.templateId() + "）");
@@ -90,8 +93,13 @@ public class OutlineStep {
         }
     }
 
+    private ReportTemplateDef pinnedTemplate() {
+        return assets.template(PINNED_TEMPLATE_ID)
+                .orElseThrow(() -> new IllegalStateException("注册表中缺少模板: " + PINNED_TEMPLATE_ID));
+    }
+
     private String systemPrompt() {
-        ReportTemplateDef tpl = assets.template();
+        ReportTemplateDef tpl = pinnedTemplate();
         StringBuilder chapterLines = new StringBuilder();
         for (ReportTemplateDef.ChapterDef c : tpl.chapters()) {
             chapterLines.append("  - ").append(c.title()).append("（推荐指标: ")

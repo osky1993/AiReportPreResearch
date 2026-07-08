@@ -1,6 +1,7 @@
 package com.treasury.nl2sql.report.asset;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.List;
 
@@ -9,6 +10,7 @@ import java.util.List;
  * 不做模板库平台——单模板、静态文件、启动加载。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)   // 入库 body_json 不带 null 字段（comparison/stylePrompt 可空）
 public record ReportTemplateDef(
         String templateId,
         String name,

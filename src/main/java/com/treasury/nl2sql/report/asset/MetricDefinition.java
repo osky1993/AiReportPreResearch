@@ -1,6 +1,8 @@
 package com.treasury.nl2sql.report.asset;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.List;
@@ -18,6 +20,7 @@ import java.util.List;
  * @param qualityChecks 质量断言清单：NON_NEGATIVE（负值即失败关闭）
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)   // 入库 body_json 不带 null 字段（否则 mqlTemplate:null 会回读成 NullNode）
 public record MetricDefinition(
         String metricId,
         String name,
@@ -38,7 +41,9 @@ public record MetricDefinition(
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Derived(String op, String left, String right) {}
 
-    public boolean isDerived() {
+    /** 命名避开 record 组件 derived 的属性名，配合 JsonIgnore 防止污染入库的 body_json。 */
+    @JsonIgnore
+    public boolean isDerivedMetric() {
         return derived != null;
     }
 }

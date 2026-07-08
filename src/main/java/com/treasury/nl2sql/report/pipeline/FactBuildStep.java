@@ -66,7 +66,7 @@ public class FactBuildStep {
         for (Outline.OutlineChapter ch : outline.chapters()) {
             for (String metricId : ch.metricIds()) {
                 MetricDefinition def = metricDefs.get(metricId);
-                if (def == null || !def.isDerived() || byMetric.containsKey(metricId)) continue;
+                if (def == null || !def.isDerivedMetric() || byMetric.containsKey(metricId)) continue;
                 Map<String, FactRecord> left = byMetric.get(def.derived().left());
                 Map<String, FactRecord> right = byMetric.get(def.derived().right());
                 if (left == null || right == null) {

@@ -41,11 +41,11 @@ public class SpecResolveStep {
                             + "」映射不到语义定义（确认过的大纲不应包含未知指标）");
                 }
                 boolean wantCompare = ch.comparison() != null && def.comparable();
-                if (def.isDerived()) {
+                if (def.isDerivedMetric()) {
                     // 派生指标自身不取数；操作数补进取数清单
                     for (String operand : List.of(def.derived().left(), def.derived().right())) {
                         MetricDefinition dep = defs.get(operand);
-                        if (dep == null || dep.isDerived()) {
+                        if (dep == null || dep.isDerivedMetric()) {
                             throw new PolicyException("派生指标「" + metricId + "」的操作数「" + operand
                                     + "」不存在或不是取数指标");
                         }

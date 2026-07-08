@@ -101,7 +101,7 @@ public class ReportController {
     /** 支撑资产视图：模板 + 指标语义定义（演示页「资产」页签 / 调试）。 */
     @GetMapping("/assets")
     public Map<String, Object> assets() {
-        return Map.of("template", assets.template(), "metrics", assets.allMetrics().values());
+        return Map.of("templates", assets.allTemplates(), "metrics", assets.allMetrics().values());
     }
 
     private RunDetail detail(long runId) {
