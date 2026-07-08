@@ -16,8 +16,9 @@ public record ReportTemplateDef(
         List<ChapterDef> chapters) {
 
     /**
-     * @param comparison 本章是否要求环比对比（week_over_week / null）
-     * @param guidance   给 ⑤ 撰写 LLM 的本章写作指引
+     * @param comparison  本章是否要求环比对比（week_over_week / null）
+     * @param guidance    给 ⑤ 撰写 LLM 的本章写作指引
+     * @param stylePrompt 本章风格提示词（P1 仅预留存储，P4 起由 WriteStep 注入 user 段；可空）
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ChapterDef(
@@ -25,5 +26,6 @@ public record ReportTemplateDef(
             String title,
             List<String> metrics,
             String comparison,
-            String guidance) {}
+            String guidance,
+            String stylePrompt) {}
 }

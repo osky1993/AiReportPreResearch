@@ -27,8 +27,8 @@ llm:
 # 要分析的业务库（schema 自动反射自该库）
 schema:
   database: reportbi
-  # 元数据表排除：这些表不进入 NL2SQL 的表白名单与 prompt schema（口径资产表 + 报告流水线状态表）
-  exclude-tables: ${SCHEMA_EXCLUDE_TABLES:caliber_asset,report_run,report_step,report_fact}
+  # 元数据表排除：这些表不进入 NL2SQL 的表白名单与 prompt schema（口径资产表 + 报告流水线状态表 + 报告资产表）
+  exclude-tables: ${SCHEMA_EXCLUDE_TABLES:caliber_asset,report_run,report_step,report_fact,report_template,report_metric}
   linking:
     mode: ${SCHEMA_LINKING_MODE:vector}   # full=全量注入 | vector=向量召回TopK
     top-k: ${SCHEMA_LINKING_TOP_K:6}       # 向量召回的表数量（再加外键闭包补全）；表多时需调大避免裁掉正确表

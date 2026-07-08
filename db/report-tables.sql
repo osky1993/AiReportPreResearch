@@ -15,6 +15,7 @@ CREATE TABLE report_run (
   run_id         BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '运行ID（report_run_id）',
   request_text   TEXT NOT NULL COMMENT '原始自然语言需求',
   template_id    VARCHAR(64) COMMENT '命中的报告模板ID',
+  template_version INT COMMENT '命中模板的固化版本号（创建 run 时锁定，resume 不追新版）',
   period_label   VARCHAR(16) COMMENT '报告期标签 如 2026-W26',
   period_start   DATE COMMENT '报告期起（程序由标签推导）',
   period_end     DATE COMMENT '报告期止',
