@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 报告资产注册表：模板与指标以库（report_template / report_metric）为唯一事实源，
@@ -161,25 +162,12 @@ public class ReportAssetService {
         }
     }
 
+    /** 与保存/validate 端点共用 TemplateValidator 规则，任何错误即启动失败。 */
     private void checkTemplate(ReportTemplateDef tpl, Map<String, MetricDefinition> catalog) {
-        if (tpl.templateId() == null || tpl.templateId().isBlank()) {
-            throw new IllegalStateException("模板缺少 templateId: " + tpl.name());
-        }
-        if (tpl.keywords() == null || tpl.keywords().isEmpty()
-                || tpl.keywords().stream().anyMatch(k -> k == null || k.isBlank())) {
-            throw new IllegalStateException("模板「" + tpl.templateId()
-                    + "」keywords 为空或含空串（运行期匹配召回依赖，资产治理要求必填）");
-        }
-        if (tpl.chapters() == null || tpl.chapters().isEmpty()) {
-            throw new IllegalStateException("模板「" + tpl.templateId() + "」没有任何章节");
-        }
-        for (ReportTemplateDef.ChapterDef ch : tpl.chapters()) {
-            for (String id : ch.metrics()) {
-                if (!catalog.containsKey(id)) {
-                    throw new IllegalStateException("模板「" + tpl.templateId() + "」章节「"
-                            + ch.chapterId() + "」引用了不存在的指标: " + id);
-                }
-            }
+        List<TemplateValidator.ValidationError> errors = TemplateValidator.validate(tpl, catalog.keySet());
+        if (!errors.isEmpty()) {
+            throw new IllegalStateException("模板「" + (tpl == null ? "?" : tpl.templateId()) + "」未通过校验: "
+                    + errors.stream().map(e -> e.location() + " " + e.message()).collect(Collectors.joining("；")));
         }
     }
 
