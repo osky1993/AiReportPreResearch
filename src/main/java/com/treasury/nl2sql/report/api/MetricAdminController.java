@@ -3,6 +3,7 @@ package com.treasury.nl2sql.report.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.treasury.nl2sql.report.asset.MetricAdminService;
 import com.treasury.nl2sql.report.asset.MetricDefinition;
+import com.treasury.nl2sql.report.asset.MetricWizardService;
 import com.treasury.nl2sql.report.asset.TemplateAdminService.NotFoundException;
 import com.treasury.nl2sql.report.asset.TemplateAdminService.ValidationFailedException;
 import com.treasury.nl2sql.report.pipeline.MqlParameterizer;
@@ -33,12 +34,31 @@ public class MetricAdminController {
     public record StatusRequest(int version) {}
     public record ParameterizeRequest(JsonNode mql, List<String> apply) {}
 
+    public record TryRequest(String question) {}
+    public record ExplainRequest(JsonNode mql) {}
+
     private final MetricAdminService service;
+    private final MetricWizardService wizard;
     private final MqlParameterizer parameterizer;
 
-    public MetricAdminController(MetricAdminService service, MqlParameterizer parameterizer) {
+    public MetricAdminController(MetricAdminService service, MetricWizardService wizard,
+                                 MqlParameterizer parameterizer) {
         this.service = service;
+        this.wizard = wizard;
         this.parameterizer = parameterizer;
+    }
+
+    // ---------- 向导第 1/2 步：试查与口径反翻译 ----------
+
+    /** 试查：走引擎自由生成路径（资产制作期工具）；引擎失败沿 /api/query 惯例 200 + success=false。 */
+    @PostMapping("/try")
+    public MetricWizardService.TryResult tryQuery(@RequestBody TryRequest req) {
+        return wizard.tryQuery(req.question());
+    }
+
+    @PostMapping("/explain")
+    public MetricWizardService.ExplainResult explain(@RequestBody ExplainRequest req) {
+        return wizard.explain(req.mql());
     }
 
     // ---------- 资产 CRUD 与状态流转 ----------
