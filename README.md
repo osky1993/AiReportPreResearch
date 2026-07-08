@@ -4,7 +4,7 @@
 **报告生成 6 步流水线编排层**，做出「锁口径(人) → 结构化取数(引擎) → 程序造事实 →
 LLM 只照着事实写 → 程序核数字 → 人签发」的最小可信闭环。
 
-- 演示场景：**司库资金周报**（reportbi 库，种子数据覆盖 2026-05-12 ~ 06-30，推荐报告期 2026-W26）
+- 演示场景：**司库资金周报** + **资金快报**（多模板按需求自动匹配；reportbi 库，种子数据覆盖 2026-05-12 ~ 06-30，推荐报告期 2026-W26）
 - 演示页：启动后打开 **http://localhost:8080/report.html**（原查询引擎演示页仍在 `/`）
 - 设计文档：`ideaV2-核心路径.md`（主线）、`ideaV2.md`（全量）、`ideaV2-业务版说明.md`（业务版）
 
@@ -55,12 +55,16 @@ LLM 与 embedding 密钥在 `src/main/resources/application-local.yml`（已 git
 # 1) 建流水线状态表（可重复执行；DROP 重建=清空全部运行记录）
 mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/report-tables.sql
 
-# 2) 启动（启动即做资产自检：模板引用完整性 + 16 个指标 MQL 模板全量过校验器）
+# 1b) 建资产表（可重复执行；CREATE IF NOT EXISTS，禁止 DROP 重建——版本行不可变）
+mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/asset-tables.sql
+
+# 2) 启动（空库自动种入 classpath 种子：2 个模板 + 16 个指标，PUBLISHED v1；
+#    随后全量自检：模板引用完整性 + keywords 非空 + 指标 MQL 模板过校验器）
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)
-mvn -q spring-boot:run          # 看到「报告资产已加载并自检通过」即就绪
+mvn -q spring-boot:run          # 看到「报告资产注册表就绪」即就绪；再次启动不重复种入
 
 # 3) 单测（流水线相关均为纯逻辑，无需 DB/LLM）
-mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,NumberAuditorTest'
+mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,NumberAuditorTest,TemplateMatcherTest'
 ```
 
 ## 三、演示脚本（评审用）
@@ -74,7 +78,11 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
 3. **卡点2**：审计条显示「核对数字 N 个 / 一致率 100% / 重写 X 轮」；报告正文里每个数字点击
    `[fact_xxx]` 跳到证据表，展开可见该数字的 **SQL、sql_hash、result_hash、MetricQuerySpec**；
    核对无误后「审批发布」。
-4. **失败关闭演练**：
+4. **多模板匹配**：输入「出一份 2026 年第 26 周的资金快报」→ 命中「资金快报」模板（2 章）
+   出报告（快报指标多为期间指标，话术须带周标签，否则报告期解析失败关闭）。
+5. **失败关闭演练**：
+   - 输入「生成 HR 月度盘点」→ ① 即 BLOCKED（`[POLICY]`），blocked_reason 列出全部
+     可用模板候选清单（匹配不到不猜，转人工）。
    - 输入「生成 2026 年 6 月的资金月报」→ ① 即 BLOCKED（`[POLICY]`，当前仅支持周报）；
      在 BLOCKED 面板填打回意见「改为第 25 周的周报」→ 重新生成大纲（attempt 留痕）。
    - 把 `metrics.json` 某占位符改错（如 `{{period_strat}}`）再启动 → **启动即失败**（资产自检兜底）。
@@ -105,7 +113,7 @@ curl -s localhost:8080/api/report/runs/1/publish/approve -H 'Content-Type: appli
 | POST | `/runs/{id}/publish/reject` | 卡点2 驳回（终态 REJECTED）|
 | POST | `/runs/{id}/resume` | 断点续跑（仅 BLOCKED 或停摆超 2 分钟的 RUNNING）|
 | GET | `/runs/{id}/facts` | 证据视图：全部 FactRecord（含 SQL/双哈希/规约快照）|
-| GET | `/assets` | 支撑资产：模板 + 指标语义定义 |
+| GET | `/assets` | 支撑资产：全部 PUBLISHED 模板（templates 数组）+ 指标语义定义 |
 
 状态机（无框架，编排器 if/switch）：`AWAITING_OUTLINE_APPROVAL → RUNNING →
 AWAITING_PUBLISH_APPROVAL → PUBLISHED`；任一步失败 → `BLOCKED`；卡点2 驳回 → `REJECTED`。
@@ -115,9 +123,9 @@ AWAITING_PUBLISH_APPROVAL → PUBLISHED`；任一步失败 → `BLOCKED`；卡�
 | 位置 | 内容 |
 |---|---|
 | `domain/` | 两大契约 `MetricQuerySpec`/`FactRecord` + `Outline`/`AuditResult`/落库行 record + 状态枚举 |
-| `asset/` | `ReportAssetService`：加载 `resources/report/{metrics,template-treasury-weekly}.json` + 启动自检 |
-| `pipeline/` | 六步：`OutlineStep`(①LLM) `SpecResolveStep`(②) `FetchStep`(③) `FactBuildStep`(④) `WriteStep`(⑤LLM) `AuditStep`+`NumberAuditor`(⑥)；`ReportPipeline` 编排器（①同步、②~⑥守护线程异步、resume）；`PeriodResolver`/`MqlTemplateFiller`/`PolicyException` |
-| `store/` | 三仓库（JdbcTemplate，范式照 `CaliberRepository`）；建表脚本 `db/report-tables.sql` |
+| `asset/` | `ReportAssetService` 资产注册表：库（`report_template`/`report_metric`，版本化+状态）为唯一事实源，`resources/report/templates/*.json` + `metrics.json` 仅作空库幂等种子；启动全量自检 |
+| `pipeline/` | 六步：`OutlineStep`(①LLM，三段式匹配：`TemplateMatcher` 程序召回→LLM 候选内单选→服务端把关) `SpecResolveStep`(②) `FetchStep`(③) `FactBuildStep`(④) `WriteStep`(⑤LLM) `AuditStep`+`NumberAuditor`(⑥)；`ReportPipeline` 编排器（①同步、②~⑥守护线程异步、resume；run 固化 template_version）；`PeriodResolver`/`MqlTemplateFiller`/`PolicyException` |
+| `store/` | 三运行状态仓库 + 两资产仓库（JdbcTemplate，范式照 `CaliberRepository`）；建表脚本 `db/report-tables.sql`（状态表，可清零）+ `db/asset-tables.sql`（资产表，版本行不可变） |
 | `api/` | `ReportController`（上表端点；非法状态迁移→400）|
 | 前端 | `resources/static/report.html`（单文件 vanilla JS，双卡点 + 进度 + 证据钻取）|
 
@@ -126,9 +134,15 @@ AWAITING_PUBLISH_APPROVAL → PUBLISHED`；任一步失败 → `BLOCKED`；卡�
 
 ## 六、扩展指标 / 模板的路径
 
+资产以库为唯一事实源（Phase01 P2/P5 将提供页面化管理与制作向导）。当前扩展路径：
+
 1. 用首页 `/`（`/api/query`）以自然语言试出正确查询，人工核验其 MQL；
-2. 把 MQL 沉入 `metrics.json`（日期条件换成 `{{period_start}}/{{period_end}}` 占位符），
+2. 把 MQL 沉入 `resources/report/metrics.json`（日期条件换成 `{{period_start}}/{{period_end}}` 占位符），
    填 `valueColumn`（结果须恰 1 行 1 值）、`unit`、`timeBound`/`comparable`、`nullPolicy`、`qualityChecks`；
-3. 在 `template-treasury-weekly.json` 章节里挂上 metricId；
-4. 重启——启动自检不过会直接报错指出坏在哪个指标。
+3. 在 `resources/report/templates/` 下的模板章节里挂上 metricId（新模板 = 新增一个 JSON 文件，
+   `keywords` 必填——运行期匹配召回依赖）；
+4. 重启——种子按资产 id 幂等增量种入（库中已存在的 id 不覆盖，含 DEPRECATED：人为下架不会被
+   种子复活）；启动自检不过会直接报错指出坏在哪个资产。
+
+> 注意：种子只在「库中不存在该 id」时生效。改已入库资产请走库（P2 起走页面），改 JSON 文件对已种入的资产无效。
 派生指标（如净流入）不写 MQL，用 `"derived": {"op":"subtract","left":"...","right":"..."}`，由 ④ 程序计算。
