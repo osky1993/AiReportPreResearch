@@ -54,13 +54,13 @@ LLM 与 embedding 密钥在 `src/main/resources/application-local.yml`（已 git
 ```bash
 # 0) 建业务库（首次/新环境；建库 reportbi 并灌入 23 张业务表与演示种子数据。
 #    ⚠️ 可重复执行=DROP 重建，会清空业务表与 caliber_asset 口径沉淀，已有环境慎重）
-mysql -h127.0.0.1 -P23306 -uroot -p < db/init.sql
+mysql -h127.0.0.1 -P23306 -uroot -p < db/00-init.sql
 
 # 1) 建流水线状态表（可重复执行；DROP 重建=清空全部运行记录）
-mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/report-tables.sql
+mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/01-report-tables.sql
 
 # 1b) 建资产表（可重复执行；CREATE IF NOT EXISTS，禁止 DROP 重建——版本行不可变）
-mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/asset-tables.sql
+mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/02-asset-tables.sql
 
 # 2) 启动（空库自动种入 classpath 种子：2 个模板 + 16 个指标，PUBLISHED v1；
 #    随后全量自检：模板引用完整性 + keywords 非空 + 指标 MQL 模板过校验器）
@@ -215,7 +215,7 @@ publish 的「旧版下线+新版上线+缓存刷新」在服务层一个事务�
 | `domain/` | 两大契约 `MetricQuerySpec`/`FactRecord` + `Outline`/`AuditResult`/落库行 record + 状态枚举 |
 | `asset/` | `ReportAssetService` 资产注册表（库为唯一事实源，classpath 仅空库幂等种子，启动全量自检，`reload()` 热刷新）；`TemplateAdminService`/`MetricAdminService`（页面化 CRUD 与状态流转，保存=校验通过才写新版本 DRAFT）；`TemplateValidator`（保存/干跑/自检三处共用）；`TemplateDraftService`（AI 起草九步后处理链）；`MetricWizardService`（试查/口径反翻译） |
 | `pipeline/` | 六步：`OutlineStep`(①LLM，三段式匹配：`TemplateMatcher` 程序召回→LLM 候选内单选→服务端把关) `SpecResolveStep`(②) `FetchStep`(③) `FactBuildStep`(④) `WriteStep`(⑤LLM，章节 stylePrompt 注入 user 段) `AuditStep`+`NumberAuditor`(⑥)；`ReportPipeline` 编排器（①同步、②~⑥守护线程异步、resume；run 固化 template_version）；`MqlParameterizer`（向导第 3 步确定性参数化）/`MqlTrialExecutor`（保存链试执行）/`PeriodResolver`/`MqlTemplateFiller`/`PolicyException` |
-| `store/` | 三运行状态仓库 + 两资产仓库（JdbcTemplate，范式照 `CaliberRepository`）；建表脚本 `db/report-tables.sql`（状态表，可清零）+ `db/asset-tables.sql`（资产表，版本行不可变） |
+| `store/` | 三运行状态仓库 + 两资产仓库（JdbcTemplate，范式照 `CaliberRepository`）；建表脚本 `db/01-report-tables.sql`（状态表，可清零）+ `db/02-asset-tables.sql`（资产表，版本行不可变） |
 | `api/` | `ReportController`（流水线端点）、`TemplateAdminController`（模板管理+AI 起草）、`MetricAdminController`（指标管理+制作向导）；非法状态迁移→400 |
 | 前端 | `report.html`（双卡点+证据钻取）、`template-admin.html`（模板管理+AI 起草）、`metric-wizard.html`（指标五步向导），均单文件 vanilla JS |
 | 前端 | `resources/static/report.html`（单文件 vanilla JS，双卡点 + 进度 + 证据钻取）|

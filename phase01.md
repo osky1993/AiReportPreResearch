@@ -66,7 +66,7 @@ flowchart LR
 
 | 任务 | 内容 | 产出物 | 验证方式 |
 |---|---|---|---|
-| **P1-T0** 资产契约定稿 | 定 `report_template` / `report_metric` 两表 DDL（JSON 体 + template_id/metric_id + version + status[DRAFT/PUBLISHED/DEPRECATED] + created_by/at + remark）；定模板 JSON Schema（章节含 `stylePrompt` 预留字段）；定状态流转规则 | `db/asset-tables.sql` + 契约说明（追加进本文件附注或 README） | DDL 在 reportbi 手工执行成功；评审通过 |
+| **P1-T0** 资产契约定稿 | 定 `report_template` / `report_metric` 两表 DDL（JSON 体 + template_id/metric_id + version + status[DRAFT/PUBLISHED/DEPRECATED] + created_by/at + remark）；定模板 JSON Schema（章节含 `stylePrompt` 预留字段）；定状态流转规则 | `db/02-asset-tables.sql` + 契约说明（追加进本文件附注或 README） | DDL 在 reportbi 手工执行成功；评审通过 |
 
 ### 并行 A 轨：存储层
 
@@ -81,7 +81,7 @@ flowchart LR
 |---|---|---|---|
 | **P1-T3** 第二个种子模板 | 制作「资金快报」最小模板（2 章、复用现有指标即可），用于匹配测试 | `resources/report/templates/treasury-flash.json` | 启动自检通过 |
 | **P1-T4** 模板匹配改造 | `OutlineStep` 三段式：候选召回（keywords 命中 + embedding 相似度，复用引擎 EmbeddingClient）→ LLM 在候选 id 中单选 → 选不出/并列不清 → BLOCKED[POLICY] 且 blocked_reason 携带候选清单 | 改造后的 `OutlineStep`（+ `TemplateMatcher` 可独立单测） | 单测：关键词命中、embedding 召回排序、无候选 BLOCKED；「生成资金快报」命中 flash 模板 |
-| **P1-T5** run 落模板信息 | 创建 run 时固化 `template_id` + `template_version`（run 表加 `template_version` 列，入 `db/asset-tables.sql` 的 ALTER 段） | 迁移 SQL + 代码 | 查库确认 run 行记录了版本 |
+| **P1-T5** run 落模板信息 | 创建 run 时固化 `template_id` + `template_version`（run 表加 `template_version` 列，入 `db/02-asset-tables.sql` 的 ALTER 段） | 迁移 SQL + 代码 | 查库确认 run 行记录了版本 |
 
 ### 扎口
 

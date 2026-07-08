@@ -1,8 +1,8 @@
 -- =============================================================
 -- 报告资产表（Phase01 P1：模板与指标资产入库管理）
---   mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/asset-tables.sql
+--   mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/02-asset-tables.sql
 --
--- 与 report-tables.sql 的「DROP 重建=清零」语义相反：资产表长期存续，
+-- 与 01-report-tables.sql 的「DROP 重建=清零」语义相反：资产表长期存续，
 -- 禁止 DROP 重建——版本行一经写入不可变，被 run 引用过的版本永不物理删除。
 -- 本脚本可重复执行（CREATE IF NOT EXISTS + 守卫式 ALTER）。
 --
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS report_metric (
 ) COMMENT='指标语义定义资产表（版本化，行不可变）';
 
 -- ---------- ALTER 段：既有库升级 ----------
--- report_run 加 template_version（新装库由 report-tables.sql 的 CREATE 直接带上此列）。
+-- report_run 加 template_version（新装库由 01-report-tables.sql 的 CREATE 直接带上此列）。
 -- MySQL 8 不支持 ADD COLUMN IF NOT EXISTS，用 information_schema 守卫保证可重复执行。
 SET @ddl := (SELECT IF(COUNT(*) = 0,
   'ALTER TABLE report_run ADD COLUMN template_version INT NULL COMMENT ''命中模板的固化版本号（创建 run 时锁定，resume 不追新版）'' AFTER template_id',
