@@ -118,6 +118,34 @@ curl -s localhost:8080/api/report/runs/1/publish/approve -H 'Content-Type: appli
 状态机（无框架，编排器 if/switch）：`AWAITING_OUTLINE_APPROVAL → RUNNING →
 AWAITING_PUBLISH_APPROVAL → PUBLISHED`；任一步失败 → `BLOCKED`；卡点2 驳回 → `REJECTED`。
 
+### 模板管理 API（P2 契约，前缀 `/api/report`）
+
+资源模型：一个模板资产 = `templateId` + 多版本行（`report_template` 表，行不可变）。
+所有写操作 = 产生新版本或流转状态，绝无 UPDATE `body_json`。演示页：`template-admin.html`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/templates` | 列表（按 templateId 聚合：name/latestVersion/publishedVersion/latestStatus/source/updatedAt）|
+| POST | `/templates` | 新建：校验通过才写 **v1 DRAFT**，返回 201 |
+| GET | `/templates/{id}` | 详情：versions 版本历史 + published 定义（可 null）+ latest 定义 |
+| GET | `/templates/{id}/versions/{v}` | 指定版本完整定义（版本历史只读查看）|
+| PUT | `/templates/{id}` | 保存 = 校验通过才写**新版本 DRAFT**（body 内 templateId 须与路径一致）|
+| POST | `/templates/{id}/publish` | `{version}`：DRAFT→PUBLISHED；旧 PUBLISHED 自动置 DEPRECATED；刷新注册表与匹配向量缓存 |
+| POST | `/templates/{id}/deprecate` | `{version}`：DRAFT/PUBLISHED→DEPRECATED；下线即从运行匹配摘除（在跑 run 用快照不受影响）|
+| POST | `/templates/validate` | 干跑校验（不写库），前端保存前预检 |
+| GET | `/metrics/{id}/references` | 反向检查：指标被哪些 PUBLISHED 模板引用（P5 指标下架保护用）|
+
+统一错误结构（400=校验失败/非法流转，404=不存在）：
+`{"error": "总述", "details": [{"location": "chapters[1].metrics[0]", "message": "引用了不存在的指标: xxx"}]}`
+
+校验规则（保存与 validate 共用）：templateId 匹配 `^[a-z][a-z0-9-]{2,63}$`；name 非空；
+keywords 非空数组且无空串；chapters 非空、chapterId 唯一、**每章至少 1 个指标**；
+metricId 必须存在于 PUBLISHED 指标；comparison 只允许 null/week_over_week；
+guidance/stylePrompt 可空、单条 ≤1000 字。
+
+状态流转守卫：`DRAFT→PUBLISHED`、`DRAFT→DEPRECATED`、`PUBLISHED→DEPRECATED`，其余 400；
+publish 的「旧版下线+新版上线+缓存刷新」在服务层一个事务内完成。
+
 ## 五、代码地图（新增部分，包根 `com.treasury.nl2sql.report`）
 
 | 位置 | 内容 |
