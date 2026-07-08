@@ -59,6 +59,18 @@ abstract class VersionedAssetRepository {
                 + "FROM " + table + " WHERE status = 'PUBLISHED' ORDER BY " + idColumn, mapper);
     }
 
+    /** 全部版本行（管理列表用；按业务 id、版本号倒序）。 */
+    public List<AssetRow> findAll() {
+        return jdbc.query("SELECT id, " + idColumn + ", version, name, body_json, status, source, created_by, created_at, remark "
+                + "FROM " + table + " ORDER BY " + idColumn + ", version DESC", mapper);
+    }
+
+    /** 某业务 id 的全部版本行（版本历史；版本号倒序）。 */
+    public List<AssetRow> findByAssetId(String assetId) {
+        return jdbc.query("SELECT id, " + idColumn + ", version, name, body_json, status, source, created_by, created_at, remark "
+                + "FROM " + table + " WHERE " + idColumn + " = ? ORDER BY version DESC", mapper, assetId);
+    }
+
     /** 指定版本行（resume 追溯 / 版本历史查看）。 */
     public Optional<AssetRow> findByIdAndVersion(String assetId, int version) {
         List<AssetRow> rows = jdbc.query("SELECT id, " + idColumn + ", version, name, body_json, status, source, created_by, created_at, remark "
