@@ -2,11 +2,13 @@ package com.treasury.nl2sql.report.asset;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.treasury.nl2sql.report.asset.TemplateValidator.ValidationError;
+import com.treasury.nl2sql.report.pipeline.TemplateMatcher;
 import com.treasury.nl2sql.report.store.AssetRow;
 import com.treasury.nl2sql.report.store.TemplateAssetRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -50,11 +52,14 @@ public class TemplateAdminService {
 
     private final TemplateAssetRepository repo;
     private final ReportAssetService assets;
+    private final TemplateMatcher matcher;
     private final ObjectMapper mapper;
 
-    public TemplateAdminService(TemplateAssetRepository repo, ReportAssetService assets, ObjectMapper mapper) {
+    public TemplateAdminService(TemplateAssetRepository repo, ReportAssetService assets,
+                                TemplateMatcher matcher, ObjectMapper mapper) {
         this.repo = repo;
         this.assets = assets;
+        this.matcher = matcher;
         this.mapper = mapper;
     }
 
@@ -127,6 +132,54 @@ public class TemplateAdminService {
                 "DRAFT", "MANUAL", blankTo(createdBy), remark);
         log.info("[TPL-ADMIN] 保存模板 {} 新版本 v{} DRAFT by {}", tpl.templateId(), v, createdBy);
         return new SaveResult(tpl.templateId(), v, "DRAFT");
+    }
+
+    // ---------- 状态流转（守卫在服务端；publish 的旧版下线+新版上线+缓存刷新一个事务内完成） ----------
+
+    /**
+     * DRAFT→PUBLISHED；同一模板旧 PUBLISHED 自动置 DEPRECATED（保持单一 PUBLISHED 不变量）。
+     * reload/自检失败即异常 → 事务回滚，坏资产不会上线。
+     */
+    @Transactional
+    public SaveResult publish(String templateId, int version) {
+        AssetRow row = requireVersion(templateId, version);
+        if (!"DRAFT".equals(row.status())) {
+            throw new IllegalArgumentException("只允许 DRAFT→PUBLISHED（当前 " + row.status()
+                    + "）: " + templateId + " v" + version);
+        }
+        repo.findByAssetId(templateId).stream()
+                .filter(r -> "PUBLISHED".equals(r.status()))
+                .forEach(r -> repo.updateStatus(templateId, r.version(), "DEPRECATED"));
+        repo.updateStatus(templateId, version, "PUBLISHED");
+        assets.reload();
+        matcher.refresh();
+        log.info("[TPL-ADMIN] 发布模板 {} v{}（旧 PUBLISHED 已置 DEPRECATED）", templateId, version);
+        return new SaveResult(templateId, version, "PUBLISHED");
+    }
+
+    /**
+     * DRAFT/PUBLISHED→DEPRECATED（终态，不物理删除）。
+     * 下线 PUBLISHED 版本即从运行匹配摘除（在跑 run 用 outline 快照不受影响）；
+     * 若这是库中最后一个 PUBLISHED 模板，reload 自检会拒绝（注册表不允许为空）→ 事务回滚。
+     */
+    @Transactional
+    public SaveResult deprecate(String templateId, int version) {
+        AssetRow row = requireVersion(templateId, version);
+        if ("DEPRECATED".equals(row.status())) {
+            throw new IllegalArgumentException("已是 DEPRECATED，非法流转: " + templateId + " v" + version);
+        }
+        repo.updateStatus(templateId, version, "DEPRECATED");
+        if ("PUBLISHED".equals(row.status())) {
+            assets.reload();
+            matcher.refresh();
+        }
+        log.info("[TPL-ADMIN] 下架模板 {} v{}（原状态 {}）", templateId, version, row.status());
+        return new SaveResult(templateId, version, "DEPRECATED");
+    }
+
+    private AssetRow requireVersion(String templateId, int version) {
+        return repo.findByIdAndVersion(templateId, version)
+                .orElseThrow(() -> new NotFoundException("模板版本不存在: " + templateId + " v" + version));
     }
 
     /** 干跑校验（validate 端点：不写库，返回全部错误）。 */

@@ -62,6 +62,19 @@ public class TemplateAdminController {
         return service.saveNewVersion(id, req.template(), req.createdBy(), req.remark());
     }
 
+    /** 状态流转请求体。 */
+    public record StatusRequest(int version) {}
+
+    @PostMapping("/{id}/publish")
+    public TemplateAdminService.SaveResult publish(@PathVariable String id, @RequestBody StatusRequest req) {
+        return service.publish(id, req.version());
+    }
+
+    @PostMapping("/{id}/deprecate")
+    public TemplateAdminService.SaveResult deprecate(@PathVariable String id, @RequestBody StatusRequest req) {
+        return service.deprecate(id, req.version());
+    }
+
     @PostMapping("/validate")
     public Map<String, Object> validate(@RequestBody SaveRequest req) {
         List<ValidationError> errors = service.validateOnly(req.template());

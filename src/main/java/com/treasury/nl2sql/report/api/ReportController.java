@@ -104,6 +104,12 @@ public class ReportController {
         return Map.of("templates", assets.allTemplates(), "metrics", assets.allMetrics().values());
     }
 
+    /** 指标被哪些 PUBLISHED 模板引用（P5 指标下架保护的反向检查，P2 契约预留）。 */
+    @GetMapping("/metrics/{id}/references")
+    public Map<String, Object> metricReferences(@PathVariable String id) {
+        return Map.of("metricId", id, "referencedBy", assets.templatesReferencing(id));
+    }
+
     private RunDetail detail(long runId) {
         return new RunDetail(pipeline.require(runId), stepRepo.findByRun(runId), factRepo.findByRun(runId));
     }

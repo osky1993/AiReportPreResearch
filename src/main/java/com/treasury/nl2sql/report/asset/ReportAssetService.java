@@ -45,8 +45,9 @@ public class ReportAssetService {
     private final TemplateAssetRepository templateRepo;
     private final MetricAssetRepository metricRepo;
 
-    private final Map<String, VersionedTemplate> templates = new LinkedHashMap<>();
-    private final Map<String, MetricDefinition> metrics = new LinkedHashMap<>();
+    // volatile + 整体替换（不可变引用原子换）：reload 时读线程要么看旧注册表要么看新注册表，无中间态
+    private volatile Map<String, VersionedTemplate> templates = Map.of();
+    private volatile Map<String, MetricDefinition> metrics = Map.of();
 
     public ReportAssetService(ObjectMapper mapper, MqlValidator validator,
                               TemplateAssetRepository templateRepo, MetricAssetRepository metricRepo) {
@@ -125,27 +126,48 @@ public class ReportAssetService {
     // ---------- 从库装缓存（库是唯一事实源） ----------
 
     private void loadMetricsFromDb() {
-        metrics.clear();
+        Map<String, MetricDefinition> next = new LinkedHashMap<>();
         for (AssetRow row : metricRepo.findPublished()) {
             MetricDefinition m = fromJson(row.bodyJson(), MetricDefinition.class,
                     "指标 " + row.assetId() + " v" + row.version());
-            if (metrics.put(m.metricId(), m) != null) {
+            if (next.put(m.metricId(), m) != null) {
                 throw new IllegalStateException("指标「" + m.metricId()
-                        + "」存在多个 PUBLISHED 版本，违反资产不变量，拒绝启动");
+                        + "」存在多个 PUBLISHED 版本，违反资产不变量，拒绝加载");
             }
         }
+        metrics = next;
     }
 
     private void loadTemplatesFromDb() {
-        templates.clear();
+        Map<String, VersionedTemplate> next = new LinkedHashMap<>();
         for (AssetRow row : templateRepo.findPublished()) {
             ReportTemplateDef tpl = fromJson(row.bodyJson(), ReportTemplateDef.class,
                     "模板 " + row.assetId() + " v" + row.version());
-            if (templates.put(tpl.templateId(), new VersionedTemplate(tpl, row.version())) != null) {
+            if (next.put(tpl.templateId(), new VersionedTemplate(tpl, row.version())) != null) {
                 throw new IllegalStateException("模板「" + tpl.templateId()
-                        + "」存在多个 PUBLISHED 版本，违反资产不变量，拒绝启动");
+                        + "」存在多个 PUBLISHED 版本，违反资产不变量，拒绝加载");
             }
         }
+        templates = next;
+    }
+
+    /**
+     * 资产状态变更后重载注册表（publish/deprecate 的事务内调用：重载或自检失败即抛异常
+     * → 上层事务回滚，坏状态不会既进库又进缓存）。
+     */
+    public synchronized void reload() {
+        loadMetricsFromDb();
+        loadTemplatesFromDb();
+        selfCheck();
+        log.info("报告资产注册表已重载: PUBLISHED 模板 {} 个、指标 {} 个", templates.size(), metrics.size());
+    }
+
+    /** 指标被哪些 PUBLISHED 模板引用（P5 指标下架保护的反向检查）。 */
+    public List<String> templatesReferencing(String metricId) {
+        return templates.values().stream()
+                .filter(vt -> vt.def().chapters().stream().anyMatch(ch -> ch.metrics().contains(metricId)))
+                .map(vt -> vt.def().templateId())
+                .toList();
     }
 
     // ---------- 自检（对缓存全量执行，覆盖库中手工写入的资产） ----------

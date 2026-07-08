@@ -29,8 +29,13 @@ public class TemplateMatcher {
     private final ReportAssetService assets;
     private final double tau;
 
-    /** 模板向量缓存（P1 注册表进程内静态，算一次终身有效；P2 发布新版本时需加失效钩子）。 */
+    /** 模板向量缓存（注册表 reload 后由 {@link #refresh()} 整体失效重算）。 */
     private final Map<String, float[]> templateVectors = new ConcurrentHashMap<>();
+
+    /** 资产发布/下架导致注册表重载后失效向量缓存（下次 recall 按新模板画像重算）。 */
+    public void refresh() {
+        templateVectors.clear();
+    }
 
     public TemplateMatcher(EmbeddingClient embedding, ReportAssetService assets,
                            @Value("${report.match.tau:0.60}") double tau) {
