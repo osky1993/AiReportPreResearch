@@ -71,6 +71,13 @@ pre.body{background:#f9fafb;border:1px solid var(--line);border-radius:6px;paddi
     </h2>
     <div id="tplList" class="muted">加载中…</div>
   </div>
+  <div class="card">
+    <h2>🤖 AI 起草模板</h2>
+    <div class="muted">一句话描述场景，AI 参照指标资产起草草案（只从既有指标选，不发明；草案进编辑器人工调整后保存）。</div>
+    <textarea id="draftDesc" placeholder="例：每周给资金部领导看的外汇风险情况报告，重点是外币头寸、跨境收支和大额交易"></textarea>
+    <div class="row"><button id="draftBtn" onclick="doDraft()">起草（LLM，约 10~30 秒）</button></div>
+    <div class="err" id="draftErr"></div>
+  </div>
 </div>
 
 <div id="mainPane">
@@ -154,6 +161,7 @@ function render(){
       <div class="field"><div class="fl">指标（勾选，选项来自指标资产）</div>
         ${METRICS.map(m=>`<label class="metric"><input type="checkbox" ${c.metrics.includes(m.metricId)?'checked':''}
           onchange="toggleMetric(${i},'${m.metricId}')"> ${esc(m.name)} <span class="muted">${esc(m.metricId)}</span></label>`).join('')}
+        <a href="#" onclick="goMakeMetric(${i});return false" style="font-size:12px;color:var(--accent);white-space:nowrap">没有想要的指标？去制作 →</a>
       </div>
       <div class="field"><div class="fl">写作指引 guidance</div>
         <textarea onchange="setCh(${i},'guidance',this.value)">${esc(c.guidance||'')}</textarea></div>
@@ -164,9 +172,13 @@ function render(){
 
   const topErrs = ERRORS.filter(e=>!e.location.startsWith('chapters'));
   const versions = EDIT._versions||[];
+  const draftBanner = (EDIT._unresolved&&EDIT._unresolved.length ?
+      `<div class="errlist">⚠️ AI 起草未能对应的表述（不发明、不猜测，请人工处理）：<br>${EDIT._unresolved.map(esc).join('<br>')}</div>` : '')
+    + (EDIT._notes&&EDIT._notes.length ? `<div class="muted" style="margin-top:6px">${EDIT._notes.map(esc).join('<br>')}</div>` : '');
   $('mainPane').innerHTML = `
   <div class="card">
     <h2>${IS_NEW?'新建模板':'编辑模板（保存 = 产生新版本 DRAFT）'}</h2>
+    ${draftBanner}
     <div class="row" style="margin-top:0">
       <div class="field"><div class="fl">templateId（小写字母/数字/连字符）</div>
         <input type="text" value="${esc(EDIT.templateId)}" ${IS_NEW?'':'disabled'} onchange="EDIT.templateId=this.value"></div>
@@ -219,9 +231,32 @@ function delCh(i){ EDIT.chapters.splice(i,1); render(); }
 function moveCh(i,d){ const c=EDIT.chapters.splice(i,1)[0]; EDIT.chapters.splice(i+d,0,c); render(); }
 
 function payload(){
-  const t = JSON.parse(JSON.stringify(EDIT)); delete t._versions;
+  const t = JSON.parse(JSON.stringify(EDIT)); delete t._versions; delete t._unresolved; delete t._notes;
   t.chapters.forEach(c=>{ if(!c.stylePrompt) delete c.stylePrompt; if(!c.guidance) c.guidance=''; });
   return { template: t, createdBy: 'admin-page', remark: $('remark') ? $('remark').value : '' };
+}
+
+/* ---------- 去制作指标（P5-T5 往返联动） ---------- */
+function goMakeMetric(chapterIdx){
+  sessionStorage.setItem('tpl-admin-edit', JSON.stringify({EDIT, IS_NEW, CUR, chapterIdx}));
+  location.href = 'metric-wizard.html?return=template-admin&chapter=' + chapterIdx;
+}
+
+/* ---------- AI 起草（P3-T2） ---------- */
+async function doDraft(){
+  const desc = $('draftDesc').value.trim();
+  if(!desc){ $('draftErr').textContent = '请先写场景描述'; return; }
+  $('draftBtn').disabled = true; $('draftBtn').textContent = '起草中…'; $('draftErr').textContent = '';
+  try{
+    const r = await api('/templates/draft', {method:'POST', body: JSON.stringify({description: desc, createdBy: 'admin-page'})});
+    CUR = null; IS_NEW = true; ERRORS = []; OKMSG = '';
+    EDIT = r.draft; EDIT._versions = []; EDIT._unresolved = r.unresolved||[]; EDIT._notes = r.notes||[];
+    render(); loadList();
+  }catch(e){
+    $('draftErr').textContent = e.message + (e.details&&e.details.length ? '\n' + e.details.map(d=>d.location+' '+d.message).join('\n') : '');
+  }finally{
+    $('draftBtn').disabled = false; $('draftBtn').textContent = '起草（LLM，约 10~30 秒）';
+  }
 }
 
 /* ---------- 服务端交互 ---------- */
@@ -274,6 +309,25 @@ async function viewVersion(v){
     const a = await api('/assets');
     METRICS = (a.metrics||[]).map(m=>({metricId:m.metricId, name:m.name}));
   }catch(e){ /* 指标目录取不到时编辑器仍可用，勾选列表为空 */ }
+  // 制作指标回跳：恢复编辑态 + 自动勾选新指标（目录已重拉，新发布指标已在 METRICS 中）
+  const p = new URLSearchParams(location.search);
+  const newMetric = p.get('newMetric');
+  if(newMetric){
+    try{
+      const saved = JSON.parse(sessionStorage.getItem('tpl-admin-edit'));
+      if(saved && saved.EDIT){
+        EDIT = saved.EDIT; IS_NEW = saved.IS_NEW; CUR = saved.CUR;
+        const ci = p.get('chapter') !== null && p.get('chapter') !== '' ? parseInt(p.get('chapter')) : saved.chapterIdx;
+        if(ci != null && EDIT.chapters[ci] && !EDIT.chapters[ci].metrics.includes(newMetric)){
+          EDIT.chapters[ci].metrics.push(newMetric);
+        }
+        OKMSG = '✓ 新指标 ' + newMetric + ' 已制作发布并自动勾选';
+        sessionStorage.removeItem('tpl-admin-edit');
+        render();
+      }
+    }catch(e){ /* 恢复失败则正常进列表 */ }
+    history.replaceState(null, '', 'template-admin.html');
+  }
   loadList();
 })();
 </script>
