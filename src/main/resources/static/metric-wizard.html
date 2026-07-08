@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>指标制作向导 · 智能报告流水线</title>
+<style>
+:root{--accent:#2563eb;--bg:#f6f7f9;--card:#fff;--line:#e5e7eb;--text:#111827;--muted:#6b7280;
+      --ok:#059669;--warn:#d97706;--bad:#dc2626;--violet:#7c3aed;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+.wrap{max-width:1080px;margin:0 auto;padding:20px}
+header{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+header h1{font-size:20px}
+header .sub{color:var(--muted);font-size:12px}
+header a{margin-left:auto;color:var(--accent);text-decoration:none;font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h2{font-size:14px;margin-bottom:10px}
+textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;resize:vertical;min-height:56px}
+input[type=text]{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}
+select{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;background:#fff}
+button{border:0;border-radius:8px;padding:7px 14px;font:inherit;cursor:pointer;background:var(--accent);color:#fff}
+button.ghost{background:#eef2ff;color:var(--accent)}
+button.okbtn{background:#d1fae5;color:var(--ok)}
+button.danger{background:#fee2e2;color:var(--bad)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.steps{display:flex;gap:4px;margin-bottom:14px;flex-wrap:wrap}
+.step{flex:1;min-width:120px;text-align:center;border-radius:8px;padding:8px 4px;background:#f3f4f6;color:var(--muted);font-size:12px;font-weight:700;border:1px solid var(--line);cursor:pointer}
+.step.cur{background:#dbeafe;color:var(--accent);border-color:#bfdbfe}
+.step.done{background:#d1fae5;color:var(--ok);border-color:#a7f3d0}
+.step.locked{opacity:.5;cursor:not-allowed}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;background:#f9fafb}
+.muted{color:var(--muted);font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.warnbox{background:#fffbeb;border:1px solid #fde68a;color:var(--warn);border-radius:8px;padding:8px 10px;font-size:12px;margin:8px 0}
+.errlist{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;font-size:12px;color:var(--bad);margin-top:8px;white-space:pre-wrap}
+.okmsg{color:var(--ok);font-size:13px;margin-top:8px;font-weight:600}
+.explainbox{background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 12px;margin:8px 0}
+.caveat{background:#fffbeb;border-left:3px solid var(--warn);padding:4px 8px;margin:4px 0;font-size:12px}
+pre.body{background:#f9fafb;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:11px;overflow:auto;max-height:260px;white-space:pre-wrap;word-break:break-all}
+.sugg{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;gap:10px;align-items:flex-start}
+.sugg.hint{background:#fffbeb;border-color:#fde68a}
+.sugg code{background:#eef2ff;border-radius:4px;padding:0 4px;font-size:12px}
+.field{margin:6px 12px 6px 0;display:inline-block;vertical-align:top}
+.field .fl{font-size:12px;color:var(--muted);margin-bottom:2px}
+.err{color:var(--bad);font-size:12px;margin-top:6px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>指标制作向导</h1>
+  <span class="sub">试查 → 核验 → 参数化 → 元数据 → 落库自检（服务端五重校验，DRAFT 不参与运行，发布才生效）</span>
+  <a href="/template-admin.html">← 模板管理</a>
+</header>
+
+<div class="steps" id="stepBar"></div>
+<div id="pane"></div>
+<div class="card muted" style="font-size:12px">状态自动保存在本浏览器会话（sessionStorage），中途离开可回来继续。
+  <button class="danger" style="padding:2px 10px;font-size:12px;margin-left:8px" onclick="resetWiz()">重新开始</button></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const STEPS = ['① 试查', '② 核验口径', '③ 参数化', '④ 元数据', '⑤ 提交'];
+let WIZ = load() || fresh();
+
+function fresh(){
+  return { step: 1, question: '', tryResult: null, explain: null,
+           suggestions: null, applied: [], mqlTemplate: null, snapshotConfirmed: false,
+           meta: { metricId:'', name:'', unit:'CNY', valueColumn:'', timeBound:null,
+                   comparable:false, nullPolicy:'ZERO', nonNegative:true },
+           saved: null, errors: [], okmsg: '', returnTo: null, chapterIdx: null };
+}
+function load(){ try{ return JSON.parse(sessionStorage.getItem('metric-wizard')); }catch(e){ return null; } }
+function persist(){ sessionStorage.setItem('metric-wizard', JSON.stringify(WIZ)); }
+function resetWiz(){ WIZ = fresh(); initFromUrl(); persist(); render(); }
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+
+async function api(path, body){
+  const resp = await fetch('/api/report/metrics'+path, {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const data = await resp.json().catch(()=>({}));
+  if(!resp.ok){ const e = new Error(data.error || ('HTTP '+resp.status)); e.details = data.details||[]; throw e; }
+  return data;
+}
+
+/* ---------- 步骤条 ---------- */
+function maxReachable(){
+  if(!WIZ.tryResult || !WIZ.tryResult.success) return 1;
+  if(!WIZ.explain) return 2;
+  if(!WIZ.mqlTemplate) return 3;
+  return 5;
+}
+function goto(n){ if(n <= maxReachable()){ WIZ.step = n; WIZ.errors=[]; WIZ.okmsg=''; persist(); render(); } }
+
+/* ---------- 渲染 ---------- */
+function render(){
+  const reach = maxReachable();
+  $('stepBar').innerHTML = STEPS.map((s,i)=>{
+    const n = i+1;
+    const cls = n===WIZ.step ? 'cur' : (n<WIZ.step && n<=reach ? 'done' : (n>reach ? 'locked' : ''));
+    return `<div class="step ${cls}" onclick="goto(${n})">${s}</div>`;
+  }).join('');
+  const f = [null, step1, step2, step3, step4, step5][WIZ.step];
+  $('pane').innerHTML = f();
+}
+
+function errBox(){
+  if(WIZ.okmsg) return `<div class="okmsg">${esc(WIZ.okmsg)}</div>`;
+  if(!WIZ.errors.length) return '';
+  return `<div class="errlist">${WIZ.errors.map(e=>`✖ ${esc(e.location||'')}：${esc(e.message||e)}`).join('<br>')}</div>`;
+}
+
+/* ---------- ① 试查 ---------- */
+function step1(){
+  const r = WIZ.tryResult;
+  let resultHtml = '';
+  if(r){
+    if(!r.success){
+      resultHtml = `<div class="errlist">引擎未能完成查询：${esc((r.errors||[]).join('；') || r.clarifyReason || '未知原因')}</div>`;
+    }else{
+      const cols = r.columns||[];
+      resultHtml = `
+        ${(r.warnings||[]).map(w=>`<div class="warnbox">⚠️ ${esc(w)}</div>`).join('')}
+        <table><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
+          ${r.rows.map(row=>`<tr>${cols.map(c=>`<td>${esc(row[c])}</td>`).join('')}</tr>`).join('')}</table>
+        <details style="margin-top:8px"><summary class="muted">查看 MQL / SQL</summary>
+          <pre class="body">${esc(JSON.stringify(r.mql,null,2))}</pre>
+          <pre class="body">${esc(r.sql)}</pre></details>
+        <div class="row"><button class="okbtn" onclick="goto(2)">结果符合预期，下一步：核验口径 →</button></div>`;
+    }
+  }
+  return `<div class="card"><h2>① 试查：用自然语言问出这个指标的数</h2>
+    <div class="muted">期间指标请写明具体日期范围（如 2026-06-22 到 06-28），第 3 步会把日期替换为报告期占位符。</div>
+    <textarea id="q" placeholder="例：2026年6月22日到6月28日投资类支出折人民币总金额（不含失败交易）">${esc(WIZ.question)}</textarea>
+    <div class="row"><button id="tryBtn" onclick="doTry()">试查（走查询引擎，约 5~20 秒）</button></div>
+    <div class="err" id="opErr"></div>
+    ${resultHtml}${errBox()}</div>`;
+}
+
+async function doTry(){
+  const q = $('q').value.trim();
+  if(!q) return;
+  $('tryBtn').disabled = true; $('tryBtn').textContent = '试查中…';
+  try{
+    const r = await api('/try', {question: q});
+    // 回改联动失效：换了试查结果，下游产物全部作废
+    WIZ = {...fresh(), returnTo: WIZ.returnTo, chapterIdx: WIZ.chapterIdx, question: q, tryResult: r};
+    persist(); render();
+  }catch(e){ $('opErr').textContent = e.message; $('tryBtn').disabled=false; $('tryBtn').textContent='试查（走查询引擎，约 5~20 秒）'; }
+}
+
+/* ---------- ② 核验 ---------- */
+function step2(){
+  const ex = WIZ.explain;
+  return `<div class="card"><h2>② 核验：程序把 MQL 反翻译成中文口径，请人工确认</h2>
+    ${ex ? `<div class="explainbox">${esc(ex.explanation)}</div>
+      ${(ex.caveats||[]).map(c=>`<div class="caveat">⚠️ ${esc(c)}</div>`).join('')}
+      <div class="row"><button class="okbtn" onclick="goto(3)">口径正确，下一步：参数化 →</button>
+        <button class="ghost" onclick="goto(1)">口径不对，返回改问法</button></div>`
+    : `<div class="row"><button id="exBtn" onclick="doExplain()">生成口径描述（LLM，约 5~15 秒）</button></div>`}
+    <div class="err" id="opErr"></div>${errBox()}</div>`;
+}
+
+async function doExplain(){
+  $('exBtn').disabled = true; $('exBtn').textContent = '生成中…';
+  try{
+    WIZ.explain = await api('/explain', {mql: WIZ.tryResult.mql});
+    persist(); render();
+  }catch(e){ $('opErr').textContent = e.message; $('exBtn').disabled=false; $('exBtn').textContent='生成口径描述（LLM，约 5~15 秒）'; }
+}
+
+/* ---------- ③ 参数化 ---------- */
+function step3(){
+  if(WIZ.suggestions === null){ doScan(); return `<div class="card muted">扫描中…</div>`; }
+  const appliable = WIZ.suggestions.filter(s=>s.placeholder);
+  const hints = WIZ.suggestions.filter(s=>!s.placeholder);
+  let body;
+  if(WIZ.mqlTemplate){
+    body = `<div class="okmsg">✓ 已生成参数化模板（${WIZ.applied.length} 处替换）</div>
+      <pre class="body">${esc(JSON.stringify(WIZ.mqlTemplate,null,2))}</pre>
+      <div class="row"><button class="okbtn" onclick="goto(4)">下一步：填元数据 →</button>
+        <button class="ghost" onclick="WIZ.mqlTemplate=null;WIZ.applied=[];persist();render()">重新勾选</button></div>`;
+  }else if(!appliable.length){
+    body = `${hints.map(h=>`<div class="sugg hint">⚠️ <div><code>${esc(h.field)} ${esc(h.op)} ${esc(h.value)}</code><br>${esc(h.reason)}</div></div>`).join('')}
+      <div class="warnbox">没有可参数化的日期条件。请确认：</div>
+      <div class="row">
+        <button class="okbtn" onclick="confirmSnapshot()">这是快照指标（无期间概念），继续 →</button>
+        <button class="ghost" onclick="goto(1)">是期间指标，返回第 1 步在问法里补日期范围</button></div>`;
+  }else{
+    body = `<div class="muted">识别出以下日期条件，勾选后将替换为报告期占位符（每次生成报告按报告期自动填充）：</div>
+      ${appliable.map((s,i)=>`<div class="sugg"><input type="checkbox" id="sg${i}" checked>
+        <div><code>${esc(s.field)} ${esc(s.op)} '${esc(s.value)}'</code> → <code>${esc(s.placeholder)}</code><br>
+        <span class="muted">${esc(s.reason)}</span></div></div>`).join('')}
+      ${hints.map(h=>`<div class="sugg hint">⚠️ <div><code>${esc(h.field)} ${esc(h.op)} ${esc(h.value)}</code><br>${esc(h.reason)}</div></div>`).join('')}
+      <div class="row"><button class="okbtn" onclick="doApply()">应用勾选项，生成模板 →</button></div>`;
+  }
+  return `<div class="card"><h2>③ 参数化：把死日期换成报告期占位符（确定性识别，服务端替换）</h2>
+    ${body}<div class="err" id="opErr"></div>${errBox()}</div>`;
+}
+
+async function doScan(){
+  try{
+    const r = await api('/parameterize', {mql: WIZ.tryResult.mql});
+    WIZ.suggestions = r.suggestions || []; persist(); render();
+  }catch(e){ WIZ.suggestions = []; WIZ.errors=[{message:e.message}]; persist(); render(); }
+}
+
+async function doApply(){
+  const appliable = WIZ.suggestions.filter(s=>s.placeholder);
+  const chosen = appliable.filter((s,i)=>$('sg'+i).checked).map(s=>s.path);
+  try{
+    if(chosen.length){
+      const r = await api('/parameterize', {mql: WIZ.tryResult.mql, apply: chosen});
+      WIZ.mqlTemplate = r.mqlTemplate; WIZ.applied = r.applied;
+    }else{
+      WIZ.mqlTemplate = WIZ.tryResult.mql; WIZ.applied = [];
+    }
+    WIZ.meta.timeBound = WIZ.applied.length > 0;
+    persist(); render();
+  }catch(e){ $('opErr').textContent = e.message; }
+}
+
+function confirmSnapshot(){
+  WIZ.mqlTemplate = WIZ.tryResult.mql; WIZ.applied = [];
+  WIZ.snapshotConfirmed = true; WIZ.meta.timeBound = false; WIZ.meta.comparable = false;
+  persist(); goto(4);
+}
+
+/* ---------- ④ 元数据 ---------- */
+function step4(){
+  const m = WIZ.meta;
+  const cols = WIZ.tryResult.columns || [];
+  return `<div class="card"><h2>④ 元数据：指标的身份与取数纪律</h2>
+    <div>
+      <div class="field"><div class="fl">metricId（小写字母/数字/下划线）</div>
+        <input type="text" value="${esc(m.metricId)}" onchange="WIZ.meta.metricId=this.value.trim();persist()"></div>
+      <div class="field"><div class="fl">指标中文名</div>
+        <input type="text" value="${esc(m.name)}" onchange="WIZ.meta.name=this.value.trim();persist()"></div>
+      <div class="field"><div class="fl">单位</div>
+        <input type="text" style="width:80px" value="${esc(m.unit)}" onchange="WIZ.meta.unit=this.value.trim();persist()"></div>
+      <div class="field"><div class="fl">valueColumn（承载指标值的结果列）</div>
+        <select onchange="WIZ.meta.valueColumn=this.value;persist()">
+          <option value="">--选择--</option>
+          ${cols.map(c=>`<option ${m.valueColumn===c?'selected':''}>${esc(c)}</option>`).join('')}
+        </select></div>
+    </div>
+    <div>
+      <div class="field"><div class="fl">timeBound（第 3 步已${WIZ.applied.length?'应用占位符→期间指标':'确认无占位符→快照指标'}，不可改）</div>
+        <input type="text" disabled value="${m.timeBound}"></div>
+      <div class="field"><div class="fl">comparable（参与环比）</div>
+        <select onchange="WIZ.meta.comparable=this.value==='true';persist()" ${m.timeBound?'':'disabled'}>
+          <option value="false" ${!m.comparable?'selected':''}>false</option>
+          <option value="true" ${m.comparable?'selected':''}>true</option>
+        </select></div>
+      <div class="field"><div class="fl">nullPolicy（取数为 NULL 时）</div>
+        <select onchange="WIZ.meta.nullPolicy=this.value;persist()">
+          <option ${m.nullPolicy==='ZERO'?'selected':''}>ZERO</option>
+          <option ${m.nullPolicy==='BLOCK'?'selected':''}>BLOCK</option>
+        </select></div>
+      <div class="field"><div class="fl">质量断言</div>
+        <label style="font-size:13px"><input type="checkbox" ${m.nonNegative?'checked':''}
+          onchange="WIZ.meta.nonNegative=this.checked;persist()"> NON_NEGATIVE（负值失败关闭）</label></div>
+    </div>
+    <div class="row"><button class="okbtn" onclick="goto(5)">下一步：提交 →</button></div>
+    ${errBox()}</div>`;
+}
+
+/* ---------- ⑤ 提交 ---------- */
+function metricPayload(){
+  const m = WIZ.meta;
+  return { metricId: m.metricId, name: m.name, unit: m.unit,
+           timeBound: !!m.timeBound, comparable: !!m.comparable,
+           valueColumn: m.valueColumn, nullPolicy: m.nullPolicy,
+           qualityChecks: m.nonNegative ? ['NON_NEGATIVE'] : [],
+           mqlTemplate: WIZ.mqlTemplate };
+}
+
+function step5(){
+  const saved = WIZ.saved;
+  let body;
+  if(saved && saved.status === 'PUBLISHED'){
+    const back = WIZ.returnTo === 'template-admin'
+      ? `<a href="/template-admin.html?newMetric=${encodeURIComponent(saved.metricId)}&chapter=${WIZ.chapterIdx??''}"><button class="okbtn">返回模板编辑器并自动勾选 →</button></a>`
+      : `<a href="/template-admin.html"><button class="ghost">去模板管理挂载此指标 →</button></a>`;
+    body = `<div class="okmsg">✓ 已发布：${esc(saved.metricId)} v${saved.version}（PUBLISHED，模板编辑器立即可选）</div>
+      <div class="row">${back}<button class="ghost" onclick="resetWiz()">再做一个指标</button></div>`;
+  }else if(saved){
+    body = `<div class="okmsg">✓ 已保存：${esc(saved.metricId)} v${saved.version}（DRAFT）</div>
+      <div class="warnbox">DRAFT 不参与运行与模板校验目录，发布后模板编辑器才能勾选。</div>
+      <div class="row"><button class="okbtn" onclick="doPublish()">发布（DRAFT → PUBLISHED）</button></div>`;
+  }else{
+    body = `<pre class="body">${esc(JSON.stringify(metricPayload(),null,2))}</pre>
+      <div class="row">
+        <button class="okbtn" id="saveBtn" onclick="doSave()">提交（服务端五重校验 → v1 DRAFT）</button>
+      </div>`;
+  }
+  return `<div class="card"><h2>⑤ 提交：服务端五重校验（结构 → 占位符 → 白名单 → 试执行 → 恰 1 行 1 值）</h2>
+    ${body}<div class="err" id="opErr"></div>${errBox()}</div>`;
+}
+
+async function doSave(){
+  WIZ.errors=[]; WIZ.okmsg='';
+  try{
+    WIZ.saved = await api('', {metric: metricPayload(), tryQuestion: WIZ.question, createdBy: 'wizard'});
+    persist(); render();
+  }catch(e){ WIZ.errors = e.details && e.details.length ? e.details : [{message:e.message}]; persist(); render(); }
+}
+
+async function doPublish(){
+  WIZ.errors=[]; WIZ.okmsg='';
+  try{
+    WIZ.saved = await api('/'+WIZ.saved.metricId+'/publish', {version: WIZ.saved.version});
+    persist(); render();
+  }catch(e){ WIZ.errors = e.details && e.details.length ? e.details : [{message:e.message}]; persist(); render(); }
+}
+
+/* ---------- 启动 ---------- */
+function initFromUrl(){
+  const p = new URLSearchParams(location.search);
+  if(p.get('return')) WIZ.returnTo = p.get('return');
+  if(p.get('chapter') !== null && p.get('chapter') !== '') WIZ.chapterIdx = parseInt(p.get('chapter'));
+  // 预留：?mql=<base64> 直入第 3 步（P5-T6 口径资产升格入口；解析失败静默回第 1 步）
+  const b64 = p.get('mql');
+  if(b64){
+    try{
+      const mql = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      WIZ.tryResult = {mql, sql:'（来自口径资产，未试查）', rows:[], columns:[], success:true, warnings:[], errors:[]};
+      WIZ.step = 3;
+    }catch(e){ /* 静默回第 1 步 */ }
+  }
+}
+initFromUrl(); persist(); render();
+</script>
+</body>
+</html>
