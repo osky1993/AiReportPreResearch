@@ -101,6 +101,20 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
    （日志：`草稿检查违规 1 处，回灌重写第 1 轮`）→ 重写后终稿核对数字 10 个、一致率 100%、
    与未攻击版本数字完全相同。结论：**风格提示词只能改文风，数字安全不依赖任何提示词，
    由 ⑥ 审计死代码兜底**；同时旧 run 固化的模板版本不受新版本发布影响（详情页可见 vN 徽章）。
+9. **指标制作五步向导（G5 全流程）**：打开 http://localhost:8080/metric-wizard.html →
+   ① 试查「2026年6月22日到6月28日投资类支出折人民币总金额（不含失败交易，按最新汇率折算）」
+   → ② 核验（LLM 反翻译口径描述，caveats 提示汇率口径细节）→ ③ 参数化（确定性识别两条
+   `cash_transaction.txn_date` 日期条件 → 勾选替换 `{{period_start/end}}`）→ ④ 元数据
+   （valueColumn 下拉预填、timeBound 由第 3 步锁定）→ ⑤ 提交（服务端五重校验 → v1 DRAFT）
+   → 发布。回模板管理把新指标勾进司库周报某章 → 保存 v2 → 发布 → 报告页生成周报 →
+   正文出现「投资支出 1,436.00 元[fact_xxx]」，**与手写 SQL 直查逐分一致**（2026-07-08，run #20）。
+   三类非法输入均被保存链 400 拦截：残留/缺失占位符（timeBound 双向一致性）、试执行失败
+   （幻觉表）、多行结果 / valueColumn 错列名（RESULT_SHAPE）。
+10. **AI 起草模板（G3 全流程）**：模板管理页「AI 起草」输入「每周给司库和贷款管理岗看的
+   贷款与偿还情况周报，关注贷款余额、待还款计划、待审批付款和衍生品对冲敞口」→ 草案载入
+   编辑器，**「衍生品对冲敞口」以 unresolved 红字提示而非发明指标**；人工微调 → 保存 →
+   发布 → 报告页「生成 2026 年第 26 周的贷款及偿还周报」→ 命中新模板出报告、审计 100%、
+   签发（2026-07-08，run #21）。对抗：「帮我做 HR 月度盘点」→ 400 拒绝起草（失败关闭）。
 
 curl 版（无界面）：
 
@@ -146,7 +160,19 @@ AWAITING_PUBLISH_APPROVAL → PUBLISHED`；任一步失败 → `BLOCKED`；卡�
 | POST | `/templates/{id}/publish` | `{version}`：DRAFT→PUBLISHED；旧 PUBLISHED 自动置 DEPRECATED；刷新注册表与匹配向量缓存 |
 | POST | `/templates/{id}/deprecate` | `{version}`：DRAFT/PUBLISHED→DEPRECATED；下线即从运行匹配摘除（在跑 run 用快照不受影响）|
 | POST | `/templates/validate` | 干跑校验（不写库），前端保存前预检 |
-| GET | `/metrics/{id}/references` | 反向检查：指标被哪些 PUBLISHED 模板引用（P5 指标下架保护用）|
+| GET | `/metrics/{id}/references` | 反向检查：指标被哪些 PUBLISHED 模板引用（指标下架保护）|
+| POST | `/templates/draft` | AI 起草：场景描述 → 模板草案 + unresolved（草案不落库，进编辑器；空泛/无关 400 拒绝）|
+
+### 指标管理与制作向导 API（P5 契约，前缀 `/api/report/metrics`，演示页 `metric-wizard.html`）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/try` | 试查：包装引擎自由生成路径，返回 mql/sql/rows/columns/warnings（失败 200+success=false）|
+| POST | `/explain` | 口径反翻译：确定性预检（校验通过才调 LLM）→ {explanation, caveats}；失败 400 |
+| POST | `/parameterize` | 确定性扫描日期条件建议（JSON Pointer path）；带 apply 服务端替换生成 mqlTemplate（安全闸：path 须命中建议）|
+| POST | `/`（保存） | 五重校验（STRUCTURE 含 timeBound 双向一致性 → PLACEHOLDER → MQL_VALIDATION → TRIAL_EXECUTION → RESULT_SHAPE）全过写 v1 DRAFT |
+| POST | `/{id}/publish`、`/{id}/deprecate` | 状态流转（守卫同模板）；**被 PUBLISHED 模板引用的指标不可下架** |
+| GET | `/`、`/{id}` | 管理列表 / 详情+版本历史 |
 
 统一错误结构（400=校验失败/非法流转，404=不存在）：
 `{"error": "总述", "details": [{"location": "chapters[1].metrics[0]", "message": "引用了不存在的指标: xxx"}]}`
