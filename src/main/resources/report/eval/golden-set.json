@@ -1,0 +1,91 @@
+{
+  "description": "报告层黄金需求集（P2-T6，契约3）。三类 case：MATCH=① 模板匹配与周期识别（LLM 层）；BLOCKED=失败关闭正确性（LLM 层）；FACTS=②③④ 确定性取数逐值比对（确定性层，零 LLM）。纪律 7：FACTS 期望值一律由手写 SQL 直查得出（referenceSql 落档备审计，2026-07-10 对 reportbi 种子数据直查），期望值不得取自被评测系统自身。",
+  "periods": { "2026-W26": "2026-06-22 ~ 2026-06-28", "2026-W25": "2026-06-15 ~ 2026-06-21（对比期）" },
+  "cases": [
+    { "type": "MATCH", "id": "m01", "requestText": "生成 2026 年第 26 周的司库资金周报，和上周对比", "expectedTemplateId": "treasury-weekly", "expectedPeriodLabel": "2026-W26", "note": "基线 E2E 原话" },
+    { "type": "MATCH", "id": "m02", "requestText": "出一份 2026 年第 26 周的资金快报", "expectedTemplateId": "treasury-flash", "expectedPeriodLabel": "2026-W26" },
+    { "type": "MATCH", "id": "m03", "requestText": "帮我出一版 2026 年第 26 周的每周资金报告", "expectedTemplateId": "treasury-weekly", "expectedPeriodLabel": "2026-W26", "note": "keywords 同义词命中" },
+    { "type": "MATCH", "id": "m04", "requestText": "生成 2026 年第 26 周的外汇风险周报", "expectedTemplateId": "forex-risk-weekly", "expectedPeriodLabel": "2026-W26" },
+    { "type": "MATCH", "id": "m05", "requestText": "出一份 2026 年第 26 周的贷款及偿还情况周报", "expectedTemplateId": "loan-weekly", "expectedPeriodLabel": "2026-W26" },
+    { "type": "MATCH", "id": "m06", "requestText": "生成 2026 年第 26 周的投资与外币支出监控周报", "expectedTemplateId": "investment-weekly", "expectedPeriodLabel": "2026-W26" },
+    { "type": "MATCH", "id": "m07", "requestText": "2026 年第 26 周的资金速览来一份", "expectedTemplateId": "treasury-flash", "expectedPeriodLabel": "2026-W26", "note": "口语化 + 次要 keyword" },
+    { "type": "MATCH", "id": "m08", "requestText": "看看 2026 年第 26 周的汇率风险敞口情况，出个周报", "expectedTemplateId": "forex-risk-weekly", "expectedPeriodLabel": "2026-W26", "note": "意图口语化改写" },
+    { "type": "MATCH", "id": "m09", "requestText": "2026 年第 26 周还款计划和贷款情况的周报", "expectedTemplateId": "loan-weekly", "expectedPeriodLabel": "2026-W26" },
+    { "type": "MATCH", "id": "m10", "requestText": "帮忙出 2026 年第 26 周的投资监控周报，关注外币支出", "expectedTemplateId": "investment-weekly", "expectedPeriodLabel": "2026-W26" },
+    { "type": "MATCH", "id": "m11", "requestText": "生成 2026-W26 司库资金周报", "expectedTemplateId": "treasury-weekly", "expectedPeriodLabel": "2026-W26", "note": "ISO 周标签直给" },
+
+    { "type": "BLOCKED", "id": "b01", "requestText": "生成 HR 月度人员盘点报告", "reasonContains": "POLICY", "note": "无此业务域模板，候选清单转人工（README 演示 10）" },
+    { "type": "BLOCKED", "id": "b02", "requestText": "生成 2026 年 6 月的资金月报", "reasonContains": "POLICY", "note": "月周期暂不支持（Phase03 能力），失败关闭（README 演示 11）" },
+    { "type": "BLOCKED", "id": "b03", "requestText": "写个报告", "reasonContains": "POLICY", "note": "空泛需求：模板或周期均无法识别" },
+    { "type": "BLOCKED", "id": "b04", "requestText": "分析一下明天股市会不会涨", "reasonContains": "POLICY", "note": "无关领域，不得强行套模板" },
+    { "type": "BLOCKED", "id": "b05", "requestText": "出一份 2026 年第 26 周的机房设备巡检报告", "reasonContains": "POLICY", "note": "周期合法但无对应模板——不许拿资金模板硬凑" },
+    { "type": "BLOCKED", "id": "b06", "requestText": "生成司库资金周报", "reasonContains": "POLICY", "note": "缺报告期：周期识别不了必须问人，不猜测补全" },
+
+    { "type": "FACTS", "id": "f-weekly-w26", "templateId": "treasury-weekly", "periodLabel": "2026-W26",
+      "expected": [
+        { "metricId": "cny_total_balance", "purpose": "CURRENT", "value": 65700000.00, "referenceSql": "SELECT SUM(balance) FROM account WHERE currency='CNY' AND status='ACTIVE'" },
+        { "metricId": "active_account_count", "purpose": "CURRENT", "value": 5, "referenceSql": "SELECT COUNT(*) FROM account WHERE status='ACTIVE'" },
+        { "metricId": "frozen_account_count", "purpose": "CURRENT", "value": 1, "referenceSql": "SELECT COUNT(*) FROM account WHERE status='FROZEN'" },
+        { "metricId": "deposit_balance", "purpose": "CURRENT", "value": 50000000.00, "referenceSql": "SELECT SUM(balance) FROM account WHERE account_type='DEPOSIT' AND status='ACTIVE' AND currency='CNY'" },
+        { "metricId": "week_txn_count", "purpose": "CURRENT", "value": 4, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE txn_date BETWEEN '2026-06-22' AND '2026-06-28' AND status<>'FAILED'" },
+        { "metricId": "week_txn_amount_cny", "purpose": "CURRENT", "value": 3851436.00, "referenceSql": "SELECT SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-22' AND '2026-06-28'" },
+        { "metricId": "week_inflow_amount_cny", "purpose": "CURRENT", "value": 900000.00, "referenceSql": "SELECT SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.direction='IN' AND t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-22' AND '2026-06-28'" },
+        { "metricId": "week_outflow_amount_cny", "purpose": "CURRENT", "value": 2951436.00, "referenceSql": "SELECT SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.direction='OUT' AND t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-22' AND '2026-06-28'" },
+        { "metricId": "payroll_out_amount", "purpose": "CURRENT", "value": 2800000.00, "referenceSql": "SELECT SUM(amount) FROM cash_transaction WHERE direction='OUT' AND category='PAYROLL' AND currency='CNY' AND status<>'FAILED' AND txn_date BETWEEN '2026-06-22' AND '2026-06-28'" },
+        { "metricId": "tax_txn_count", "purpose": "CURRENT", "value": 1, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE category='TAX' AND status<>'FAILED' AND txn_date BETWEEN '2026-06-22' AND '2026-06-28'" },
+        { "metricId": "invest_out_amount_cny", "purpose": "CURRENT", "value": 1436.00, "referenceSql": "SELECT SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.direction='OUT' AND t.category='INVEST' AND t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-22' AND '2026-06-28'" },
+        { "metricId": "in_transit_txn_count", "purpose": "CURRENT", "value": 2, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE status='IN_TRANSIT'" },
+        { "metricId": "large_txn_count", "purpose": "CURRENT", "value": 2, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE currency='CNY' AND amount>=500000 AND status<>'FAILED' AND txn_date BETWEEN '2026-06-22' AND '2026-06-28'" },
+        { "metricId": "pending_payment_count", "purpose": "CURRENT", "value": 0, "referenceSql": "SELECT COUNT(*) FROM payment_order WHERE status='PENDING'" },
+        { "metricId": "loan_outstanding_balance", "purpose": "CURRENT", "value": 5000000.00, "referenceSql": "SELECT SUM(principal) FROM loan WHERE currency='CNY'" },
+        { "metricId": "due_repayment_count", "purpose": "CURRENT", "value": 1, "referenceSql": "SELECT COUNT(*) FROM loan_repayment WHERE paid=0" },
+        { "metricId": "week_txn_count", "purpose": "COMPARE", "value": 3, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE txn_date BETWEEN '2026-06-15' AND '2026-06-21' AND status<>'FAILED'" },
+        { "metricId": "week_txn_amount_cny", "purpose": "COMPARE", "value": 1590100.00, "referenceSql": "SELECT SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-15' AND '2026-06-21'" },
+        { "metricId": "week_inflow_amount_cny", "purpose": "COMPARE", "value": 1302900.00, "referenceSql": "SELECT SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.direction='IN' AND t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-15' AND '2026-06-21'" },
+        { "metricId": "week_outflow_amount_cny", "purpose": "COMPARE", "value": 287200.00, "referenceSql": "SELECT SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.direction='OUT' AND t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-15' AND '2026-06-21'" },
+        { "metricId": "payroll_out_amount", "purpose": "COMPARE", "value": 0, "referenceSql": "SELECT SUM(amount) FROM cash_transaction WHERE direction='OUT' AND category='PAYROLL' AND currency='CNY' AND status<>'FAILED' AND txn_date BETWEEN '2026-06-15' AND '2026-06-21' -- 直查为 NULL，nullPolicy=ZERO 归 0" },
+        { "metricId": "tax_txn_count", "purpose": "COMPARE", "value": 0, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE category='TAX' AND status<>'FAILED' AND txn_date BETWEEN '2026-06-15' AND '2026-06-21'" },
+        { "metricId": "invest_out_amount_cny", "purpose": "COMPARE", "value": 287200.00, "referenceSql": "SELECT SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.direction='OUT' AND t.category='INVEST' AND t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-15' AND '2026-06-21'" }
+      ] },
+
+    { "type": "FACTS", "id": "f-flash-w26", "templateId": "treasury-flash", "periodLabel": "2026-W26",
+      "expected": [
+        { "metricId": "cny_total_balance", "purpose": "CURRENT", "value": 65700000.00, "referenceSql": "SELECT SUM(balance) FROM account WHERE currency='CNY' AND status='ACTIVE'" },
+        { "metricId": "deposit_balance", "purpose": "CURRENT", "value": 50000000.00, "referenceSql": "SELECT SUM(balance) FROM account WHERE account_type='DEPOSIT' AND status='ACTIVE' AND currency='CNY'" },
+        { "metricId": "active_account_count", "purpose": "CURRENT", "value": 5, "referenceSql": "SELECT COUNT(*) FROM account WHERE status='ACTIVE'" },
+        { "metricId": "week_inflow_amount_cny", "purpose": "CURRENT", "value": 900000.00, "referenceSql": "见 f-weekly-w26 同指标" },
+        { "metricId": "week_outflow_amount_cny", "purpose": "CURRENT", "value": 2951436.00, "referenceSql": "见 f-weekly-w26 同指标" },
+        { "metricId": "week_inflow_amount_cny", "purpose": "COMPARE", "value": 1302900.00, "referenceSql": "见 f-weekly-w26 同指标" },
+        { "metricId": "week_outflow_amount_cny", "purpose": "COMPARE", "value": 287200.00, "referenceSql": "见 f-weekly-w26 同指标" }
+      ] },
+
+    { "type": "FACTS", "id": "f-forex-w26", "templateId": "forex-risk-weekly", "periodLabel": "2026-W26",
+      "expected": [
+        { "metricId": "cny_total_balance", "purpose": "CURRENT", "value": 65700000.00, "referenceSql": "SELECT SUM(balance) FROM account WHERE currency='CNY' AND status='ACTIVE'" },
+        { "metricId": "deposit_balance", "purpose": "CURRENT", "value": 50000000.00, "referenceSql": "SELECT SUM(balance) FROM account WHERE account_type='DEPOSIT' AND status='ACTIVE' AND currency='CNY'" },
+        { "metricId": "week_inflow_amount_cny", "purpose": "CURRENT", "value": 900000.00, "referenceSql": "见 f-weekly-w26 同指标" },
+        { "metricId": "week_outflow_amount_cny", "purpose": "CURRENT", "value": 2951436.00, "referenceSql": "见 f-weekly-w26 同指标" },
+        { "metricId": "large_txn_count", "purpose": "CURRENT", "value": 2, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE currency='CNY' AND amount>=500000 AND status<>'FAILED' AND txn_date BETWEEN '2026-06-22' AND '2026-06-28'" },
+        { "metricId": "week_inflow_amount_cny", "purpose": "COMPARE", "value": 1302900.00, "referenceSql": "见 f-weekly-w26 同指标" },
+        { "metricId": "week_outflow_amount_cny", "purpose": "COMPARE", "value": 287200.00, "referenceSql": "见 f-weekly-w26 同指标" },
+        { "metricId": "large_txn_count", "purpose": "COMPARE", "value": 0, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE currency='CNY' AND amount>=500000 AND status<>'FAILED' AND txn_date BETWEEN '2026-06-15' AND '2026-06-21'" }
+      ] },
+
+    { "type": "FACTS", "id": "f-invest-w26", "templateId": "investment-weekly", "periodLabel": "2026-W26",
+      "expected": [
+        { "metricId": "invest_out_amount_cny", "purpose": "CURRENT", "value": 1436.00, "referenceSql": "见 f-weekly-w26 同指标" },
+        { "metricId": "invest_out_amount_usd", "purpose": "CURRENT", "value": 200.00, "referenceSql": "SELECT SUM(amount) FROM cash_transaction WHERE currency='USD' AND direction='OUT' AND category='INVEST' AND status<>'FAILED' AND txn_date BETWEEN '2026-06-22' AND '2026-06-28' -- GF run#23 手核基准" },
+        { "metricId": "large_txn_count", "purpose": "CURRENT", "value": 2, "referenceSql": "见 f-forex-w26 同指标" },
+        { "metricId": "in_transit_txn_count", "purpose": "CURRENT", "value": 2, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE status='IN_TRANSIT'" },
+        { "metricId": "invest_out_amount_cny", "purpose": "COMPARE", "value": 287200.00, "referenceSql": "见 f-weekly-w26 同指标" },
+        { "metricId": "invest_out_amount_usd", "purpose": "COMPARE", "value": 40000.00, "referenceSql": "SELECT SUM(amount) FROM cash_transaction WHERE currency='USD' AND direction='OUT' AND category='INVEST' AND status<>'FAILED' AND txn_date BETWEEN '2026-06-15' AND '2026-06-21'" }
+      ] },
+
+    { "type": "FACTS", "id": "f-loan-w26", "templateId": "loan-weekly", "periodLabel": "2026-W26",
+      "expected": [
+        { "metricId": "loan_outstanding_balance", "purpose": "CURRENT", "value": 5000000.00, "referenceSql": "SELECT SUM(principal) FROM loan WHERE currency='CNY'" },
+        { "metricId": "due_repayment_count", "purpose": "CURRENT", "value": 1, "referenceSql": "SELECT COUNT(*) FROM loan_repayment WHERE paid=0" },
+        { "metricId": "pending_payment_count", "purpose": "CURRENT", "value": 0, "referenceSql": "SELECT COUNT(*) FROM payment_order WHERE status='PENDING'" }
+      ] }
+  ]
+}
