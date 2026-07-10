@@ -59,3 +59,19 @@ SET @ddl := (SELECT IF(COUNT(*) = 0,
   FROM information_schema.columns
   WHERE table_schema = DATABASE() AND table_name = 'report_run' AND column_name = 'template_version');
 PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- report_run 加 metric_versions_json（Phase02 P2-T1：指标版本快照，卡点1 确认时固化）。
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE report_run ADD COLUMN metric_versions_json TEXT NULL COMMENT ''指标版本快照 JSON {metricId: version}（卡点1 确认时固化，含派生操作数；resume 不追新版；NULL=Phase02 前存量 run 未固化）'' AFTER template_version',
+  'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'report_run' AND column_name = 'metric_versions_json');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- report_fact 加 metric_version（Phase02 P2-T1：事实记录取数所用指标定义版本）。
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE report_fact ADD COLUMN metric_version INT NULL COMMENT ''取数时使用的指标定义版本（快照固化；DERIVED 记其结果指标的版本；NULL=未固化存量）'' AFTER metric_id',
+  'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'report_fact' AND column_name = 'metric_version');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;

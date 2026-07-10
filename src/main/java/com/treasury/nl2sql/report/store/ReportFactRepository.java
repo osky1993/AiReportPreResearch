@@ -20,6 +20,7 @@ public class ReportFactRepository {
     private static final RowMapper<FactRecord> MAPPER = (rs, i) -> new FactRecord(
             rs.getString("fact_key"),
             rs.getString("metric_id"),
+            rs.getObject("metric_version", Integer.class),
             rs.getString("metric_name"),
             rs.getString("chapter_id"),
             rs.getString("fact_type"),
@@ -36,33 +37,34 @@ public class ReportFactRepository {
             rs.getString("quality_note"));
 
     public void batchInsert(long runId, List<FactRecord> facts) {
-        jdbc.batchUpdate("INSERT INTO report_fact (run_id, fact_key, metric_id, metric_name, chapter_id, fact_type, "
+        jdbc.batchUpdate("INSERT INTO report_fact (run_id, fact_key, metric_id, metric_version, metric_name, chapter_id, fact_type, "
                         + "value_num, unit, display_value, period_label, dimensions_json, spec_json, "
                         + "sql_text, sql_hash, result_hash, derived_from, quality_status, quality_note) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?, ?)",
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?, ?)",
                 facts, facts.size(), (ps, f) -> {
                     ps.setLong(1, runId);
                     ps.setString(2, f.factKey());
                     ps.setString(3, f.metricId());
-                    ps.setString(4, f.metricName());
-                    ps.setString(5, f.chapterId());
-                    ps.setString(6, f.factType());
-                    ps.setBigDecimal(7, f.value());
-                    ps.setString(8, f.unit());
-                    ps.setString(9, f.displayValue());
-                    ps.setString(10, f.periodLabel());
-                    ps.setString(11, f.specJson());
-                    ps.setString(12, f.sqlText());
-                    ps.setString(13, f.sqlHash());
-                    ps.setString(14, f.resultHash());
-                    ps.setString(15, f.derivedFrom());
-                    ps.setString(16, f.qualityStatus());
-                    ps.setString(17, f.qualityNote());
+                    ps.setObject(4, f.metricVersion());
+                    ps.setString(5, f.metricName());
+                    ps.setString(6, f.chapterId());
+                    ps.setString(7, f.factType());
+                    ps.setBigDecimal(8, f.value());
+                    ps.setString(9, f.unit());
+                    ps.setString(10, f.displayValue());
+                    ps.setString(11, f.periodLabel());
+                    ps.setString(12, f.specJson());
+                    ps.setString(13, f.sqlText());
+                    ps.setString(14, f.sqlHash());
+                    ps.setString(15, f.resultHash());
+                    ps.setString(16, f.derivedFrom());
+                    ps.setString(17, f.qualityStatus());
+                    ps.setString(18, f.qualityNote());
                 });
     }
 
     public List<FactRecord> findByRun(long runId) {
-        return jdbc.query("SELECT fact_key, metric_id, metric_name, chapter_id, fact_type, value_num, unit, "
+        return jdbc.query("SELECT fact_key, metric_id, metric_version, metric_name, chapter_id, fact_type, value_num, unit, "
                         + "display_value, period_label, spec_json, sql_text, sql_hash, result_hash, derived_from, "
                         + "quality_status, quality_note FROM report_fact WHERE run_id = ? ORDER BY id",
                 MAPPER, runId);

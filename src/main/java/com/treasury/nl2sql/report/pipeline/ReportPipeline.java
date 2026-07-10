@@ -1,7 +1,9 @@
 package com.treasury.nl2sql.report.pipeline;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.treasury.nl2sql.report.asset.MetricDefinition;
 import com.treasury.nl2sql.report.asset.ReportAssetService;
 import com.treasury.nl2sql.report.domain.FactRecord;
 import com.treasury.nl2sql.report.domain.MetricQuerySpec;
@@ -111,14 +113,16 @@ public class ReportPipeline {
         }
     }
 
-    /** HITL 卡点1 确认：以人确认的大纲版本为准落库（口径锁死），kick ②~⑥ 异步。 */
+    /** HITL 卡点1 确认：以人确认的大纲版本为准落库（口径锁死——大纲内容与指标版本快照同时固化），kick ②~⑥ 异步。 */
     public ReportRun approveOutline(long runId, String approver, JsonNode editedOutline) {
         ReportRun run = require(runId);
         assertStatus(run, "确认大纲", RunStatus.AWAITING_OUTLINE_APPROVAL);
         Outline outline = editedOutline == null || editedOutline.isNull()
                 ? readOutline(run)
                 : parseEditedOutline(run, editedOutline);
-        runRepo.approveOutline(runId, blankTo(approver, "demo"), toJson(outline));
+        Map<String, Integer> metricVersions = assets.snapshotMetricVersions(
+                outline.chapters().stream().flatMap(c -> c.metricIds().stream()).toList());
+        runRepo.approveOutline(runId, blankTo(approver, "demo"), toJson(outline), toJson(metricVersions));
         kick(runId, Phase.SPEC);
         return require(runId);
     }
@@ -174,6 +178,14 @@ public class ReportPipeline {
             Outline outline = readOutline(run);
             PeriodResolver.Window current = PeriodResolver.resolve(run.periodLabel());
             PeriodResolver.Window compare = PeriodResolver.previous(current);
+            // 指标定义按 run 固化的版本快照回读（②③④ 与 resume 同一通路）；
+            // 快照缺失 = Phase02 前存量 run，回退当前 PUBLISHED（详情页标注「未固化」）
+            Map<String, Integer> pinnedVersions = readMetricVersions(run);
+            Map<String, MetricDefinition> defs = pinnedVersions == null
+                    ? assets.allMetrics() : assets.metricsAt(pinnedVersions);
+            if (pinnedVersions == null) {
+                log.warn("[RUN-{}] 无指标版本快照（Phase02 前存量 run），回退使用当前 PUBLISHED 指标定义", runId);
+            }
 
             List<FactRecord> facts;
             List<String> notes;
@@ -184,7 +196,7 @@ public class ReportPipeline {
                 long specStepId = stepRepo.start(runId, phase.name(), toJson(outline));
                 List<MetricQuerySpec> specs;
                 try {
-                    specs = specStep.run(outline, current, compare, assets.allMetrics());
+                    specs = specStep.run(outline, current, compare, defs);
                     stepRepo.finishOk(specStepId, toJson(specs));
                 } catch (RuntimeException e) {
                     stepRepo.finishBlocked(specStepId, e.getMessage());
@@ -197,7 +209,7 @@ public class ReportPipeline {
                 long fetchStepId = stepRepo.start(runId, phase.name(), toJson(specs));
                 List<FetchStep.FetchResult> fetched;
                 try {
-                    fetched = fetchStep.run(specs);
+                    fetched = fetchStep.run(specs, defs);
                     stepRepo.finishOk(fetchStepId, toJson(fetched));
                 } catch (RuntimeException e) {
                     stepRepo.finishBlocked(fetchStepId, e.getMessage());
@@ -209,7 +221,7 @@ public class ReportPipeline {
                 runRepo.setStatusPhase(runId, RunStatus.RUNNING.name(), phase.name());
                 long factStepId = stepRepo.start(runId, phase.name(), null);
                 try {
-                    FactBuildStep.FactBuildResult built = factStep.run(outline, fetched, assets.allMetrics());
+                    FactBuildStep.FactBuildResult built = factStep.run(outline, fetched, defs, pinnedVersions);
                     factRepo.deleteByRun(runId);
                     factRepo.batchInsert(runId, built.facts());
                     facts = built.facts();
@@ -338,6 +350,18 @@ public class ReportPipeline {
     }
 
     // ---------- 工具 ----------
+
+    /** run 固化的指标版本快照；null=Phase02 前存量 run 未固化（回退现行为，不硬 BLOCKED 老数据）。 */
+    private Map<String, Integer> readMetricVersions(ReportRun run) {
+        if (run.metricVersionsJson() == null || run.metricVersionsJson().isBlank()) {
+            return null;
+        }
+        try {
+            return mapper.readValue(run.metricVersionsJson(), new TypeReference<LinkedHashMap<String, Integer>>() {});
+        } catch (Exception e) {
+            throw new IllegalStateException("指标版本快照 JSON 无法解析", e);
+        }
+    }
 
     private Outline readOutline(ReportRun run) {
         if (run.outlineJson() == null) {

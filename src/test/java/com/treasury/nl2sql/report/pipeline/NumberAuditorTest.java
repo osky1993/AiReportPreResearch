@@ -18,7 +18,7 @@ class NumberAuditorTest {
 
     private static FactRecord fact(String key, String value, String unit) {
         BigDecimal v = new BigDecimal(value);
-        return new FactRecord(key, "m_" + key, "指标" + key, "ch1", FactRecord.TYPE_BASE,
+        return new FactRecord(key, "m_" + key, 1, "指标" + key, "ch1", FactRecord.TYPE_BASE,
                 v, unit, FactBuildStep.renderDisplay(v, unit), "2026-W26",
                 null, null, null, null, null, FactRecord.QUALITY_PASSED, null);
     }

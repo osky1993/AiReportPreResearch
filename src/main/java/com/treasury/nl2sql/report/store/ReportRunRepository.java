@@ -28,7 +28,8 @@ public class ReportRunRepository {
         this.jdbc = jdbc;
     }
 
-    private static final String COLS = "run_id, request_text, template_id, template_version, period_label, period_start, period_end, "
+    private static final String COLS = "run_id, request_text, template_id, template_version, metric_versions_json, "
+            + "period_label, period_start, period_end, "
             + "compare_start, compare_end, status, phase, outline_json, report_md, audit_json, blocked_reason, "
             + "outline_approved_by, outline_approved_at, publish_approved_by, publish_approved_at, created_at, updated_at";
 
@@ -37,6 +38,7 @@ public class ReportRunRepository {
             rs.getString("request_text"),
             rs.getString("template_id"),
             rs.getObject("template_version", Integer.class),
+            rs.getString("metric_versions_json"),
             rs.getString("period_label"),
             toLd(rs, "period_start"),
             toLd(rs, "period_end"),
@@ -91,12 +93,13 @@ public class ReportRunRepository {
                 toDate(compareStart), toDate(compareEnd), outlineJson, runId);
     }
 
-    /** HITL 卡点1 确认：以人确认的大纲版本为准落库，转 RUNNING。 */
-    public void approveOutline(long runId, String approver, String outlineJson) {
+    /** HITL 卡点1 确认：以人确认的大纲版本为准落库（同时固化指标版本快照——口径锁死时点），转 RUNNING。 */
+    public void approveOutline(long runId, String approver, String outlineJson, String metricVersionsJson) {
         jdbc.update("UPDATE report_run SET status = 'RUNNING', phase = 'SPEC', outline_json = ?, "
+                        + "metric_versions_json = ?, "
                         + "outline_approved_by = ?, outline_approved_at = NOW(), blocked_reason = NULL "
                         + "WHERE run_id = ?",
-                outlineJson, approver, runId);
+                outlineJson, metricVersionsJson, approver, runId);
     }
 
     public void setStatusPhase(long runId, String status, String phase) {

@@ -38,8 +38,15 @@ public class FactBuildStep {
 
     public record FactBuildResult(List<FactRecord> facts, List<String> notes) {}
 
+    /** 纯逻辑单测入口（无版本快照：metricVersion 记 null）。 */
     public FactBuildResult run(Outline outline, List<FetchStep.FetchResult> fetched,
                                Map<String, MetricDefinition> metricDefs) {
+        return run(outline, fetched, metricDefs, null);
+    }
+
+    /** @param metricVersions run 固化的指标版本快照（null=Phase02 前存量 run 未固化，fact 版本记 null） */
+    public FactBuildResult run(Outline outline, List<FetchStep.FetchResult> fetched,
+                               Map<String, MetricDefinition> metricDefs, Map<String, Integer> metricVersions) {
         List<FactRecord> facts = new ArrayList<>();
         List<String> notes = new ArrayList<>();
         // metricId → purpose → fact（派生与环比计算的查找索引）
@@ -53,7 +60,8 @@ public class FactBuildStep {
             BigDecimal value = extractValue(def, fr);
             assertQuality(def, value);
             FactRecord fact = new FactRecord(
-                    nextKey(seq), spec.metricId(), def.name(), spec.chapterId(),
+                    nextKey(seq), spec.metricId(), versionOf(metricVersions, spec.metricId()),
+                    def.name(), spec.chapterId(),
                     FactRecord.TYPE_BASE, value, def.unit(), renderDisplay(value, def.unit()),
                     spec.periodLabel(), toJson(spec),
                     fr.sql(), fr.sqlHash(), fr.resultHash(), null,
@@ -83,7 +91,8 @@ public class FactBuildStep {
                                 + def.derived().op() + "」不支持");
                     };
                     FactRecord fact = new FactRecord(
-                            nextKey(seq), metricId, def.name(), ch.chapterId(),
+                            nextKey(seq), metricId, versionOf(metricVersions, metricId),
+                            def.name(), ch.chapterId(),
                             FactRecord.TYPE_DERIVED, value, def.unit(), renderDisplay(value, def.unit()),
                             l.periodLabel(), null, null, null, null,
                             l.factKey() + "," + r.factKey(),
@@ -115,7 +124,8 @@ public class FactBuildStep {
                         .multiply(BigDecimal.valueOf(100))
                         .divide(cmp.value().abs(), 1, RoundingMode.HALF_UP);
                 facts.add(new FactRecord(
-                        wowKey, metricId, def.name() + "（环比）", ch.chapterId(),
+                        wowKey, metricId, versionOf(metricVersions, metricId),
+                        def.name() + "（环比）", ch.chapterId(),
                         FactRecord.TYPE_DERIVED, wow, "percent", renderDisplay(wow, "percent"),
                         cur.periodLabel(), null, null, null, null,
                         cur.factKey() + "," + cmp.factKey(),
@@ -181,6 +191,10 @@ public class FactBuildStep {
 
     private static String nextKey(int[] seq) {
         return String.format("fact_%03d", ++seq[0]);
+    }
+
+    private static Integer versionOf(Map<String, Integer> versions, String metricId) {
+        return versions == null ? null : versions.get(metricId);
     }
 
     private static MetricDefinition require(Map<String, MetricDefinition> defs, String metricId) {

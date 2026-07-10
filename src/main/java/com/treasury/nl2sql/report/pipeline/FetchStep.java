@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.treasury.nl2sql.compile.MqlSqlCompiler;
 import com.treasury.nl2sql.ir.Mql;
 import com.treasury.nl2sql.report.asset.MetricDefinition;
-import com.treasury.nl2sql.report.asset.ReportAssetService;
 import com.treasury.nl2sql.report.domain.MetricQuerySpec;
 import com.treasury.nl2sql.validate.MqlValidator;
 import org.jooq.DSLContext;
@@ -34,15 +33,13 @@ public class FetchStep {
     private static final Logger log = LoggerFactory.getLogger(FetchStep.class);
 
     private final ObjectMapper mapper;
-    private final ReportAssetService assets;
     private final MqlValidator validator;
     private final MqlSqlCompiler compiler;
     private final DSLContext dsl;
 
-    public FetchStep(ObjectMapper mapper, ReportAssetService assets, MqlValidator validator,
+    public FetchStep(ObjectMapper mapper, MqlValidator validator,
                      MqlSqlCompiler compiler, DSLContext dsl) {
         this.mapper = mapper;
-        this.assets = assets;
         this.validator = validator;
         this.compiler = compiler;
         this.dsl = dsl;
@@ -52,11 +49,14 @@ public class FetchStep {
     public record FetchResult(MetricQuerySpec spec, String sql, String sqlHash,
                               List<Map<String, Object>> rows, String resultHash) {}
 
-    public List<FetchResult> run(List<MetricQuerySpec> specs) {
+    /** defs 由编排器按 run 固化的指标版本快照装配（不直读注册表 PUBLISHED 缓存——发新版不影响在跑 run）。 */
+    public List<FetchResult> run(List<MetricQuerySpec> specs, Map<String, MetricDefinition> defs) {
         List<FetchResult> results = new ArrayList<>();
         for (MetricQuerySpec spec : specs) {
-            MetricDefinition def = assets.metric(spec.metricId())
-                    .orElseThrow(() -> new PolicyException("指标「" + spec.metricId() + "」没有语义定义"));
+            MetricDefinition def = defs.get(spec.metricId());
+            if (def == null) {
+                throw new PolicyException("指标「" + spec.metricId() + "」没有语义定义");
+            }
             if (def.isDerivedMetric()) {
                 throw new PolicyException("派生指标「" + spec.metricId() + "」不应出现在取数规约中（应由 ④ 程序计算）");
             }

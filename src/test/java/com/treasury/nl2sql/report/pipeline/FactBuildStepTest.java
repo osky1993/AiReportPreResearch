@@ -119,6 +119,28 @@ class FactBuildStepTest {
     }
 
     @Test
+    void metricVersionsPinnedIntoFacts() {
+        // 带版本快照：BASE/派生/环比事实均记录各自指标的固化版本；无快照（3 参重载）则为 null
+        Map<String, MetricDefinition> defs = Map.of(
+                "in", metric("in", "CNY", true, "ZERO"),
+                "out", metric("out", "CNY", false, "ZERO"),
+                "net", new MetricDefinition("net", "净流入", "CNY", true, false, null, "ZERO", List.of(),
+                        null, new MetricDefinition.Derived("subtract", "in", "out")));
+        Map<String, Integer> versions = Map.of("in", 3, "out", 1, "net", 2);
+        var facts = step.run(outline("week_over_week", "in", "out", "net"), List.of(
+                result(spec("qs1", "in", "CURRENT", "2026-W26"), new BigDecimal("3000000")),
+                result(spec("qs2", "in", "COMPARE", "2026-W25"), new BigDecimal("2000000")),
+                result(spec("qs3", "out", "CURRENT", "2026-W26"), new BigDecimal("2800000"))), defs, versions);
+        for (FactRecord f : facts.facts()) {
+            assertEquals(versions.get(f.metricId()), f.metricVersion(),
+                    "fact " + f.factKey() + " 应记录指标 " + f.metricId() + " 的固化版本");
+        }
+        var unpinned = step.run(outline(null, "in"), List.of(
+                result(spec("qs1", "in", "CURRENT", "2026-W26"), new BigDecimal("1"))), defs);
+        assertNull(unpinned.facts().get(0).metricVersion());
+    }
+
+    @Test
     void wrongRowCountFailsClosed() {
         Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "笔", false, "ZERO"));
         MetricQuerySpec s = spec("qs1", "m1", "CURRENT", "2026-W26");
