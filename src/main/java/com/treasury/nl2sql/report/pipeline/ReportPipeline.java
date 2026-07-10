@@ -289,9 +289,9 @@ public class ReportPipeline {
         if (!RunStatus.BLOCKED.name().equals(run.status()) && !stale) {
             throw new IllegalStateException("仅 BLOCKED（或已停摆的 RUNNING）可断点续跑，当前状态: " + run.status());
         }
-        // 版本漂移护栏：run 固化的模板版本与注册表当前 PUBLISHED 不一致时提示。
-        // ②~⑥ 全部基于 outline_json 快照续跑（内容天然固化），P1 内版本恒为 1 仅防御；
-        // P2 引入页面发布新版本后升级为失败关闭或按固化版本从库回读。
+        // 版本漂移提示（非阻断）：固化版本与注册表当前 PUBLISHED 不一致时留日志。
+        // 续跑口径天然固化：模板内容走 outline_json 快照；指标定义走 metric_versions_json
+        // 快照按版本从库回读（Phase02 P2-T1 起）——发新版不影响在跑 run。
         if (run.templateId() != null && run.templateVersion() != null) {
             Integer current = assets.template(run.templateId()).isPresent()
                     ? assets.publishedVersion(run.templateId()) : null;

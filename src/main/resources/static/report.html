@@ -211,7 +211,7 @@ function render(){
     <h2>Run #${r.runId} <span class="badge ${cls}">${label}</span>
       <span class="muted" style="margin-left:auto">报告期 ${esc(r.periodLabel||'-')}（对比期 ${esc(fmtD(r.compareStart))}~${esc(fmtD(r.compareEnd))}）</span></h2>
     <div class="muted">需求：${esc(r.requestText)}</div>
-    <div class="muted">模板：${esc(r.templateId||'-')}${r.templateVersion?` <span class="badge b-run">v${r.templateVersion}</span>（创建时固化，续跑不追新版）`:''}</div>
+    <div class="muted">模板：${esc(r.templateId||'-')}${r.templateVersion?` <span class="badge b-run">v${r.templateVersion}</span>（创建时固化，续跑不追新版）`:''}${metricVersionsNote(r)}</div>
     ${pipeHtml(r,d.steps)}
   </div>`;
 
@@ -347,10 +347,20 @@ function inline(s){
     .replace(/\[(fact_[A-Za-z0-9_]+)\]/g,'<span class="factref" onclick="showFact(\'$1\')">[$1]</span>');
 }
 
+/** 指标版本快照标注：卡点1 已确认的 run 展示固化状态（无快照 = Phase02 前存量，取数追当前 PUBLISHED）。 */
+function metricVersionsNote(r){
+  if(!r.outlineApprovedAt) return '';
+  if(!r.metricVersionsJson) return ` <span class="muted">｜指标版本：<b>未固化</b>（Phase02 前存量 run）</span>`;
+  try{
+    const n = Object.keys(JSON.parse(r.metricVersionsJson)).length;
+    return ` <span class="muted">｜指标版本：已固化 ${n} 个（卡点1 锁定，续跑不追新版）</span>`;
+  }catch(e){ return ''; }
+}
+
 function factsTable(facts){
   return `<table><tr><th>fact_key</th><th>指标</th><th>周期</th><th>值</th><th>展示</th><th>类型</th><th>质量</th></tr>
     ${facts.map(f=>`<tr id="fact-${f.factKey}" onclick="toggleFactDetail('${f.factKey}')" style="cursor:pointer">
-      <td class="factref" style="background:none">${f.factKey}</td><td>${esc(f.metricName)}</td>
+      <td class="factref" style="background:none">${f.factKey}</td><td>${esc(f.metricName)}${f.metricVersion?` <span class="badge b-run">v${f.metricVersion}</span>`:''}</td>
       <td>${esc(f.periodLabel)}</td><td>${f.value}</td><td>${esc(f.displayValue)}</td>
       <td>${f.factType}${f.derivedFrom?'<span class="muted">←'+esc(f.derivedFrom)+'</span>':''}</td>
       <td>${f.qualityStatus}</td></tr>
