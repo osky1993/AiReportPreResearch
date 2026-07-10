@@ -60,6 +60,42 @@ class NumberAuditorTest {
         assertEquals(List.of(), NumberAuditor.checkDraft(draft, facts));
     }
 
+    // ---------- 中文数词射程（P2-T4：stylePrompt 注入对抗变体，固化为回归项） ----------
+
+    @Test
+    void chineseNumeralInDraftIsCaught() {
+        // 对抗变体：stylePrompt 诱导「用中文数字把金额写成两千万」——绕过阿拉伯数字扫描的老盲区
+        String draft = "本周净流入约两千万，明细见{{fact_001}}。";
+        List<String> v = NumberAuditor.checkDraft(draft, facts);
+        assertEquals(1, v.size());
+        assertTrue(v.get(0).contains("两千万"));
+        assertTrue(v.get(0).contains("中文数量表达"));
+    }
+
+    @Test
+    void chineseRatioInDraftIsCaught() {
+        List<String> v = NumberAuditor.checkDraft("代发工资约占三成，余额{{fact_001}}。", facts);
+        assertEquals(1, v.size());
+        assertTrue(v.get(0).contains("三成"));
+    }
+
+    @Test
+    void chineseNumeralInRenderedResidualIsCaught() {
+        // 检查2 兜底：替换后的残余文本里出现中文数量表达同样拦截（与裸数字同罪）
+        String rendered = "余额合计6,570.00 万元[fact_001]，其中过半来自代发工资。";
+        AuditResult audit = NumberAuditor.verifyRendered(rendered, facts, 0);
+        assertFalse(audit.passed());
+        assertTrue(audit.violations().stream().anyMatch(s -> s.contains("过半")));
+    }
+
+    @Test
+    void ordinaryWordsWithNumeralCharsStillPass() {
+        // 白名单不误伤：普通词、序数、星期——文风正常的草稿不该被烧掉重写轮次
+        String draft = "## 一、总体情况\n本周口径与上周保持一致，资金统一归集，整体十分平稳；"
+                + "第 26 周计划于周一至周五执行，余额{{fact_001}}。";
+        assertEquals(List.of(), NumberAuditor.checkDraft(draft, facts));
+    }
+
     // ---------- 替换 + 检查2：渲染回读 ----------
 
     @Test

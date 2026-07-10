@@ -18,7 +18,8 @@ import java.util.regex.Pattern;
  *  检查2 verifyRendered —— 程序替换后的终稿：抽取全部「数值[fact_xxx]」对，
  *    把展示串反解析回数值与 fact.value 比对（容差=展示精度的半个末位），
  *    并确认不存在无引用尾随的裸数字。一致率必须 100%（理论上只有渲染器 bug 会触发，是程序对自身的自证）。
- * 已接受局限：中文数词（"三成""两千万"）不在审计射程内，prompt 禁用，靠 HITL 卡点2 人工兜底。
+ * 中文数词（"三成""两千万"）自 Phase02 起进入双检射程（ChineseNumeralDetector，双条件判定）；
+ * 检测器刻意「宁漏报不误报」，射程外的残余中文数量表达仍由 prompt 禁用 + HITL 卡点2 人工兜底。
  */
 public final class NumberAuditor {
 
@@ -53,7 +54,16 @@ public final class NumberAuditor {
             violations.add("正文出现了未经事实引用的裸数字「" + n.group().trim() + "」（上下文: …"
                     + context(stripped, n.start(), n.end()) + "…）；数值一律用 {{fact_key}} 占位符表达");
         }
+        scanChineseNumerals(stripped, violations);
         return violations;
+    }
+
+    /** 中文数量表达扫描（检查1/检查2 共用）：数值以任何书写形态出现都必须走 {{fact_key}} 占位符。 */
+    private static void scanChineseNumerals(String text, List<String> violations) {
+        for (ChineseNumeralDetector.Hit hit : ChineseNumeralDetector.detect(text)) {
+            violations.add("正文出现了中文数量表达「" + hit.text() + "」（上下文: …"
+                    + context(text, hit.start(), hit.end()) + "…）；数值一律用 {{fact_key}} 占位符表达，禁用中文数词");
+        }
     }
 
     /** 程序替换：{{fact_key}} → 「display_value[fact_key]」。数值由程序写入，转录错误在构造上不可能发生。 */
@@ -101,7 +111,7 @@ public final class NumberAuditor {
         }
         residualBuf.append(rendered, last, rendered.length());
 
-        // 残余文本里不允许再有裸数字（无 [fact_xxx] 尾随）
+        // 残余文本里不允许再有裸数字（无 [fact_xxx] 尾随）——阿拉伯与中文数量表达同罪
         String residual = WHITELIST.matcher(residualBuf.toString()).replaceAll(" ");
         Matcher n = BARE_NUMBER.matcher(residual);
         int bare = 0;
@@ -110,6 +120,9 @@ public final class NumberAuditor {
             violations.add("终稿存在未经事实引用的裸数字「" + n.group().trim() + "」（上下文: …"
                     + context(residual, n.start(), n.end()) + "…）");
         }
+        int chineseBefore = violations.size();
+        scanChineseNumerals(residual, violations);
+        bare += violations.size() - chineseBefore;
 
         int matched = (int) details.stream().filter(AuditResult.NumberCheck::ok).count();
         int total = details.size() + bare;

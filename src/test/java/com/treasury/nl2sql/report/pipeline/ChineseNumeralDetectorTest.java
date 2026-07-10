@@ -65,6 +65,8 @@ class ChineseNumeralDetectorTest {
     @Test void weekday_zhouYi()    { assertClean("资金计划于周一至周五执行"); }
     @Test void weekday_xingQiSan() { assertClean("对账日为星期三"); }
     @Test void plain_noNumeral()   { assertClean("本周资金面平稳，收支结构合理，无异常波动。"); }
+    @Test void arabicWithUnit()    { assertClean("余额合计 6,570.00 万元"); }   // 阿拉伯数字的中文单位归 BARE_NUMBER 管
+    @Test void arabicWithYi()      { assertClean("规模突破 1.2 亿元"); }
 
     // ---------- Hit 定位（供审计违规文案带上下文摘录） ----------
 

@@ -55,8 +55,11 @@ public final class ChineseNumeralDetector {
         List<Hit> hits = new ArrayList<>();
         collect(hits, VAGUE.matcher(masked), text, null);
         collect(hits, PERCENT.matcher(masked), text, null);
-        collect(hits, NUM_UNIT.matcher(masked), text, null);
-        collect(hits, NUM_SCALE.matcher(masked), text, m -> m.group().matches(".*[百千万亿].*"));
+        // R3/R4 排除「阿拉伯数字 + 中文量级单位」构型（如 6,570.00 万元）——
+        // 那是合法渲染形态的单位部分，阿拉伯裸数字自有 NumberAuditor.BARE_NUMBER 负责
+        collect(hits, NUM_UNIT.matcher(masked), text, m -> !followsArabicDigit(masked, m.start()));
+        collect(hits, NUM_SCALE.matcher(masked), text,
+                m -> m.group().matches(".*[百千万亿].*") && !followsArabicDigit(masked, m.start()));
         hits.sort((a, b) -> Integer.compare(a.start(), b.start()));
         return dropOverlaps(hits);
     }
@@ -71,6 +74,16 @@ public final class ChineseNumeralDetector {
             }
         }
         return sb.toString();
+    }
+
+    /** 匹配起点前的首个非空白字符是否为阿拉伯数字（含千分位逗号/小数点）。 */
+    private static boolean followsArabicDigit(String text, int start) {
+        for (int i = start - 1; i >= 0; i--) {
+            char c = text.charAt(i);
+            if (c == ' ' || c == '　') continue;
+            return (c >= '0' && c <= '9') || c == ',' || c == '.';
+        }
+        return false;
     }
 
     private interface Filter { boolean accept(Matcher m); }
