@@ -46,7 +46,7 @@ public class AuditStep {
                     + " 处违规）: " + String.join("；", violations.subList(0, Math.min(3, violations.size()))));
         }
 
-        String rendered = NumberAuditor.substitute(md, factsByKey);
+        String rendered = NumberAuditor.dedupeUnitAfterRef(NumberAuditor.substitute(md, factsByKey));
         AuditResult audit = NumberAuditor.verifyRendered(rendered, factsByKey, round);
         if (!audit.passed()) {
             // 理论上只有渲染器 bug 会走到这里——检查2 是程序对自身的自证，同样失败关闭

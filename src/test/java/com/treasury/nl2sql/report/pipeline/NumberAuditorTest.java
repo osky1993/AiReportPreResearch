@@ -169,6 +169,35 @@ class NumberAuditorTest {
         assertFalse(audit.passed());
     }
 
+    // ---------- 量词去重后处理（P2-T5：「4 笔笔」文风瑕疵根治） ----------
+
+    @Test
+    void duplicatedUnitAfterRefIsDeduped() {
+        assertEquals("本周交易4 笔[fact_002]，环比持平。",
+                NumberAuditor.dedupeUnitAfterRef("本周交易4 笔[fact_002]笔，环比持平。"));
+        assertEquals("余额合计6,570.00 万元[fact_001]。",
+                NumberAuditor.dedupeUnitAfterRef("余额合计6,570.00 万元[fact_001]万元。"));
+    }
+
+    @Test
+    void dedupeThenVerifyStillConsistent() {
+        String rendered = NumberAuditor.dedupeUnitAfterRef("交易4 笔[fact_002]笔，余额6,570.00 万元[fact_001]。");
+        AuditResult audit = NumberAuditor.verifyRendered(rendered, facts, 0);
+        assertTrue(audit.passed(), () -> audit.violations().toString());
+        assertEquals(2, audit.matchedNumbers());
+    }
+
+    @Test
+    void dedupeDoesNotTouchLegitimateText() {
+        // 引用后跟的不是同一单位字 / 外币码后跟中文 / 正常行文——零改动
+        String s1 = "本周交易4 笔[fact_002]交易额平稳。";
+        assertEquals(s1, NumberAuditor.dedupeUnitAfterRef(s1));
+        String s2 = "本期支出200.00 USD[fact_010]美元账户。";
+        assertEquals(s2, NumberAuditor.dedupeUnitAfterRef(s2));
+        String s3 = "余额6,570.00 万元[fact_001]，其中活期占比上升。";
+        assertEquals(s3, NumberAuditor.dedupeUnitAfterRef(s3));
+    }
+
     // ---------- 外币指标（GF 演练 run#22 暴露的渲染器/审计器格式对齐回归项） ----------
 
     @Test

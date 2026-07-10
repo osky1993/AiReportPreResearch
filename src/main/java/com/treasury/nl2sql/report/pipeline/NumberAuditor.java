@@ -81,6 +81,19 @@ public final class NumberAuditor {
         return sb.toString();
     }
 
+    /** 量词去重构型：display_value 尾随单位 + [fact_xxx] 引用 + 紧跟的同一单位字（LLM 在占位符后重复量词）。 */
+    private static final Pattern DUP_UNIT = Pattern.compile(
+            "(万元|元|笔|个|户|单|项)(\\[fact_[A-Za-z0-9_]+\\])\\1");
+
+    /**
+     * 行文后处理（P2-T5，替换后、检查2 前）：去重占位符引用后重复的量词——
+     * 「4 笔[fact_x]笔」→「4 笔[fact_x]」。只处理「引用后紧跟同一单位字」一种构型，
+     * 数值与引用零改动；改坏了也有检查2 兜底（fail-closed 优于 silent-wrong）。
+     */
+    public static String dedupeUnitAfterRef(String rendered) {
+        return DUP_UNIT.matcher(rendered).replaceAll("$1$2");
+    }
+
     /** 检查2：终稿回读核对。一致率必须 100%，明细写入 audit_json 作为发布证据。 */
     public static AuditResult verifyRendered(String rendered, Map<String, FactRecord> facts, int rewriteRounds) {
         List<AuditResult.NumberCheck> details = new ArrayList<>();
