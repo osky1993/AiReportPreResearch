@@ -152,6 +152,15 @@
     </div>
     <div id="debug" style="margin-top:12px;"></div>
   </div>
+
+  <div class="card">
+    <div class="label" style="margin-top:0;">口径资产 → 升格为报告指标</div>
+    <div class="meta" style="text-transform:none;">人工核验沉淀的「问法 → 已校验 MQL」可一键带入指标制作向导第 ③ 步（参数化），沉为报告流水线的确定性取数指标。</div>
+    <div class="toolbar" style="margin-top:8px;">
+      <button class="gray" onclick="loadCalibers()">加载口径资产列表</button>
+    </div>
+    <div id="calibers" style="margin-top:12px;"></div>
+  </div>
 </div>
 
 <script>
@@ -552,6 +561,32 @@ document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runQuery();
 });
 initExamples();
+
+/* ---------- 口径资产升格入口（P2-T8）：列表 + 带 MQL 跳指标向导第 ③ 步 ---------- */
+async function loadCalibers() {
+  const box = document.getElementById('calibers');
+  box.innerHTML = '<span class="meta">加载中…</span>';
+  try {
+    const rows = await (await fetch('/api/report/calibers')).json();
+    if (!rows.length) { box.innerHTML = '<span class="meta">暂无 ACTIVE 口径资产——在上方查询区「采用并沉淀为口径」后再来。</span>'; return; }
+    box.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr style="text-align:left;color:#8a93a6;"><th style="padding:4px 8px;">#</th><th>已核验问法</th><th>沉淀人/时间</th><th></th></tr>
+      ${rows.map(r => `<tr style="border-top:1px solid #e6e9f0;">
+        <td style="padding:6px 8px;color:#8a93a6;">${r.id}</td>
+        <td style="padding:6px 8px;">${escapeHtml(r.question)}</td>
+        <td style="padding:6px 8px;color:#8a93a6;">${escapeHtml(r.createdBy||'-')} ${String(r.createdAt||'').slice(0,10)}</td>
+        <td style="padding:6px 8px;text-align:right;"><button class="ghost" onclick='promoteCaliber(${r.id})'>升格为指标 →</button></td>
+      </tr>`).join('')}</table>`;
+    window._CALIBERS = Object.fromEntries(rows.map(r => [r.id, r]));
+  } catch (e) { box.innerHTML = '<span class="meta">加载失败: ' + escapeHtml(String(e)) + '</span>'; }
+}
+function promoteCaliber(id) {
+  const r = (window._CALIBERS || {})[id];
+  if (!r) return;
+  // 编码与 metric-wizard.html 的 initFromUrl 解码严格互逆：btoa(unescape(encodeURIComponent(json)))
+  const b64 = btoa(unescape(encodeURIComponent(r.mqlJson)));
+  location.href = 'metric-wizard.html?mql=' + encodeURIComponent(b64);
+}
 </script>
 </body>
 </html>
