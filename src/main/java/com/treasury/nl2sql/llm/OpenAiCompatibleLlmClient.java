@@ -37,6 +37,12 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
 
     @Override
     public String completeJson(List<Message> messages) {
+        return completeJsonDetail(messages).content();
+    }
+
+    /** 在既有解析之上多取一段 usage（供应商省略 usage 时为 null）——completeJson 行为不变。 */
+    @Override
+    public LlmResult completeJsonDetail(List<Message> messages) {
         List<Map<String, String>> msgs = new ArrayList<>();
         for (Message m : messages) {
             msgs.add(Map.of("role", m.role(), "content", m.content()));
@@ -58,7 +64,12 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
 
         try {
             JsonNode root = mapper.readTree(resp);
-            return root.path("choices").path(0).path("message").path("content").asText();
+            String content = root.path("choices").path(0).path("message").path("content").asText();
+            JsonNode u = root.path("usage");
+            Usage usage = (u.isMissingNode() || u.isNull()) ? null
+                    : new Usage(u.hasNonNull("prompt_tokens") ? u.get("prompt_tokens").asInt() : null,
+                                u.hasNonNull("completion_tokens") ? u.get("completion_tokens").asInt() : null);
+            return new LlmResult(content, usage);
         } catch (Exception e) {
             throw new RuntimeException("解析 LLM 响应失败: " + resp, e);
         }

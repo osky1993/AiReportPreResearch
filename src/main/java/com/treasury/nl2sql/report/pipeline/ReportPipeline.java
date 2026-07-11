@@ -13,6 +13,7 @@ import com.treasury.nl2sql.report.domain.Outline;
 import com.treasury.nl2sql.report.domain.Phase;
 import com.treasury.nl2sql.report.domain.ReportRun;
 import com.treasury.nl2sql.report.domain.RunStatus;
+import com.treasury.nl2sql.report.observe.LlmUsageTally;
 import com.treasury.nl2sql.report.store.ReportFactRepository;
 import com.treasury.nl2sql.report.store.ReportRunRepository;
 import com.treasury.nl2sql.report.store.ReportStepRepository;
@@ -107,6 +108,7 @@ public class ReportPipeline {
     }
 
     private void runOutline(long runId, String requestText, String revisionNote) {
+        LlmUsageTally.reset();
         long stepId = stepRepo.start(runId, Phase.OUTLINE.name(),
                 toJson(Map.of("requestText", requestText, "revisionNote", String.valueOf(revisionNote))));
         try {
@@ -121,7 +123,7 @@ public class ReportPipeline {
                     current.label(),
                     current.start(), current.end(), compare.start(), compare.end(),
                     yoy == null ? null : yoy.start(), yoy == null ? null : yoy.end(), outlineJson);
-            stepRepo.finishOk(stepId, outlineJson);
+            stepRepo.finishOk(stepId, withLlmUsage(outlineJson));
         } catch (PolicyException e) {
             stepRepo.finishBlocked(stepId, e.getMessage());
             runRepo.setBlocked(runId, Phase.OUTLINE.name(), "[POLICY] " + e.getMessage());
@@ -192,6 +194,7 @@ public class ReportPipeline {
     }
 
     private void runAsync(long runId, Phase from) {
+        LlmUsageTally.reset();
         Phase phase = from;
         try {
             ReportRun run = require(runId);
@@ -296,7 +299,7 @@ public class ReportPipeline {
             WriteStep.Draft draft;
             try {
                 draft = writeStep.run(outline, facts, notes, claims);
-                stepRepo.finishOk(writeStepId, toJson(Map.of("reportMd", draft.reportMd())));
+                stepRepo.finishOk(writeStepId, withLlmUsage(toJson(Map.of("reportMd", draft.reportMd()))));
             } catch (RuntimeException e) {
                 stepRepo.finishBlocked(writeStepId, e.getMessage());
                 throw e;
@@ -319,7 +322,8 @@ public class ReportPipeline {
                             .map(c -> c.chartId() + "（" + c.detail() + "）")
                             .collect(java.util.stream.Collectors.joining("；")));
                 }
-                stepRepo.finishOk(auditStepId, auditJson.toString());
+                stepRepo.finishOk(auditStepId, withLlmUsage(auditJson.toString()));
+                // run.audit_json 保持审计包纯净（卡点2 复核契约），llmUsage 只进 step 落痕
                 runRepo.saveReport(runId, outcome.reportMd(), auditJson.toString());
             } catch (RuntimeException e) {
                 stepRepo.finishBlocked(auditStepId, e.getMessage());
@@ -521,6 +525,22 @@ public class ReportPipeline {
             return mapper.writeValueAsString(o);
         } catch (Exception e) {
             throw new IllegalStateException("序列化失败", e);
+        }
+    }
+
+    /**
+     * P6 契约2：把该步累计的 LLM 用量以 llmUsage 段并入 step output_json（不加列）。
+     * 无 LLM 调用则原样返回；合并失败也原样返回——观测永不阻断主链（纪律 13）。
+     */
+    private String withLlmUsage(String outputJson) {
+        LlmUsageTally.Tally tally = LlmUsageTally.drain();
+        if (tally.isEmpty()) return outputJson;
+        try {
+            ObjectNode node = (ObjectNode) mapper.readTree(outputJson);
+            node.set("llmUsage", mapper.valueToTree(tally));
+            return node.toString();
+        } catch (Exception e) {
+            return outputJson;
         }
     }
 }

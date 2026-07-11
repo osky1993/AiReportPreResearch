@@ -63,13 +63,13 @@ public class WriteStep {
 
     /** 调 LLM 并解析 {"report_md": "..."}；解析失败重试 1 次，仍失败按意外异常处理。 */
     private String completeAndParse(List<LlmClient.Message> conversation) {
-        String raw = llm.completeJson(conversation);
+        String raw = com.treasury.nl2sql.report.observe.LlmUsageTally.record(llm.completeJsonDetail(conversation));
         conversation.add(LlmClient.Message.assistant(raw));
         String md = tryParse(raw);
         if (md != null) return md;
         conversation.add(LlmClient.Message.user(
                 "上面的输出不是合法的 {\"report_md\": \"...\"} JSON。请只输出该 JSON 对象。"));
-        String retry = llm.completeJson(conversation);
+        String retry = com.treasury.nl2sql.report.observe.LlmUsageTally.record(llm.completeJsonDetail(conversation));
         conversation.add(LlmClient.Message.assistant(retry));
         md = tryParse(retry);
         if (md != null) return md;

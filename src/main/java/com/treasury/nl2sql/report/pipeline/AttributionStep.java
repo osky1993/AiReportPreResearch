@@ -184,14 +184,14 @@ public class AttributionStep {
     }
 
     private JsonNode completeWithOneRetry(List<LlmClient.Message> conversation) {
-        String raw = llm.completeJson(conversation);
+        String raw = com.treasury.nl2sql.report.observe.LlmUsageTally.record(llm.completeJsonDetail(conversation));
         log.info("[ATTR] LLM 输出: {}", raw);
         try {
             return mapper.readTree(stripFence(raw));
         } catch (Exception first) {
             conversation.add(LlmClient.Message.assistant(raw));
             conversation.add(LlmClient.Message.user("上面的输出不是合法 JSON。请只输出合法 JSON。"));
-            String retry = llm.completeJson(conversation);
+            String retry = com.treasury.nl2sql.report.observe.LlmUsageTally.record(llm.completeJsonDetail(conversation));
             try {
                 return mapper.readTree(stripFence(retry));
             } catch (Exception second) {
