@@ -9,6 +9,7 @@ import com.treasury.nl2sql.report.domain.ReportStep;
 import com.treasury.nl2sql.report.export.ReportExportService;
 import com.treasury.nl2sql.report.lineage.LineageAssembler;
 import com.treasury.nl2sql.report.lineage.LineageService;
+import com.treasury.nl2sql.report.observe.RunStatsService;
 import com.treasury.nl2sql.report.pipeline.ReportPipeline;
 import com.treasury.nl2sql.report.store.ClaimRepository;
 import com.treasury.nl2sql.report.store.ReportFactRepository;
@@ -42,11 +43,12 @@ public class ReportController {
     private final ReportAssetService assets;
     private final ReportExportService exportService;
     private final LineageService lineageService;
+    private final RunStatsService statsService;
 
     public ReportController(ReportPipeline pipeline, ReportStepRepository stepRepo,
                             ReportFactRepository factRepo, ClaimRepository claimRepo,
                             ReportAssetService assets, ReportExportService exportService,
-                            LineageService lineageService) {
+                            LineageService lineageService, RunStatsService statsService) {
         this.pipeline = pipeline;
         this.stepRepo = stepRepo;
         this.factRepo = factRepo;
@@ -54,6 +56,7 @@ public class ReportController {
         this.assets = assets;
         this.exportService = exportService;
         this.lineageService = lineageService;
+        this.statsService = statsService;
     }
 
     public record CreateRequest(String requestText) {}
@@ -150,6 +153,16 @@ public class ReportController {
     @GetMapping("/runs/{id}/lineage")
     public LineageAssembler.LineageDoc lineage(@PathVariable long id) {
         return lineageService.export(id);
+    }
+
+    /**
+     * 运行看板统计（P6 契约3，只读）：run 状态分布 / BLOCKED 原因 TopN / 各步成功率·重试率·
+     * 阻断率与 P50/P95 耗时 / LLM 用量与可选成本。缺省近 30 天；from=all 查全量。
+     */
+    @GetMapping("/stats")
+    public RunStatsService.StatsResponse stats(@RequestParam(required = false) String from,
+                                               @RequestParam(required = false) String to) {
+        return statsService.stats(from, to);
     }
 
     /** 支撑资产视图：模板 + 指标语义定义（演示页「资产」页签 / 调试）。 */

@@ -87,6 +87,9 @@ report:
     tau: 0.60             # ①模板匹配 embedding 召回阈值（keywords 命中不受此限）；召回为空即失败关闭
   export:
     font-path: ${REPORT_EXPORT_FONT_PATH:}   # PDF 导出中文字体（.ttf/.otf）；空=按内置候选路径自动探测，探测不到则 PDF 导出明确报错（Docx 不受影响）
+  observe:
+    price-per-1k-input: 0    # 看板成本估算单价（每千 prompt token）；0=不显示金额只显示 token（P6 契约2）
+    price-per-1k-output: 0   # 每千 completion token 单价
 
 logging:
   level:
