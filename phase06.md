@@ -145,9 +145,29 @@ A/B 两轨文件面天然分离（A 在 `report/lineage/`，B 在 `report/observ
 
 | 风险 | 缓解 |
 |---|---|
-| 从 SQL 文本反推表名不可靠（别名/子查询） | 血缘的业务表输入**只从 spec_json 的 MQL 结构取**（table + joins），SQL 文本仅作 facet 附带展示，不做解析 |
+| 从 SQL 文本反推表名不可靠（别名/子查询） | 血缘的业务表输入**只从指标版本快照对应版本的 mqlTemplate 结构取**（table + joins；实现期修正：spec_json 只含 MetricQuerySpec 不含 MQL，改从资产版本行取更同源），SQL 文本不做解析 |
 | 老 run 结构性缺失把血缘搞成「处处报错」 | 纪律 14 的双态设计：断链（有引用无实体）才失败关闭；能力引入前的老 run 产物缺失是合法空 `absent`——T1 单测两态都固化 |
 | 供应商不返回 usage / 换供应商字段漂移 | usage 可空贯穿全链：采集点判空不写段、聚合端把「未计量」与 0 区分展示；成本仅在配置单价后显示并标「估算」 |
 | 动 `LlmClient` 破坏底座评估契约 | 只追加 default 方法不改既有签名；`query()`/`EvalService` 零改动；金标准评测纳入 T3 验证项 |
 | 观测聚合查询拖慢主库 | 时间窗缺省 30 天 + 复用既有 `idx_step_run`；演示量级无压力；物化/独立读库是生产化话题，明确不在本批 |
 | 看板被误会成「实时监控」 | 页面明示「手动刷新、演示级统计」；不做轮询、不做告警——那是 G06-B 之后的事 |
+
+---
+
+## 八、G06-A 验收记录（2026-07-12，phase06 分支）
+
+| Gate 条目 | 结果 | 证据 |
+|---|---|---|
+| 1 血缘导出端到端 | ✅ | `GET /runs/{id}/lineage` 实导：run#37（PUBLISHED 全能力）节点 11 类齐全——48 fact / 29 spec / 28 SQL / 18 指标@快照版本 / 2 图表 / 1 归因 / 1 事件 / 2 审批 / 1 报告，6 张业务表自 mqlTemplate 结构化提取；README §四 schema 文档化 |
+| 2 同源与失败关闭 | ✅ | 装配器对抗单测 4 项：derivedFrom / 图表绑定 / 事件引用三类断链失败关闭；run#22（BLOCKED）无 REPORT 节点带 blockedReason、存量 run 快照 `absent`；PUBLISHED 血缘含审计摘要（39/39 + chartChecks 2/2） |
+| 3 运行看板可用 | ✅ | `dashboard.html` 浏览器实测（全量窗口 37 runs）：状态饼图 / 各步三率柱状 / 步骤明细（OUTLINE P50 4s·P95 11s，WRITE P50 25s·P95 66s）/ BLOCKED 原因 TopN（[POLICY] 徽章分组）/ LLM 用量卡与未计量提示；与手写 SQL 聚合逐值一致（37 runs / 40 OUTLINE 执行 / 10 阻断 / P50 4s） |
+| 4 token 计量落痕 | ✅ | run#38 E2E 全流程签发：OUTLINE 1 调用（1635/123）、WRITE 2 调用（撰写+归因，4826/4501）、AUDIT 1 调用（回灌重写，5083/2930，与 rewriteRounds:1 互证）；`run.audit_json` 纯净无 llmUsage；看板聚合 4 调用 / 11,544+7,554 tokens；旧 run 显示「未计量」 |
+| 5 零回退与零写入 | ✅ | `mvn test` 403/403（+10：装配器 4 + 计量 3 + 统计 3）；评测两层 105/105 + 15/15 + 6/6；观测层全部只读（唯一写入 = 流水线自写 step 的 llmUsage 段）；run#38 全流程（含审计重写 1 轮 42/42）证明主链不受影响 |
+
+实现期修正记录：① 契约 1 原写「业务表从 spec_json 的 MQL 提取」——实探 spec_json 仅含
+MetricQuerySpec 七字段，改从**指标版本快照对应版本行的 mqlTemplate** 结构化提取（更同源）；
+② `EVT-n` 的 n 即真实 eventId（EventMatcher 构造如此），事件节点直接回查；③ run 不存在按
+控制器既有约定返回 400（非契约草案的 404），与 `/facts` 一致。
+
+拍板项落地：血缘 run 级单文档 ✅；token 真实 usage（`completeJsonDetail` 非破坏追加，
+`completeJson` 行为不变）✅；看板近 30 天缺省 + `from=all` ✅；成本单价 yml 配置缺省 0 ✅。

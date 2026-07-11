@@ -12,6 +12,7 @@ public final class LlmUsageTally {
 
     /** 一步内的用量汇总；calls 含未计量调用，metered 口径只看 tokens 两项。 */
     public record Tally(int calls, int unmeteredCalls, long promptTokens, long completionTokens) {
+        @com.fasterxml.jackson.annotation.JsonIgnore
         public boolean isEmpty() { return calls == 0; }
     }
 
