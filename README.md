@@ -126,8 +126,19 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
 
 10. **匹配失败关闭**：输入「生成 HR 月度盘点」→ ① 即 BLOCKED（`[POLICY]`），blocked_reason
     列出全部可用模板候选清单（匹配不到不猜，转人工）。
-11. **周期失败关闭与打回**：输入「生成 2026 年 6 月的资金月报」→ ① 即 BLOCKED（当前仅支持周报）；
-    在 BLOCKED 面板填打回意见「改为第 25 周的周报」→ 重新生成大纲（attempt 留痕）。
+11. **月报/季报与同比（Phase03 起，原「月报被失败关闭」反例翻转为能力）**：输入「生成 2026 年
+    6 月的资金月报」→ 命中 `treasury-monthly`、周期 2026-M06，环比基期 M05 与**同比基期 2025-M06**
+    由程序推导 → 双卡点签发，正文明确区分「较上月」与「较去年同期」（实录 run #29，审计 42/42
+    一致率 100%）；季报同理（「生成 2026 年二季度的资金季报」→ QoQ+YoY，run #30，45/45）。
+    - **周期反例（原演示 11 的失败关闭语义由年报承担）**：输入「生成 2026 年度资金报告」→ ①
+      BLOCKED `[POLICY]`；打回面板填意见重新生成（attempt 留痕）不变。
+    - **周期-模板匹配把关**：输入「给我一份 2026 年二季度的司库资金周报」→ BLOCKED
+      `[POLICY] 模板「司库资金周报」不支持 QUARTER 粒度的报告期（支持: WEEK…）`——粒度合法性
+      由服务端矩阵校验，不信 LLM 选择。
+11b. **维度拆解章节（Phase03）**：周报 v3 新增「五、按币种拆解」→ ③ groupBy 多行取数（行上限
+    12）→ ④ 逐行造 fact（`fact_017_cny`/`fact_017_usd`，dimensions 非空）+ 合计 + 占比 `_share`
+    → ⑤ markdown 表格逐格 `{{fact_key}}` 占位符 → ⑥ 逐格核对（实录 run #31，43/43 一致率
+    100%）。章节 fact 总数上限 20，触顶 BLOCKED 不静默截断。
 12. **资产自检兜底**：把 `metrics.json` 某占位符改错（如 `{{period_strat}}`）再启动（清空
     `report_metric` 表触发重种）→ **启动即失败**；库中 PUBLISHED 资产坏了同样拒绝启动。
 13. **断点续跑**：`UPDATE report_run SET status='BLOCKED', phase='WRITE' WHERE run_id=X;`
@@ -166,21 +177,21 @@ curl -s localhost:8080/api/report/runs/1/publish/approve -H 'Content-Type: appli
 
 ### 评测基线（Phase02 建立，回归门禁的一部分）
 
-黄金需求集 `resources/report/eval/golden-set.json`（11 MATCH + 6 BLOCKED + 5 FACTS，
-FACTS 的 47 条期望值全部**手写 SQL 直查得出**、referenceSql 逐条落档——期望值不得由被评测系统自产自证）。
-分层评测，只读不写状态表：
+黄金需求集 `resources/report/eval/golden-set.json`（15 MATCH + 6 BLOCKED + 7 FACTS，
+FACTS 的 100 条期望值全部**手写 SQL 直查得出**、referenceSql 逐条落档——期望值不得由被评测系统自产自证；
+维度行按 `dimensions` 一行一条期望值定位）。分层评测，只读不写状态表：
 
 ```bash
 curl -X POST 'localhost:8080/api/report/eval/run?layer=deterministic'   # ②③④ 取数等价，零 LLM，秒级
 curl -X POST 'localhost:8080/api/report/eval/run?layer=llm'             # ① 匹配/失败关闭，烧 token，分钟级
 ```
 
-| 基线指标 | 首版基线（2026-07-10，18 指标 / 5 模板） | 说明 |
-|---|---|---|
-| 取数等价率 | **47/47 = 100%** | ③ 产出值 vs 手写 SQL 期望，值不一致即失败；sql_hash 随报告输出作复现记录 |
-| 数字一致率 | **100%（恒等）** | ⑥ 的发布硬门禁，不足 100% 根本出不了报告，评测直接引用审计包 |
-| 模板匹配正确率 | **11/11 = 100%** | ① 对口语变体/同义词/ISO 标签的模板命中与周期识别 |
-| 失败关闭正确率 | **6/6 = 100%** | 无关领域/空泛/月报/缺周期一律 BLOCKED 不硬凑 |
+| 基线指标 | Phase03 基线（2026-07-11，19 指标 / 7 模板） | 首版基线（2026-07-10） | 说明 |
+|---|---|---|---|
+| 取数等价率 | **100/100 = 100%** | 47/47 = 100% | ③ 产出值 vs 手写 SQL 期望（含月/季 COMPARE_YOY 与维度行），值不一致即失败；sql_hash 随报告输出作复现记录 |
+| 数字一致率 | **100%（恒等）** | 100%（恒等） | ⑥ 的发布硬门禁，不足 100% 根本出不了报告，评测直接引用审计包 |
+| 模板匹配正确率 | **15/15 = 100%** | 11/11 = 100% | ① 对口语变体/同义词/周·月·季标签的模板命中与周期识别 |
+| 失败关闭正确率 | **6/6 = 100%** | 6/6 = 100% | 无关领域/空泛/年报/缺周期一律 BLOCKED 不硬凑 |
 
 资产（模板/指标）扩容或改动匹配、周期、取数任一环节后，两层各重跑一遍不得回退——
 Phase06 将把确定性层升级为资产 publish 的自动影子回归门禁。
