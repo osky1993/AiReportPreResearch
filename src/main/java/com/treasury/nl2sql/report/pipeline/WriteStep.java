@@ -99,8 +99,10 @@ public class WriteStep {
             ## 写作要求
             - 语言正式克制（企业内部周报）；只陈述"发生了什么"，不猜测原因、不下因果结论、不用绝对化说法。
             - 结构：每章一个二级标题（## 章节标题原文），章内 1~3 段或短列表。
-            - 需要对比时可同时引用本期与对比期的事实占位符，并引用环比事实（fact_xxx_wow）描述变化方向。
-            - 输入 notes 里说明"跳过环比"的指标，正文不要提其环比。
+            - 需要对比时可同时引用本期与基期的事实占位符，并引用环比事实（fact_xxx_wow/_mom/_qoq）
+              或同比事实（fact_xxx_yoy）描述变化方向；环比与同比同时存在时，表述必须明确区分
+              「较上期」与「较去年同期」。
+            - 输入 notes 里说明"跳过环比"或"跳过同比"的指标，正文不要提其对应变化率。
             """;
     }
 
@@ -125,7 +127,7 @@ public class WriteStep {
         return sb.toString();
     }
 
-    /** 本章事实 = 章节指标的全部事实（本期 + 对比期 + 环比），JSON 数组喂给模型。 */
+    /** 本章事实 = 章节指标的全部事实（本期 + 各基期 + 环比/同比），JSON 数组喂给模型。 */
     private String chapterFactsJson(Outline.OutlineChapter ch, List<FactRecord> facts) {
         ArrayNode arr = mapper.createArrayNode();
         for (FactRecord f : facts) {
@@ -137,7 +139,13 @@ public class WriteStep {
             o.put("value", f.value());
             o.put("unit", f.unit());
             o.put("display", f.displayValue());
+            // _wow 文案逐字节保留（周报基线 prompt 稳定），月/季环比与同比走新分支
             if (f.factKey().endsWith("_wow")) o.put("note", "环比变化率（正=较对比期上升）");
+            else if (f.factKey().endsWith("_mom") || f.factKey().endsWith("_qoq")) {
+                o.put("note", "环比变化率（较上一周期，正=上升）");
+            } else if (f.factKey().endsWith("_yoy")) {
+                o.put("note", "同比变化率（较去年同期，正=上升）");
+            }
         }
         return arr.toString();
     }

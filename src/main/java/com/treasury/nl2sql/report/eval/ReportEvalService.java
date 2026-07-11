@@ -94,9 +94,15 @@ public class ReportEvalService {
                     .orElseThrow(() -> new IllegalStateException("模板不在注册表: " + templateId));
             Outline outline = outlineOf(tpl, periodLabel);
             PeriodResolver.Window current = PeriodResolver.resolve(periodLabel);
-            PeriodResolver.Window compare = PeriodResolver.previous(current);
+            // 基期窗口组装与 ReportPipeline.runAsync 同款：环比无条件、同比按模板声明
+            Map<String, PeriodResolver.Window> compareWindows = new LinkedHashMap<>();
+            compareWindows.put(MetricQuerySpec.PURPOSE_COMPARE, PeriodResolver.previous(current));
+            if (SpecResolveStep.requiredComparePurposes(outline)
+                    .contains(MetricQuerySpec.PURPOSE_COMPARE_YOY)) {
+                compareWindows.put(MetricQuerySpec.PURPOSE_COMPARE_YOY, PeriodResolver.sameLastYear(current));
+            }
             Map<String, MetricDefinition> defs = assets.allMetrics();   // 评测对象 = 现役 PUBLISHED 资产
-            List<MetricQuerySpec> specs = specStep.run(outline, current, compare, defs);
+            List<MetricQuerySpec> specs = specStep.run(outline, current, compareWindows, defs);
             List<FetchStep.FetchResult> fetched = fetchStep.run(specs, defs);
             FactBuildStep.FactBuildResult built = factStep.run(outline, fetched, defs);
 

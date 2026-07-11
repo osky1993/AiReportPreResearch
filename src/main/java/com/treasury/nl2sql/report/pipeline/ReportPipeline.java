@@ -98,10 +98,14 @@ public class ReportPipeline {
             Outline outline = outlineStep.run(requestText, revisionNote);
             PeriodResolver.Window current = PeriodResolver.resolve(outline.periodLabel());
             PeriodResolver.Window compare = PeriodResolver.previous(current);
+            // 同比窗口只在模板声明了同比时才算（留痕列；执行期窗口在 runAsync 现场重推）
+            PeriodResolver.Window yoy = SpecResolveStep.requiredComparePurposes(outline)
+                    .contains(MetricQuerySpec.PURPOSE_COMPARE_YOY) ? PeriodResolver.sameLastYear(current) : null;
             String outlineJson = toJson(outline);
             runRepo.saveOutline(runId, outline.templateId(), assets.publishedVersion(outline.templateId()),
                     current.label(),
-                    current.start(), current.end(), compare.start(), compare.end(), outlineJson);
+                    current.start(), current.end(), compare.start(), compare.end(),
+                    yoy == null ? null : yoy.start(), yoy == null ? null : yoy.end(), outlineJson);
             stepRepo.finishOk(stepId, outlineJson);
         } catch (PolicyException e) {
             stepRepo.finishBlocked(stepId, e.getMessage());
@@ -177,7 +181,13 @@ public class ReportPipeline {
             ReportRun run = require(runId);
             Outline outline = readOutline(run);
             PeriodResolver.Window current = PeriodResolver.resolve(run.periodLabel());
-            PeriodResolver.Window compare = PeriodResolver.previous(current);
+            // 基期窗口按大纲声明的比较用途组装：环比无条件（保现行为），同比仅声明了才算
+            Map<String, PeriodResolver.Window> compareWindows = new LinkedHashMap<>();
+            compareWindows.put(MetricQuerySpec.PURPOSE_COMPARE, PeriodResolver.previous(current));
+            if (SpecResolveStep.requiredComparePurposes(outline)
+                    .contains(MetricQuerySpec.PURPOSE_COMPARE_YOY)) {
+                compareWindows.put(MetricQuerySpec.PURPOSE_COMPARE_YOY, PeriodResolver.sameLastYear(current));
+            }
             // 指标定义按 run 固化的版本快照回读（②③④ 与 resume 同一通路）；
             // 快照缺失 = Phase02 前存量 run，回退当前 PUBLISHED（详情页标注「未固化」）
             Map<String, Integer> pinnedVersions = readMetricVersions(run);
@@ -196,7 +206,7 @@ public class ReportPipeline {
                 long specStepId = stepRepo.start(runId, phase.name(), toJson(outline));
                 List<MetricQuerySpec> specs;
                 try {
-                    specs = specStep.run(outline, current, compare, defs);
+                    specs = specStep.run(outline, current, compareWindows, defs);
                     stepRepo.finishOk(specStepId, toJson(specs));
                 } catch (RuntimeException e) {
                     stepRepo.finishBlocked(specStepId, e.getMessage());

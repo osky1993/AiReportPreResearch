@@ -20,10 +20,11 @@ import java.util.Map;
 
 /**
  * ④ 事实构建（程序，不是 LLM）：查询结果 → FactRecord。
- * 三类产物：BASE（取数值，含对比期）、DERIVED 派生指标（如净流入=流入−流出）、
- * DERIVED 环比（(本期−对比期)/对比期，unit=percent）。
+ * 三类产物：BASE（取数值，含各基期）、DERIVED 派生指标（如净流入=流入−流出）、
+ * DERIVED 比较（环比 _wow/_mom/_qoq 与同比 _yoy，(本期−基期)/基期，unit=percent，
+ * 后缀与配对 purpose 由 {@link ComparisonType} 统一定义）。
  * display_value 在这里一次性渲染定死——⑤ 的占位符替换与 ⑥ 的回读核对都以它为准。
- * 质量断言失败 → 失败关闭；对比期基数为 0 → 仅跳过该环比并留 note（报告里就不提环比）。
+ * 质量断言失败 → 失败关闭；基期基数为 0 → 仅跳过该比较并留 note（报告里就不提它）。
  */
 @Component
 public class FactBuildStep {
@@ -81,7 +82,8 @@ public class FactBuildStep {
                     throw new PolicyException("派生指标「" + metricId + "」的操作数事实缺失（"
                             + def.derived().left() + " / " + def.derived().right() + "）");
                 }
-                for (String purpose : List.of(MetricQuerySpec.PURPOSE_CURRENT, MetricQuerySpec.PURPOSE_COMPARE)) {
+                for (String purpose : List.of(MetricQuerySpec.PURPOSE_CURRENT, MetricQuerySpec.PURPOSE_COMPARE,
+                        MetricQuerySpec.PURPOSE_COMPARE_YOY)) {
                     FactRecord l = left.get(purpose);
                     FactRecord r = right.get(purpose);
                     if (l == null || r == null) continue;   // 对比期未取数（非 comparison 章节）则只算本期
@@ -103,33 +105,37 @@ public class FactBuildStep {
             }
         }
 
-        // 3) DERIVED 环比：comparison 章节里 comparable 指标，(本期−对比期)/对比期 → percent
+        // 3) DERIVED 比较：声明比较的章节里 comparable 指标，(本期−基期)/基期 → percent；
+        //    环比（wow/mom/qoq）与同比（yoy）同一公式，配对键与后缀由 ComparisonType 决定
         for (Outline.OutlineChapter ch : outline.chapters()) {
-            if (ch.comparison() == null) continue;
-            for (String metricId : ch.metricIds()) {
-                MetricDefinition def = metricDefs.get(metricId);
-                if (def == null || !def.comparable()) continue;
-                Map<String, FactRecord> pair = byMetric.get(metricId);
-                if (pair == null) continue;
-                FactRecord cur = pair.get(MetricQuerySpec.PURPOSE_CURRENT);
-                FactRecord cmp = pair.get(MetricQuerySpec.PURPOSE_COMPARE);
-                if (cur == null || cmp == null) continue;
-                String wowKey = cur.factKey() + "_wow";
-                if (facts.stream().anyMatch(f -> f.factKey().equals(wowKey))) continue;   // 多章共享同一环比事实
-                if (cmp.value().signum() == 0) {
-                    notes.add("指标「" + def.name() + "」对比期（" + cmp.periodLabel() + "）基数为 0，跳过环比");
-                    continue;
+            for (String token : ch.effectiveComparisons()) {
+                ComparisonType ct = ComparisonType.require(token);
+                for (String metricId : ch.metricIds()) {
+                    MetricDefinition def = metricDefs.get(metricId);
+                    if (def == null || !def.comparable()) continue;
+                    Map<String, FactRecord> pair = byMetric.get(metricId);
+                    if (pair == null) continue;
+                    FactRecord cur = pair.get(MetricQuerySpec.PURPOSE_CURRENT);
+                    FactRecord cmp = pair.get(ct.purpose());
+                    if (cur == null || cmp == null) continue;
+                    String key = cur.factKey() + ct.factSuffix();
+                    if (facts.stream().anyMatch(f -> f.factKey().equals(key))) continue;   // 多章共享同一比较事实
+                    if (cmp.value().signum() == 0) {
+                        notes.add("指标「" + def.name() + "」" + baseWording(ct) + "（" + cmp.periodLabel()
+                                + "）基数为 0，跳过" + ct.label());
+                        continue;
+                    }
+                    BigDecimal change = cur.value().subtract(cmp.value())
+                            .multiply(BigDecimal.valueOf(100))
+                            .divide(cmp.value().abs(), 1, RoundingMode.HALF_UP);
+                    facts.add(new FactRecord(
+                            key, metricId, versionOf(metricVersions, metricId),
+                            def.name() + "（" + ct.label() + "）", ch.chapterId(),
+                            FactRecord.TYPE_DERIVED, change, "percent", renderDisplay(change, "percent"),
+                            cur.periodLabel(), null, null, null, null,
+                            cur.factKey() + "," + cmp.factKey(),
+                            FactRecord.QUALITY_PASSED, null));
                 }
-                BigDecimal wow = cur.value().subtract(cmp.value())
-                        .multiply(BigDecimal.valueOf(100))
-                        .divide(cmp.value().abs(), 1, RoundingMode.HALF_UP);
-                facts.add(new FactRecord(
-                        wowKey, metricId, versionOf(metricVersions, metricId),
-                        def.name() + "（环比）", ch.chapterId(),
-                        FactRecord.TYPE_DERIVED, wow, "percent", renderDisplay(wow, "percent"),
-                        cur.periodLabel(), null, null, null, null,
-                        cur.factKey() + "," + cmp.factKey(),
-                        FactRecord.QUALITY_PASSED, null));
             }
         }
 
@@ -191,6 +197,11 @@ public class FactBuildStep {
 
     private static String nextKey(int[] seq) {
         return String.format("fact_%03d", ++seq[0]);
+    }
+
+    /** 基数为 0 时 note 的基期措辞——环比沿用历史文案「对比期」（基线 prompt 逐字节稳定），同比用「同比基期」。 */
+    private static String baseWording(ComparisonType ct) {
+        return MetricQuerySpec.PURPOSE_COMPARE_YOY.equals(ct.purpose()) ? "同比基期" : "对比期";
     }
 
     private static Integer versionOf(Map<String, Integer> versions, String metricId) {

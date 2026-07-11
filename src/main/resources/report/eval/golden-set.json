@@ -13,9 +13,10 @@
     { "type": "MATCH", "id": "m09", "requestText": "2026 年第 26 周还款计划和贷款情况的周报", "expectedTemplateId": "loan-weekly", "expectedPeriodLabel": "2026-W26" },
     { "type": "MATCH", "id": "m10", "requestText": "帮忙出 2026 年第 26 周的投资监控周报，关注外币支出", "expectedTemplateId": "investment-weekly", "expectedPeriodLabel": "2026-W26" },
     { "type": "MATCH", "id": "m11", "requestText": "生成 2026-W26 司库资金周报", "expectedTemplateId": "treasury-weekly", "expectedPeriodLabel": "2026-W26", "note": "ISO 周标签直给" },
+    { "type": "MATCH", "id": "m12", "requestText": "生成 2026 年 6 月的资金月报", "expectedTemplateId": "treasury-monthly", "expectedPeriodLabel": "2026-M06", "note": "原 b02 反例——P3-T3 月报能力落地同批翻转为正向用例（契约3）" },
 
     { "type": "BLOCKED", "id": "b01", "requestText": "生成 HR 月度人员盘点报告", "reasonContains": "POLICY", "note": "无此业务域模板，候选清单转人工（README 演示 10）" },
-    { "type": "BLOCKED", "id": "b02", "requestText": "生成 2026 年 6 月的资金月报", "reasonContains": "POLICY", "note": "月周期暂不支持（Phase03 能力），失败关闭（README 演示 11）" },
+    { "type": "BLOCKED", "id": "b02", "requestText": "生成 2026 年度资金报告", "reasonContains": "POLICY", "note": "年周期不支持（periodLabel=null 失败关闭）——P3-T3 起接替月报承担周期反例（README 演示 11 同步改写）" },
     { "type": "BLOCKED", "id": "b03", "requestText": "写个报告", "reasonContains": "POLICY", "note": "空泛需求：模板或周期均无法识别" },
     { "type": "BLOCKED", "id": "b04", "requestText": "分析一下明天股市会不会涨", "reasonContains": "POLICY", "note": "无关领域，不得强行套模板" },
     { "type": "BLOCKED", "id": "b05", "requestText": "出一份 2026 年第 26 周的机房设备巡检报告", "reasonContains": "POLICY", "note": "周期合法但无对应模板——不许拿资金模板硬凑" },

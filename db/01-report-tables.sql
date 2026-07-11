@@ -22,6 +22,8 @@ CREATE TABLE report_run (
   period_end     DATE COMMENT '报告期止',
   compare_start  DATE COMMENT '对比期起',
   compare_end    DATE COMMENT '对比期止',
+  yoy_start      DATE COMMENT '同比基期起（去年同期；模板未声明同比则 NULL）',
+  yoy_end        DATE COMMENT '同比基期止',
   status         VARCHAR(40) NOT NULL DEFAULT 'AWAITING_OUTLINE_APPROVAL'
                  COMMENT '状态 AWAITING_OUTLINE_APPROVAL/RUNNING/BLOCKED/AWAITING_PUBLISH_APPROVAL/PUBLISHED/REJECTED',
   phase          VARCHAR(16) COMMENT '当前/最后步骤 OUTLINE/SPEC/FETCH/FACT/WRITE/AUDIT',

@@ -14,7 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** ④ 事实构建纯逻辑单测（无 DB/LLM）：取值断言、display 渲染、环比与净流入派生。 */
+/** ④ 事实构建纯逻辑单测（无 DB/LLM）：取值断言、display 渲染、环比/同比与净流入派生。 */
 class FactBuildStepTest {
 
     private final FactBuildStep step = new FactBuildStep(new ObjectMapper());
@@ -146,5 +146,58 @@ class FactBuildStepTest {
         MetricQuerySpec s = spec("qs1", "m1", "CURRENT", "2026-W26");
         FetchStep.FetchResult empty = new FetchStep.FetchResult(s, "select 1", "h", List.of(), "rh");
         assertThrows(PolicyException.class, () -> step.run(outline(null, "m1"), List.of(empty), defs));
+    }
+
+    // ---- Phase03：多比较（环比 _mom + 同比 _yoy 同章并存） ----
+
+    private static Outline monthlyOutline(List<String> comparisons, String... metricIds) {
+        return new Outline("tpl", "2026-M06",
+                List.of(new Outline.OutlineChapter("ch1", "第一章", List.of(metricIds), null, comparisons, "g", null)),
+                List.of());
+    }
+
+    @Test
+    void momAndYoyCoexistInOneChapter() {
+        Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "笔", true, "ZERO"));
+        var facts = step.run(monthlyOutline(List.of("month_over_month", "year_over_year"), "m1"), List.of(
+                result(spec("qs1", "m1", "CURRENT", "2026-M06"), 6),
+                result(spec("qs2", "m1", "COMPARE", "2026-M05"), 4),
+                result(spec("qs3", "m1", "COMPARE_YOY", "2025-M06"), 3)), defs);
+        assertEquals(5, facts.facts().size());   // 本期 + 两基期 + _mom + _yoy
+        FactRecord mom = facts.facts().get(3);
+        assertEquals("fact_001_mom", mom.factKey());
+        assertEquals("指标m1（环比）", mom.metricName());
+        assertEquals(0, mom.value().compareTo(new BigDecimal("50.0")));   // (6-4)/4
+        assertEquals("fact_001,fact_002", mom.derivedFrom());
+        FactRecord yoy = facts.facts().get(4);
+        assertEquals("fact_001_yoy", yoy.factKey());
+        assertEquals("指标m1（同比）", yoy.metricName());
+        assertEquals(0, yoy.value().compareTo(new BigDecimal("100.0")));   // (6-3)/3
+        assertEquals("+100.0%", yoy.displayValue());
+        assertEquals("fact_001,fact_003", yoy.derivedFrom());
+    }
+
+    @Test
+    void zeroYoyBaselineSkipsOnlyYoyWithDistinctNote() {
+        Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "笔", true, "ZERO"));
+        var facts = step.run(monthlyOutline(List.of("month_over_month", "year_over_year"), "m1"), List.of(
+                result(spec("qs1", "m1", "CURRENT", "2026-M06"), 6),
+                result(spec("qs2", "m1", "COMPARE", "2026-M05"), 4),
+                result(spec("qs3", "m1", "COMPARE_YOY", "2025-M06"), 0)), defs);
+        // _mom 照常，_yoy 跳过并留同比措辞的 note
+        assertTrue(facts.facts().stream().anyMatch(f -> f.factKey().equals("fact_001_mom")));
+        assertTrue(facts.facts().stream().noneMatch(f -> f.factKey().equals("fact_001_yoy")));
+        assertEquals(1, facts.notes().size());
+        assertTrue(facts.notes().get(0).contains("同比基期"));
+        assertTrue(facts.notes().get(0).contains("跳过同比"));
+    }
+
+    @Test
+    void yoyWithoutYoyBaseFactIsSilentlyAbsent() {
+        // 声明了同比但取数只有本期与环比基期（如快照指标）→ 不造 _yoy、不报错
+        Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "笔", true, "ZERO"));
+        var facts = step.run(monthlyOutline(List.of("year_over_year"), "m1"), List.of(
+                result(spec("qs1", "m1", "CURRENT", "2026-M06"), 6)), defs);
+        assertEquals(1, facts.facts().size());
     }
 }

@@ -30,7 +30,8 @@ public class ReportRunRepository {
 
     private static final String COLS = "run_id, request_text, template_id, template_version, metric_versions_json, "
             + "period_label, period_start, period_end, "
-            + "compare_start, compare_end, status, phase, outline_json, report_md, audit_json, blocked_reason, "
+            + "compare_start, compare_end, yoy_start, yoy_end, "
+            + "status, phase, outline_json, report_md, audit_json, blocked_reason, "
             + "outline_approved_by, outline_approved_at, publish_approved_by, publish_approved_at, created_at, updated_at";
 
     private static final RowMapper<ReportRun> MAPPER = (rs, i) -> new ReportRun(
@@ -44,6 +45,8 @@ public class ReportRunRepository {
             toLd(rs, "period_end"),
             toLd(rs, "compare_start"),
             toLd(rs, "compare_end"),
+            toLd(rs, "yoy_start"),
+            toLd(rs, "yoy_end"),
             rs.getString("status"),
             rs.getString("phase"),
             rs.getString("outline_json"),
@@ -80,17 +83,18 @@ public class ReportRunRepository {
         return jdbc.query("SELECT " + COLS + " FROM report_run ORDER BY run_id DESC", MAPPER);
     }
 
-    /** ① 成功：落大纲与周期窗口（含模板版本固化），进入 HITL 卡点1 等待。 */
+    /** ① 成功：落大纲与周期窗口（含模板版本固化；同比窗口仅声明了同比的模板非空），进入 HITL 卡点1 等待。 */
     public void saveOutline(long runId, String templateId, Integer templateVersion, String periodLabel,
                             LocalDate periodStart, LocalDate periodEnd,
-                            LocalDate compareStart, LocalDate compareEnd, String outlineJson) {
+                            LocalDate compareStart, LocalDate compareEnd,
+                            LocalDate yoyStart, LocalDate yoyEnd, String outlineJson) {
         jdbc.update("UPDATE report_run SET template_id = ?, template_version = ?, period_label = ?, "
                         + "period_start = ?, period_end = ?, "
-                        + "compare_start = ?, compare_end = ?, outline_json = ?, "
+                        + "compare_start = ?, compare_end = ?, yoy_start = ?, yoy_end = ?, outline_json = ?, "
                         + "status = 'AWAITING_OUTLINE_APPROVAL', phase = 'OUTLINE', blocked_reason = NULL "
                         + "WHERE run_id = ?",
                 templateId, templateVersion, periodLabel, toDate(periodStart), toDate(periodEnd),
-                toDate(compareStart), toDate(compareEnd), outlineJson, runId);
+                toDate(compareStart), toDate(compareEnd), toDate(yoyStart), toDate(yoyEnd), outlineJson, runId);
     }
 
     /** HITL 卡点1 确认：以人确认的大纲版本为准落库（同时固化指标版本快照——口径锁死时点），转 RUNNING。 */

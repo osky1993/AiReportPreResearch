@@ -75,3 +75,18 @@ SET @ddl := (SELECT IF(COUNT(*) = 0,
   FROM information_schema.columns
   WHERE table_schema = DATABASE() AND table_name = 'report_fact' AND column_name = 'metric_version');
 PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- report_run 加 yoy_start/yoy_end（Phase03 P3-T3：同比基期窗口留痕；resume 不读窗口列，一律现场重推）。
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE report_run ADD COLUMN yoy_start DATE NULL COMMENT ''同比基期起（去年同期；模板未声明同比则 NULL）'' AFTER compare_end',
+  'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'report_run' AND column_name = 'yoy_start');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE report_run ADD COLUMN yoy_end DATE NULL COMMENT ''同比基期止'' AFTER yoy_start',
+  'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'report_run' AND column_name = 'yoy_end');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;

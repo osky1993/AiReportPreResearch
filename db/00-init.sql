@@ -342,3 +342,48 @@ CREATE TABLE caliber_asset (
   created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '沉淀时间',
   status     VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE' COMMENT '状态 ACTIVE/DEPRECATED'
 ) COMMENT='口径资产表（人在回路沉淀）';
+
+-- =====================================================================
+-- Phase03 增量种子（P3-T3，纪律 8「只增不改」：上方已有行是 W25/W26 基线
+-- 与 Phase02 评测 47 条期望值的地基，绝不修改）。四段用途：
+--   · 2025-Q2 稀疏流水 —— 月/季同比基期（2025-06 撑 M06 同比）
+--   · 2026-Q1 稀疏流水 —— Q2 季环比基期
+--   · 2026-04 整月流水 —— 补齐 Q2 首月
+--   · 2026-05 上旬流水 —— 补齐 M05（原种子自 05-12 起）
+-- 全部日期 < 2026-05-12 或属 2025/2026Q1，不触碰 W25/W26 任何查询窗口。
+-- =====================================================================
+
+INSERT INTO cash_transaction (account_id,txn_date,direction,amount,currency,counterparty,category,status) VALUES
+ -- 2025-Q2（同比基期）
+ (1,'2025-04-08','IN' , 900000.00,'CNY','华东经销商','SALES','SETTLED'),
+ (1,'2025-04-18','OUT', 350000.00,'CNY','原料供应商A','INVEST','SETTLED'),
+ (1,'2025-05-09','IN' ,1100000.00,'CNY','华南经销商','SALES','SETTLED'),
+ (1,'2025-05-22','OUT', 400000.00,'CNY',NULL,'PAYROLL','SETTLED'),
+ (1,'2025-06-05','IN' ,1200000.00,'CNY','华东经销商','SALES','SETTLED'),
+ (1,'2025-06-12','OUT', 500000.00,'CNY','税务局','TAX','SETTLED'),
+ (2,'2025-06-19','IN' ,  30000.00,'USD','海外客户B','SALES','SETTLED'),
+ (1,'2025-06-26','OUT', 450000.00,'CNY','设备供应商','INVEST','SETTLED'),
+ -- 2026-Q1（Q2 季环比基期）
+ (1,'2026-01-15','IN' ,1300000.00,'CNY','华东经销商','SALES','SETTLED'),
+ (1,'2026-01-28','OUT', 520000.00,'CNY',NULL,'PAYROLL','SETTLED'),
+ (1,'2026-02-11','IN' , 950000.00,'CNY','华北经销商','SALES','SETTLED'),
+ (1,'2026-02-25','OUT', 380000.00,'CNY','原料供应商A','INVEST','SETTLED'),
+ (1,'2026-03-10','IN' ,1450000.00,'CNY','华东经销商','SALES','SETTLED'),
+ (2,'2026-03-18','OUT',  40000.00,'USD','海外供应商C','INVEST','SETTLED'),
+ (1,'2026-03-27','OUT', 600000.00,'CNY','税务局','TAX','SETTLED'),
+ -- 2026-04（Q2 首月）
+ (1,'2026-04-03','IN' ,1250000.00,'CNY','华东经销商','SALES','SETTLED'),
+ (1,'2026-04-09','OUT', 480000.00,'CNY',NULL,'PAYROLL','SETTLED'),
+ (2,'2026-04-14','IN' ,  60000.00,'USD','海外客户B','SALES','SETTLED'),
+ (3,'2026-04-17','OUT',  20000.00,'EUR','欧洲供应商D','INVEST','SETTLED'),
+ (1,'2026-04-21','IN' , 800000.00,'CNY','华南经销商','SALES','SETTLED'),
+ (1,'2026-04-24','OUT', 350000.00,'CNY','税务局','TAX','SETTLED'),
+ -- 注意：增量段全部 SETTLED——in_transit_txn_count 等快照口径不带周期过滤，
+ -- 任何非 SETTLED 增量行都会击穿 Phase02 既有期望值（实测教训）
+ (1,'2026-04-28','OUT',  90000.00,'CNY','设备供应商','INVEST','SETTLED'),
+ -- 2026-05 上旬（补齐 M05）
+ (1,'2026-05-04','IN' ,1000000.00,'CNY','华东经销商','SALES','SETTLED'),
+ (1,'2026-05-06','OUT', 420000.00,'CNY',NULL,'PAYROLL','SETTLED'),
+ (2,'2026-05-07','IN' ,  25000.00,'USD','海外客户B','SALES','SETTLED'),
+ (3,'2026-05-08','OUT',  15000.00,'EUR','欧洲供应商D','INVEST','SETTLED'),
+ (1,'2026-05-11','OUT', 260000.00,'CNY','税务局','TAX','SETTLED');
