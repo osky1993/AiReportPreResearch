@@ -138,6 +138,8 @@ public class WriteStep {
         ArrayNode arr = mapper.createArrayNode();
         for (FactRecord f : facts) {
             if (!ch.metricIds().contains(f.metricId())) continue;
+            // 图表序列 fact 不进 prompt（P4：LLM 连图表数据的存在都不知道，零接触在构造上成立）
+            if (FactBuildStep.isChartSeriesFact(f)) continue;
             ObjectNode o = arr.addObject();
             o.put("fact_key", f.factKey());
             o.put("metric", f.metricName());

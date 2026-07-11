@@ -20,4 +20,6 @@ public record MetricQuerySpec(
     public static final String PURPOSE_CURRENT = "CURRENT";
     public static final String PURPOSE_COMPARE = "COMPARE";
     public static final String PURPOSE_COMPARE_YOY = "COMPARE_YOY";
+    /** 图表趋势序列的历史期取数（Phase04）：序列 fact 不进 ⑤ prompt、不进评测比对射程。 */
+    public static final String PURPOSE_CHART_SERIES = "CHART_SERIES";
 }

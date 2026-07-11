@@ -301,6 +301,46 @@ class FactBuildStepTest {
                 Map.of("m1", blockDef)));
     }
 
+    // ---- Phase04：图表序列 fact ----
+
+    private static MetricQuerySpec chartSpec(String id, String metricId, String label) {
+        return new MetricQuerySpec(id, metricId, "ch1", MetricQuerySpec.PURPOSE_CHART_SERIES,
+                label, "2026-06-01", "2026-06-07");
+    }
+
+    @Test
+    void chartSeriesFactsGetOwnNamespaceSortedOldestFirst() {
+        Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "CNY", true, "ZERO"));
+        var built = step.run(outline(null, "m1"), List.of(
+                result(spec("qs1", "m1", "CURRENT", "2026-W26"), 100),
+                result(chartSpec("qs2", "m1", "2026-W25"), 90),
+                result(chartSpec("qs3", "m1", "2026-W24"), 80)), defs);
+        assertEquals(3, built.facts().size());
+        assertEquals("fact_001", built.facts().get(0).factKey());   // 主序列编号不受序列影响
+        FactRecord s1 = built.facts().get(1);
+        assertEquals("fact_c01_s1", s1.factKey());
+        assertEquals("2026-W24", s1.periodLabel());   // s1 = 最早期（periodLabel 排序）
+        assertEquals("fact_c01_s2", built.facts().get(2).factKey());
+        assertTrue(FactBuildStep.isChartSeriesFact(s1));
+        assertFalse(FactBuildStep.isChartSeriesFact(built.facts().get(0)));
+    }
+
+    @Test
+    void chartSeriesQuotaFailsClosedButNotChapterLimit() {
+        Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "CNY", true, "ZERO"));
+        // 21 个序列点 < 24 配额且不占章 20 上限 → 通过
+        List<FetchStep.FetchResult> ok = new java.util.ArrayList<>();
+        ok.add(result(spec("qs0", "m1", "CURRENT", "2026-W26"), 1));
+        for (int i = 1; i <= 21; i++) ok.add(result(chartSpec("qs" + i, "m1", String.format("2026-W%02d", i)), i));
+        assertEquals(22, step.run(outline(null, "m1"), ok, defs).facts().size());
+        // 25 个序列点 > 24 配额 → BLOCKED
+        List<FetchStep.FetchResult> over = new java.util.ArrayList<>();
+        over.add(result(spec("qs0", "m1", "CURRENT", "2026-W26"), 1));
+        for (int i = 1; i <= 25; i++) over.add(result(chartSpec("qs" + i, "m1", String.format("2026-W%02d", i)), i));
+        PolicyException e = assertThrows(PolicyException.class, () -> step.run(outline(null, "m1"), over, defs));
+        assertTrue(e.getMessage().contains("图表序列"));
+    }
+
     @Test
     void zeroTotalSkipsShareWithNote() {
         Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));

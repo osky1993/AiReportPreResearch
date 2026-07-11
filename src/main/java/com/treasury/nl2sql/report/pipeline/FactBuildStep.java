@@ -54,10 +54,16 @@ public class FactBuildStep {
         Map<String, Map<String, FactRecord>> byMetric = new LinkedHashMap<>();
         int[] seq = {0};
 
-        // 1) BASE：每条取数结果一条事实（含各基期）；维度指标走多行分支（Phase03）
+        // 1) BASE：每条取数结果一条事实（含各基期）；维度指标走多行分支（Phase03）；
+        //    图表序列（CHART_SERIES）攒到本轮后统一分组造 fact（Phase04）
+        List<FetchStep.FetchResult> chartSeries = new ArrayList<>();
         for (FetchStep.FetchResult fr : fetched) {
             MetricQuerySpec spec = fr.spec();
             MetricDefinition def = require(metricDefs, spec.metricId());
+            if (MetricQuerySpec.PURPOSE_CHART_SERIES.equals(spec.purpose())) {
+                chartSeries.add(fr);
+                continue;
+            }
             if (def.isDimensional()) {
                 buildDimensionalGroup(fr, def, versionOf(metricVersions, spec.metricId()),
                         facts, byMetric, notes, seq);
@@ -75,6 +81,7 @@ public class FactBuildStep {
             facts.add(fact);
             byMetric.computeIfAbsent(spec.metricId(), k -> new HashMap<>()).put(spec.purpose(), fact);
         }
+        buildChartSeriesFacts(chartSeries, metricDefs, metricVersions, facts);
 
         // 2) DERIVED 派生指标（净流入等）：对两个 BASE 指标做算术，本期/对比期各算一条
         for (Outline.OutlineChapter ch : outline.chapters()) {
@@ -151,11 +158,23 @@ public class FactBuildStep {
 
     /** 章节 fact 数上限（T0 拍板 20，含 BASE+DERIVED+维度行+占比）：触顶失败关闭，守 ⑤ 的占位符纪律。 */
     static final int CHAPTER_FACT_LIMIT = 20;
+    /** 图表序列独立配额（P4 契约2 裁定：序列 fact 不进 ⑤ prompt，故不占章 20 上限，独立管数据量）。 */
+    static final int CHAPTER_CHART_SERIES_LIMIT = 24;
+
+    /** 图表序列 fact 判定：按 spec 快照的 purpose 识别（不靠 key 模式——维度 slug 可能撞形）。 */
+    static boolean isChartSeriesFact(FactRecord f) {
+        return f.specJson() != null && f.specJson().contains("\"" + MetricQuerySpec.PURPOSE_CHART_SERIES + "\"");
+    }
 
     private static void assertChapterFactLimit(List<FactRecord> facts) {
         Map<String, Long> byChapter = new LinkedHashMap<>();
+        Map<String, Long> chartByChapter = new LinkedHashMap<>();
         for (FactRecord f : facts) {
-            byChapter.merge(f.chapterId(), 1L, Long::sum);
+            if (isChartSeriesFact(f)) {
+                chartByChapter.merge(f.chapterId(), 1L, Long::sum);
+            } else {
+                byChapter.merge(f.chapterId(), 1L, Long::sum);
+            }
         }
         for (Map.Entry<String, Long> e : byChapter.entrySet()) {
             if (e.getValue() > CHAPTER_FACT_LIMIT) {
@@ -163,6 +182,54 @@ public class FactBuildStep {
                         + CHAPTER_FACT_LIMIT + "（失败关闭，请拆分章节或减少指标/维度）");
             }
         }
+        for (Map.Entry<String, Long> e : chartByChapter.entrySet()) {
+            if (e.getValue() > CHAPTER_CHART_SERIES_LIMIT) {
+                throw new PolicyException("章节「" + e.getKey() + "」图表序列事实数 " + e.getValue() + " 超配额 "
+                        + CHAPTER_CHART_SERIES_LIMIT + "（失败关闭，请减少图表或缩短 periods）");
+            }
+        }
+    }
+
+    /**
+     * 图表序列 fact（Phase04 契约1「序列点即 fact」）：按 metricId 分组、periodLabel 升序
+     * （同粒度标签字典序即时间序），key = fact_NNN_sK（s1=最早期）。序列 fact 不进 byMetric 索引、
+     * 不进 ⑤ prompt、不进评测比对射程——只供 ChartBuildStep 绑定与 ⑥ 图表核对。
+     */
+    private void buildChartSeriesFacts(List<FetchStep.FetchResult> chartSeries,
+                                       Map<String, MetricDefinition> metricDefs,
+                                       Map<String, Integer> metricVersions, List<FactRecord> facts) {
+        if (chartSeries.isEmpty()) return;
+        Map<String, List<FetchStep.FetchResult>> byMetricId = new LinkedHashMap<>();
+        for (FetchStep.FetchResult fr : chartSeries) {
+            byMetricId.computeIfAbsent(fr.spec().metricId(), k -> new ArrayList<>()).add(fr);
+        }
+        for (Map.Entry<String, List<FetchStep.FetchResult>> e : byMetricId.entrySet()) {
+            MetricDefinition def = require(metricDefs, e.getKey());
+            List<FetchStep.FetchResult> points = new ArrayList<>(e.getValue());
+            points.sort(java.util.Comparator.comparing(p -> p.spec().periodLabel()));
+            // 序列组用「fact_c<NN>」前缀独立于主序列命名域——不动主序列 NNN 编号（既有基线稳定）
+            String groupKey = String.format("fact_c%02d", chartGroupIndex(facts) + 1);
+            int k = 0;
+            for (FetchStep.FetchResult fr : points) {
+                MetricQuerySpec spec = fr.spec();
+                BigDecimal value = extractValue(def, fr);
+                assertQuality(def, value);
+                facts.add(new FactRecord(
+                        groupKey + "_s" + (++k), spec.metricId(), versionOf(metricVersions, spec.metricId()),
+                        def.name() + "（序列·" + spec.periodLabel() + "）", spec.chapterId(),
+                        FactRecord.TYPE_BASE, value, def.unit(), renderDisplay(value, def.unit()),
+                        spec.periodLabel(), null, toJson(spec),
+                        fr.sql(), fr.sqlHash(), fr.resultHash(), null,
+                        FactRecord.QUALITY_PASSED, null));
+            }
+        }
+    }
+
+    private static int chartGroupIndex(List<FactRecord> facts) {
+        return (int) facts.stream().map(FactRecord::factKey)
+                .filter(key -> key.startsWith("fact_c"))
+                .map(key -> key.replaceAll("_s\\d+$", ""))
+                .distinct().count();
     }
 
     /**

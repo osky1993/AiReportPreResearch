@@ -60,6 +60,20 @@ class WriteStepPromptTest {
     }
 
     @Test
+    void chartSeriesFactsAreExcludedFromPrompt() {
+        // 序列 fact（spec purpose=CHART_SERIES）不进 ⑤ 的章节 facts JSON——LLM 零接触图表数据
+        FactRecord series = new FactRecord("fact_c01_s1", "m1", 1, "指标一（序列·2026-W24）", "c1", "BASE",
+                new java.math.BigDecimal("80"), "CNY", "80.00 元", "2026-W24", null,
+                "{\"purpose\":\"CHART_SERIES\"}", null, null, null, null, "PASSED", null);
+        FactRecord normal = new FactRecord("fact_001", "m1", 1, "指标一", "c1", "BASE",
+                new java.math.BigDecimal("1"), "CNY", "1.00 元", "2026-W26", null,
+                "{\"purpose\":\"CURRENT\"}", null, null, null, null, "PASSED", null);
+        String user = step.userPrompt(outline(null, null), List.of(series, normal), List.of());
+        assertTrue(user.contains("fact_001"));
+        assertFalse(user.contains("fact_c01_s1"), "序列 fact 不得出现在 prompt");
+    }
+
+    @Test
     void dimensionalFactsTriggerTableGuidanceOnlyInTheirChapter() {
         FactRecord dim = new FactRecord("fact_001_usd", "m1", 1, "指标一（USD）", "c1", "BASE",
                 new java.math.BigDecimal("1"), "CNY", "1.00 元", "2026-W26",

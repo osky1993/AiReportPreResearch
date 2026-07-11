@@ -112,6 +112,46 @@ class SpecResolveStepTest {
                 Map.of(MetricQuerySpec.PURPOSE_COMPARE, PeriodResolver.previous(M06)), defs));
     }
 
+    // ---- Phase04：图表序列取数 ----
+
+    private static Outline.OutlineChapter chartChapter(String id, int periods, String... metricIds) {
+        var chart = new com.treasury.nl2sql.report.domain.ChartDef("trend_x", "line", "趋势",
+                new com.treasury.nl2sql.report.domain.ChartDef.Binding("series", metricIds[0], periods));
+        return new Outline.OutlineChapter(id, "章" + id, List.of(metricIds), null, null, "g", null, List.of(chart));
+    }
+
+    @Test
+    void chartSeriesSpecsAreEmittedLastOldestFirst() {
+        Outline outline = new Outline("tpl", "2026-W26", List.of(
+                chartChapter("ch1", 4, "m1")), List.of());
+        Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", true, true));
+        List<MetricQuerySpec> specs = step.run(outline, W26,
+                Map.of(MetricQuerySpec.PURPOSE_COMPARE, PeriodResolver.previous(W26)), defs);
+        // CURRENT(1) + 序列历史 3 期（无比较章 → 无 COMPARE 块）；序列旧→新
+        assertEquals(4, specs.size());
+        assertEquals(List.of("CURRENT", "CHART_SERIES", "CHART_SERIES", "CHART_SERIES"),
+                specs.stream().map(MetricQuerySpec::purpose).toList());
+        assertEquals(List.of("2026-W23", "2026-W24", "2026-W25"),
+                specs.subList(1, 4).stream().map(MetricQuerySpec::periodLabel).toList());
+    }
+
+    @Test
+    void chartSeriesDedupesAcrossChartsAndSkipsNonSeries() {
+        var pie = new com.treasury.nl2sql.report.domain.ChartDef("mix_x", "pie", "构成",
+                new com.treasury.nl2sql.report.domain.ChartDef.Binding("dimension", "m1", null));
+        var trend = new com.treasury.nl2sql.report.domain.ChartDef("trend_x", "line", "趋势",
+                new com.treasury.nl2sql.report.domain.ChartDef.Binding("series", "m1", 3));
+        Outline outline = new Outline("tpl", "2026-W26", List.of(
+                new Outline.OutlineChapter("ch1", "一", List.of("m1"), null, null, "g", null, List.of(trend, pie)),
+                new Outline.OutlineChapter("ch2", "二", List.of("m1"), null, null, "g", null, List.of(trend))),
+                List.of());
+        Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", true, true));
+        List<MetricQuerySpec> specs = step.run(outline, W26,
+                Map.of(MetricQuerySpec.PURPOSE_COMPARE, PeriodResolver.previous(W26)), defs);
+        // CURRENT ×1 + 历史 2 期（两章同图去重；dimension 图不产序列 spec）
+        assertEquals(3, specs.size());
+    }
+
     @Test
     void requiredComparePurposesCollectsAcrossChapters() {
         Outline outline = new Outline("tpl", "2026-M06", List.of(

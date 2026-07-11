@@ -102,6 +102,40 @@ public class SpecResolveStep {
                         e.getKey(), w.label(), w.start().toString(), w.end().toString()));
             }
         }
+        // CHART_SERIES 块（Phase04）：series 图表的历史期取数，块序恒最后（既有编号逐字节不变）。
+        // 键 = metricId|periodLabel 去重（多图/多章共用同一历史点）；窗口由 previous() 自本期迭代推导；
+        // 本期点复用 CURRENT fact，不重复取数。
+        Set<String> seenSeries = new LinkedHashSet<>();
+        for (Outline.OutlineChapter ch : outline.chapters()) {
+            if (ch.charts() == null) continue;
+            for (var chart : ch.charts()) {
+                if (chart == null || chart.binding() == null
+                        || !com.treasury.nl2sql.report.domain.ChartDef.KIND_SERIES.equals(chart.binding().kind())) {
+                    continue;
+                }
+                String metricId = chart.binding().metricId();
+                MetricDefinition def = defs.get(metricId);
+                if (def == null) {
+                    throw new PolicyException("图表「" + chart.chartId() + "」绑定的指标「" + metricId
+                            + "」映射不到语义定义");
+                }
+                int periods = chart.binding().periods() == null ? 0 : chart.binding().periods();
+                // 历史期窗口：prev1..prev(N-1)，emit 顺序旧→新（序列 fact _s1 为最早期）
+                List<PeriodResolver.Window> history = new ArrayList<>();
+                PeriodResolver.Window w = current;
+                for (int i = 1; i < periods; i++) {
+                    w = PeriodResolver.previous(w);
+                    history.add(0, w);
+                }
+                for (PeriodResolver.Window hw : history) {
+                    if (!seenSeries.add(metricId + "|" + hw.label())) continue;
+                    specs.add(new MetricQuerySpec(specId(++seq), metricId,
+                            fetchMetrics.getOrDefault(metricId, ch.chapterId()),
+                            MetricQuerySpec.PURPOSE_CHART_SERIES, hw.label(),
+                            hw.start().toString(), hw.end().toString()));
+                }
+            }
+        }
         log.info("[SPEC] 生成取数规约 {} 条（本期 {} + 对比期 {} + 同比期 {}）", specs.size(),
                 fetchMetrics.size(), compareMetrics.get(MetricQuerySpec.PURPOSE_COMPARE).size(),
                 compareMetrics.get(MetricQuerySpec.PURPOSE_COMPARE_YOY).size());

@@ -112,6 +112,8 @@ public class ReportEvalService {
             for (var f : built.facts()) {
                 if (!"BASE".equals(f.factType())) continue;
                 MetricQuerySpec spec = mapper.readValue(f.specJson(), MetricQuerySpec.class);
+                // 图表序列不在取数等价率射程（P4）：序列正确性由 ⑥ 图表核对与 FACTS 的期望值扩充另行覆盖
+                if (MetricQuerySpec.PURPOSE_CHART_SERIES.equals(spec.purpose())) continue;
                 String key = expectationKey(f.metricId(), spec.purpose(), f.dimensions());
                 produced.put(key, f.value());
                 producedHash.put(key, f.sqlHash());
