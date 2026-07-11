@@ -90,6 +90,10 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
    核对无误后「审批发布」。
 4. **多模板匹配**：输入「出一份 2026 年第 26 周的资金快报」→ 命中「资金快报」模板（2 章）
    出报告（快报指标多为期间指标，话术须带周标签，否则报告期解析失败关闭）。
+5. **导出归档**：已签发报告的签发行提供「导出 PDF / 导出 Word」——正文/事实/图表一律取
+   库中 PUBLISHED 终稿（服务端不信任客户端文字），图表离屏按终稿 option 确定性出图上送，
+   且**每张图必附数据表**（数值只取 fact 的 display_value，与 ⑥ 审计同键同源）——导出文档
+   自身构成纸面证据闭环；无图时自动降级纯数据表（同一端点将来可换服务端 SVG 出图，契约不变）。
 
 ### B　资产自助闭环（页面管资产，零文件改动、零重启）
 
@@ -224,6 +228,7 @@ Phase06 将把确定性层升级为资产 publish 的自动影子回归门禁。
 | POST | `/runs/{id}/publish/reject` | 卡点2 驳回（终态 REJECTED）|
 | POST | `/runs/{id}/resume` | 断点续跑（仅 BLOCKED 或停摆超 2 分钟的 RUNNING）|
 | GET | `/runs/{id}/facts` | 证据视图：全部 FactRecord（含 SQL/双哈希/规约快照）|
+| POST | `/runs/{id}/export?format=pdf\|docx` | 已签发报告导出（仅 PUBLISHED）：正文/事实/图表取库中终稿，body 可选上送图表 PNG（缺图降级数据表）|
 | GET | `/assets` | 支撑资产：全部 PUBLISHED 模板（templates 数组）+ 指标语义定义 |
 | GET | `/calibers` | 口径资产列表（ACTIVE，升格入口用；`index.html` 一键带 MQL 跳指标向导第 ③ 步）|
 | POST | `/eval/run?layer=deterministic\|llm` | 回归评测（见上「评测基线」节；只读）|
