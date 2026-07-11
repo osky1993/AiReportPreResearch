@@ -49,6 +49,9 @@ public class ReportPipeline {
     private final FetchStep fetchStep;
     private final FactBuildStep factStep;
     private final ContributionStep contributionStep;
+    private final EventMatcher eventMatcher;
+    private final AttributionStep attributionStep;
+    private final com.treasury.nl2sql.report.store.ClaimRepository claimRepo;
     private final WriteStep writeStep;
     private final AuditStep auditStep;
     private final ObjectMapper mapper;
@@ -58,6 +61,8 @@ public class ReportPipeline {
     public ReportPipeline(ReportRunRepository runRepo, ReportStepRepository stepRepo, ReportFactRepository factRepo,
                           ReportAssetService assets, OutlineStep outlineStep, SpecResolveStep specStep,
                           FetchStep fetchStep, FactBuildStep factStep, ContributionStep contributionStep,
+                          EventMatcher eventMatcher, AttributionStep attributionStep,
+                          com.treasury.nl2sql.report.store.ClaimRepository claimRepo,
                           WriteStep writeStep, AuditStep auditStep, ObjectMapper mapper) {
         this.runRepo = runRepo;
         this.stepRepo = stepRepo;
@@ -68,6 +73,9 @@ public class ReportPipeline {
         this.fetchStep = fetchStep;
         this.factStep = factStep;
         this.contributionStep = contributionStep;
+        this.eventMatcher = eventMatcher;
+        this.attributionStep = attributionStep;
+        this.claimRepo = claimRepo;
         this.writeStep = writeStep;
         this.auditStep = auditStep;
         this.mapper = mapper;
@@ -202,6 +210,8 @@ public class ReportPipeline {
 
             List<FactRecord> facts;
             List<String> notes;
+            List<AnomalyDetector.Anomaly> anomalies = List.of();
+            List<FactRecord> contribFacts = List.of();
             if (from.ordinal() <= Phase.FACT.ordinal()) {
                 // ② 语义解析
                 phase = Phase.SPEC;
@@ -238,10 +248,10 @@ public class ReportPipeline {
                     // 异常检测 + 维度贡献拆解（Phase05，程序判定零 LLM）：与常规事实同落库同审计
                     List<String> allNotes = new ArrayList<>(built.notes());
                     List<FactRecord> allFacts = new ArrayList<>(built.facts());
-                    List<AnomalyDetector.Anomaly> anomalies =
-                            AnomalyDetector.detect(outline, built.facts(), defs, allNotes);
+                    anomalies = AnomalyDetector.detect(outline, built.facts(), defs, allNotes);
                     anomalies.forEach(a -> allFacts.add(a.fact()));
-                    allFacts.addAll(contributionStep.build(anomalies, current, defs, allNotes));
+                    contribFacts = contributionStep.build(anomalies, current, defs, allNotes);
+                    allFacts.addAll(contribFacts);
                     factRepo.deleteByRun(runId);
                     factRepo.batchInsert(runId, allFacts);
                     facts = allFacts;
@@ -260,27 +270,35 @@ public class ReportPipeline {
                 notes = readFactNotes(runId);
             }
 
-            // ⑤ 章节撰写
+            // ⑤ 章节撰写（Phase05：段首先做归因——候选由程序给、LLM 只挑选措辞；续跑读库固化不重算）
             phase = Phase.WRITE;
             runRepo.setStatusPhase(runId, RunStatus.RUNNING.name(), phase.name());
+            List<com.treasury.nl2sql.report.domain.ClaimRecord> claims;
+            if (from.ordinal() <= Phase.FACT.ordinal()) {
+                claims = buildClaims(anomalies, contribFacts, current, notes);
+                claimRepo.deleteByRun(runId);
+                if (!claims.isEmpty()) claimRepo.batchInsert(runId, claims);
+            } else {
+                claims = claimRepo.findByRun(runId);
+            }
             long writeStepId = stepRepo.start(runId, phase.name(),
-                    toJson(Map.of("factCount", facts.size(), "notes", notes)));
+                    toJson(Map.of("factCount", facts.size(), "notes", notes, "claimCount", claims.size())));
             WriteStep.Draft draft;
             try {
-                draft = writeStep.run(outline, facts, notes);
+                draft = writeStep.run(outline, facts, notes, claims);
                 stepRepo.finishOk(writeStepId, toJson(Map.of("reportMd", draft.reportMd())));
             } catch (RuntimeException e) {
                 stepRepo.finishBlocked(writeStepId, e.getMessage());
                 throw e;
             }
 
-            // ⑥ 证据审计（数字一致率 100% 硬门禁）
+            // ⑥ 证据审计（数字一致率 100% 硬门禁 + Phase05 因果措辞审计）
             phase = Phase.AUDIT;
             runRepo.setStatusPhase(runId, RunStatus.RUNNING.name(), phase.name());
             long auditStepId = stepRepo.start(runId, phase.name(), null);
             try {
                 Map<String, FactRecord> byKey = factsByKey(facts);
-                AuditStep.AuditOutcome outcome = auditStep.run(draft, byKey);
+                AuditStep.AuditOutcome outcome = auditStep.run(draft, byKey, claims);
                 stepRepo.finishOk(auditStepId, toJson(outcome.audit()));
                 runRepo.saveReport(runId, outcome.reportMd(), toJson(outcome.audit()));
             } catch (RuntimeException e) {
@@ -370,6 +388,33 @@ public class ReportPipeline {
     }
 
     // ---------- 工具 ----------
+
+    /** 归因段（⑤ 开头）：每异动做候选匹配（时间窗按规则 basis）→ LLM 候选内挑选措辞 → 服务端把关。 */
+    private List<com.treasury.nl2sql.report.domain.ClaimRecord> buildClaims(
+            List<AnomalyDetector.Anomaly> anomalies, List<FactRecord> contribFacts,
+            PeriodResolver.Window current, List<String> notes) {
+        if (anomalies.isEmpty()) return List.of();
+        Map<String, List<EventMatcher.Candidate>> candidates = new LinkedHashMap<>();
+        for (AnomalyDetector.Anomaly a : anomalies) {
+            PeriodResolver.Window base = "yoy".equals(a.rule().basis())
+                    ? PeriodResolver.sameLastYear(current) : PeriodResolver.previous(current);
+            String topDim = EventMatcher.topContributionDim(contribFacts.stream()
+                    .filter(cf -> cf.factKey().startsWith(a.fact().factKey() + "_")).toList());
+            candidates.put(a.fact().factKey(), eventMatcher.match(a, current, base, topDim));
+        }
+        return attributionStep.run(anomalies, contribFacts, candidates, notes);
+    }
+
+    /** 卡点2 归因确认（T0 拍板：勾选 + 留痕，不建独立工作流）：仅 hypothesis 可升 confirmed。 */
+    public void confirmClaim(long runId, String claimId, String confirmedBy) {
+        ReportRun run = require(runId);
+        assertStatus(run, "归因确认", RunStatus.AWAITING_PUBLISH_APPROVAL, RunStatus.PUBLISHED);
+        int updated = claimRepo.confirm(runId, claimId, blankTo(confirmedBy, "demo"));
+        if (updated == 0) {
+            throw new IllegalArgumentException("claim 不存在或等级不允许确认（仅 hypothesis 可升 confirmed）: " + claimId);
+        }
+        log.info("[RUN-{}] 归因 {} 由 {} 人工确认为 confirmed", runId, claimId, confirmedBy);
+    }
 
     /** 大纲指标 + 其异常规则的 dimensionMetricId（去重保序）——贡献拆解的维度指标也进版本快照。 */
     private List<String> withContributionDims(List<String> ids) {

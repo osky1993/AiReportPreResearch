@@ -38,10 +38,17 @@ public class WriteStep {
     /** 草稿 + 完整对话（审计违规回灌重写时续写同一对话）。 */
     public record Draft(String reportMd, List<LlmClient.Message> conversation) {}
 
+    /** 纯逻辑单测入口（无归因材料）。 */
     public Draft run(Outline outline, List<FactRecord> facts, List<String> notes) {
+        return run(outline, facts, notes, List.of());
+    }
+
+    /** @param claims 归因材料（Phase05；仅注入 chapterId 前缀 anomaly_ 的「异动解读」章） */
+    public Draft run(Outline outline, List<FactRecord> facts, List<String> notes,
+                     List<com.treasury.nl2sql.report.domain.ClaimRecord> claims) {
         List<LlmClient.Message> conversation = new ArrayList<>();
         conversation.add(LlmClient.Message.system(systemPrompt()));
-        conversation.add(LlmClient.Message.user(userPrompt(outline, facts, notes)));
+        conversation.add(LlmClient.Message.user(userPrompt(outline, facts, notes, claims)));
         String md = completeAndParse(conversation);
         return new Draft(md, conversation);
     }
@@ -106,8 +113,14 @@ public class WriteStep {
             """;
     }
 
-    /** 包私有以便单测 prompt 组装（stylePrompt 只进 user 段材料，system 铁律段不动）。 */
+    /** 纯逻辑单测入口（无归因材料）。 */
     String userPrompt(Outline outline, List<FactRecord> facts, List<String> notes) {
+        return userPrompt(outline, facts, notes, List.of());
+    }
+
+    /** 包私有以便单测 prompt 组装（stylePrompt 只进 user 段材料，system 铁律段不动）。 */
+    String userPrompt(Outline outline, List<FactRecord> facts, List<String> notes,
+                      List<com.treasury.nl2sql.report.domain.ClaimRecord> claims) {
         StringBuilder sb = new StringBuilder();
         sb.append("报告期：").append(outline.periodLabel()).append("\n\n## 章节与写作指引\n");
         for (Outline.OutlineChapter ch : outline.chapters()) {
@@ -124,6 +137,9 @@ public class WriteStep {
                         + "占比（写对应 _share 事实的占位符）；表格后可用一句话引用合计事实。"
                         + "表格单元格内同样禁止书写任何阿拉伯数字。\n");
             }
+            if (ch.chapterId() != null && ch.chapterId().startsWith("anomaly_")) {
+                sb.append(attributionMaterial(claims));
+            }
         }
         if (!notes.isEmpty()) {
             sb.append("\n## notes（正文需要遵守的说明）\n");
@@ -131,6 +147,30 @@ public class WriteStep {
         }
         sb.append("\n请输出 {\"report_md\": \"...\"}。");
         return sb.toString();
+    }
+
+    /**
+     * 「异动解读」章材料（Phase05 契约3，chapterId 前缀 anomaly_ 约定）：正文只许按 claims 逐条转写——
+     * narrative 原样使用（数值占位符保留）、等级徽章文本、行尾证据引用；无 claims 只写定性句。
+     */
+    private String attributionMaterial(List<com.treasury.nl2sql.report.domain.ClaimRecord> claims) {
+        if (claims == null || claims.isEmpty()) {
+            return "本章归因材料：无异动 claim。本章只写一句：「本期各项监控指标未见显著异动。」\n";
+        }
+        ArrayNode arr = mapper.createArrayNode();
+        for (var c : claims) {
+            ObjectNode o = arr.addObject();
+            o.put("claimId", c.claimId());
+            o.put("level", c.attributionLevel());
+            o.put("narrative", c.narrative());
+            o.set("evidenceRefs", mapper.valueToTree(c.evidenceRefs()));
+        }
+        return "本章归因材料（claims，程序把关后的唯一事实源——逐条转写，不增删、不改等级、不补原因）：\n"
+                + arr + "\n呈现要求：每条 claim 一段，段首等级徽章文本"
+                + "（observed→【观察】，associated→【关联】，hypothesis→【假设·待验证】），"
+                + "narrative 原样呈现（其中 {{fact_key}} 占位符保留），段尾列证据引用：fact 证据写 "
+                + "[fact_xxx]，事件证据写（证据：EVT-n）。禁止使用「导致/由于/因为」等因果措辞，"
+                + "除非该段含事件证据引用。\n";
     }
 
     /** 本章事实 = 章节指标的全部事实（本期 + 各基期 + 环比/同比），JSON 数组喂给模型。 */

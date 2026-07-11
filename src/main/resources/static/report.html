@@ -319,7 +319,40 @@ function reportHtml(r, d){
        : `<div class="muted" style="margin-top:8px">已驳回：${esc(r.blockedReason||'')}</div>`);
   return `<div class="card"><h2>报告${r.status==='PUBLISHED'?'（已签发）':'终稿'} <span class="muted" style="margin-left:auto">点击 [fact_xxx] 查看证据</span></h2>
       ${auditLine}<div class="report">${mdToHtml(r.reportMd)}</div>${actions}</div>
+    ${claimsCard(r, d)}
     <div class="card"><h2>证据：事实记录（FactRecord，${d.facts.length} 条）</h2>${factsTable(d.facts)}</div>`;
+}
+
+/* ---------- 归因 claim 证据链（Phase05：结论强度分级、无证据不升级；confirmed 仅人工勾选可达） ---------- */
+const CLAIM_META = { observed:['观察','b-rej'], associated:['关联','b-run'],
+                     hypothesis:['假设·待验证','b-await'], confirmed:['已确认','b-pub'] };
+function claimsCard(r, d){
+  const claims = d.claims || [];
+  if(!claims.length) return '';
+  const canConfirm = r.status==='AWAITING_PUBLISH_APPROVAL' || r.status==='PUBLISHED';
+  return `<div class="card"><h2>归因记录（ClaimRecord，${claims.length} 条）
+      <span class="muted" style="font-weight:400">候选由程序给、LLM 只挑选措辞；confirmed 仅人工勾选可达</span></h2>
+    <table><thead><tr><th>#</th><th>异动事实</th><th>等级</th><th>叙述（材料层）</th><th>证据引用</th><th>确认</th></tr></thead><tbody>
+    ${claims.map(c=>{
+      const [lb,cls] = CLAIM_META[c.attributionLevel]||[c.attributionLevel,'b-rej'];
+      const refs = (c.evidenceRefs||[]).map(x=>x.startsWith('EVT-')
+          ? `<span class="badge b-await">${esc(x)}</span>`
+          : `<span class="factref" onclick="showFact('${esc(x)}')">[${esc(x)}]</span>`).join(' ');
+      const confirm = c.attributionLevel==='hypothesis' && canConfirm
+          ? `<button class="ghost" style="padding:2px 8px;font-size:11px" onclick="confirmClaim('${esc(c.claimId)}')">✓ 人工确认</button>`
+          : (c.confirmedBy ? `<span class="muted">${esc(c.confirmedBy)}<br>${esc((c.confirmedAt||'').replace('T',' ').slice(0,16))}</span>` : '');
+      return `<tr><td>${esc(c.claimId)}</td>
+        <td><span class="factref" onclick="showFact('${esc(c.anomalyFactKey)}')">[${esc(c.anomalyFactKey)}]</span></td>
+        <td><span class="badge ${cls}">${lb}</span></td>
+        <td style="max-width:420px">${esc(c.narrative)}</td><td>${refs}</td><td>${confirm}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+async function confirmClaim(claimId){
+  try{
+    CUR = await api(`/runs/${CUR.run.runId}/claims/${claimId}/confirm`,
+      {method:'POST', body: JSON.stringify({approver: ($('approver2')&&$('approver2').value)||'demo'})});
+    render();
+  }catch(e){ alert(e.message); }
 }
 
 async function approvePublish(){ await act(`/runs/${CUR.run.runId}/publish/approve`, {approver: $('approver2').value}); }

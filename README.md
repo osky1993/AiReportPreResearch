@@ -139,6 +139,15 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
     12）→ ④ 逐行造 fact（`fact_017_cny`/`fact_017_usd`，dimensions 非空）+ 合计 + 占比 `_share`
     → ⑤ markdown 表格逐格 `{{fact_key}}` 占位符 → ⑥ 逐格核对（实录 run #31，43/43 一致率
     100%）。章节 fact 总数上限 20，触顶 BLOCKED 不静默截断。
+11d. **异动归因（Phase05，结论强度分级、无证据不升级）**：周报 v5 新增「六、异动解读」章。
+    `week_txn_amount_cny` v2 挂异常规则（|环比|≥30% 等）→ ④ 后程序判定产异动 fact（`fact_002_anom`）
+    与维度贡献拆解 fact（哪个币种贡献了变化的大头，程序算）→ EventMatcher 三条件加权出候选事件
+    （时间窗∪基期 + 关联指标 + 维度交集，事件文本经录入白名单与进 prompt 转义**双闸**防注入）→
+    LLM **只在候选内挑选与措辞**（第 11 条硬约束），服务端把关证据越界失败关闭、等级越权降级
+    （仅 fact ≤ 关联、含事件方可假设、confirmed 只能卡点2 人工勾选）→ ⑥ 第三类检查 CausalityAuditor
+    （因果措辞词典/缓和措辞强制/事件引用防编造）。实录 run #34：hypothesis claim + 证据链钻取 +
+    人工确认留痕，审计 44/44；对抗实录 run #35：stylePrompt 诱导「用导致/由于、删待验证」被
+    ⑥ 拦截回写，终稿零无证据因果措辞。事件知识库管理页 `event-admin.html`。
 12. **资产自检兜底**：把 `metrics.json` 某占位符改错（如 `{{period_strat}}`）再启动（清空
     `report_metric` 表触发重种）→ **启动即失败**；库中 PUBLISHED 资产坏了同样拒绝启动。
 13. **断点续跑**：`UPDATE report_run SET status='BLOCKED', phase='WRITE' WHERE run_id=X;`

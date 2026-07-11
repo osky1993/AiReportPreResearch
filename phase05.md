@@ -174,3 +174,15 @@ A/B 两轨零 LLM 可先行并行；C 轨消费 A（ANOMALY fact）与 B（事�
 | 与 Phase04 并行 report.html 冲突 | 分区渲染约定（本文件 §引言 + phase04.md §五 互引）；合流前互跑对方 Gate 用例 |
 | 贡献拆解的基期取数绕开比较 fact 机制造成口径分叉 | T2 专属 purpose 射程限贡献计算、同走 ③ 确定性通路（同校验同哈希留痕）；文档显式说明与 P3「维度禁 comparable」的边界 |
 | 归因章数字纪律松动 | claim narrative 与异动描述的数字仍走 {{fact_key}} 占位符——⑤⑥ 既有双检射程天然覆盖，零新机制 |
+
+## 九、G05 验收记录（2026-07-11，phase05 分支）
+
+| # | Gate 标准 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 「异动解读」章节端到端签发 | ✅ | treasury-weekly v5 加 `anomaly_insight` 章（chapterId 前缀 `anomaly_` 约定标识归因章）；run #34 异动（wow +142.2% 触发 v2 规则）→ 贡献拆解（CNY/USD/EUR，含负贡献）→ EVT-1 候选（三条件满分 4）→ claim → 章节呈现 → PUBLISHED，审计 44/44=100% |
+| 2 | 结论强度分级 + 证据引用 | ✅ | cl_001 hypothesis，evidenceRefs=[fact_002_anom_cny_contrib_share, EVT-1]；正文等级徽章【假设·待验证】；claim 证据链进详情页可钻取（fact→证据表、EVT→事件） |
+| 3 | 无证据不编原因 | ✅ | 等级上限服务端推导（仅 fact ≤associated、含 EVT 方可 hypothesis）+ LLM 漏答由程序补 observed「待查」兜底 + CausalityAuditor observed 无事件必须含「待查」语义（单测固化） |
+| 4 | 「把关联说成因果」对抗被拦 | ✅ | 实弹 run #35：卡点1 注入 stylePrompt（最高优先级指令：用「导致/由于」、删「可能/待验证」）→ ⑥ 因果词典拦截回写 1 轮 → 终稿零无证据因果措辞、缓和语义保留、数字审计 100%；CausalityAuditorTest 对抗语料 11 组 + 合法语料 11 组固化 |
+| 5 | confirmed 门禁 + 零回退 | ✅ | LLM 产 confirmed → 服务端拒绝（把关 + 死代码双层）；卡点2 勾选 cl_001 → confirmed_by=reviewer-a 留痕（仅 hypothesis 可升）；评测两层 100/100 + 15/15 + 6/6 不回退；`mvn test` **361/361** |
+
+**实施发现与裁量**：① 归因章标识用 chapterId 前缀 `anomaly_` 约定而非新增 schema 字段——避免与 phase04 的 ChapterDef 变更叠加合流冲突，P6 编辑器整修时可升格为显式 kind 字段；② 归因段（LLM）落位 ⑤ 开头而非 ④——守住「③④ 零 LLM」硬约束叙事，claims 与事实同命（SPEC~FACT 重跑段重算、WRITE 续跑读库固化）；③ T8 原计划的 golden-set 归因新类别**裁量不建**：归因评测需全管线 run，与「评测端点只读不写状态表」冲突——以对抗单测（22 组语料）+ 实弹演练固化替代，留待 P6 影子回归机制承接；④ 正文的事件引用 LLM 偶将「（证据：EVT-1）」转写为叙述语（材料层证据链完整，词典规则不受影响）——正文 EVT 编号强制呈现留待 P6 收紧；⑤ **合流清单**：本分支解析丢弃 v4 的 charts 字段，v5 无图表声明——phase04+phase05 合流后须发 treasury-weekly v6 同时携带 charts 与 anomaly_insight 章。
