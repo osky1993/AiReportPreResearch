@@ -27,6 +27,7 @@ public record ReportRun(
         String status,
         String phase,
         String outlineJson,
+        String chartsJson,
         String reportMd,
         String auditJson,
         String blockedReason,

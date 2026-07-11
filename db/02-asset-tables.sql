@@ -90,3 +90,11 @@ SET @ddl := (SELECT IF(COUNT(*) = 0,
   FROM information_schema.columns
   WHERE table_schema = DATABASE() AND table_name = 'report_run' AND column_name = 'yoy_end');
 PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- report_run 加 charts_json（Phase04 P4-T3：已绑定数据的图表列表；⑥ 逐点核对的对象）。
+SET @ddl := (SELECT IF(COUNT(*) = 0,
+  'ALTER TABLE report_run ADD COLUMN charts_json MEDIUMTEXT NULL COMMENT ''已绑定数据的图表 JSON（ChartRecord[]；④ 后程序绑定，⑥ 逐点核对；P4）'' AFTER outline_json',
+  'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'report_run' AND column_name = 'charts_json');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;

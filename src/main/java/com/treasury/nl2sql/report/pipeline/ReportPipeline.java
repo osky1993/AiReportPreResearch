@@ -3,8 +3,10 @@ package com.treasury.nl2sql.report.pipeline;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.treasury.nl2sql.report.asset.MetricDefinition;
 import com.treasury.nl2sql.report.asset.ReportAssetService;
+import com.treasury.nl2sql.report.domain.ChartRecord;
 import com.treasury.nl2sql.report.domain.FactRecord;
 import com.treasury.nl2sql.report.domain.MetricQuerySpec;
 import com.treasury.nl2sql.report.domain.Outline;
@@ -48,6 +50,7 @@ public class ReportPipeline {
     private final SpecResolveStep specStep;
     private final FetchStep fetchStep;
     private final FactBuildStep factStep;
+    private final ChartBuildStep chartStep;
     private final WriteStep writeStep;
     private final AuditStep auditStep;
     private final ObjectMapper mapper;
@@ -56,8 +59,8 @@ public class ReportPipeline {
 
     public ReportPipeline(ReportRunRepository runRepo, ReportStepRepository stepRepo, ReportFactRepository factRepo,
                           ReportAssetService assets, OutlineStep outlineStep, SpecResolveStep specStep,
-                          FetchStep fetchStep, FactBuildStep factStep, WriteStep writeStep, AuditStep auditStep,
-                          ObjectMapper mapper) {
+                          FetchStep fetchStep, FactBuildStep factStep, ChartBuildStep chartStep,
+                          WriteStep writeStep, AuditStep auditStep, ObjectMapper mapper) {
         this.runRepo = runRepo;
         this.stepRepo = stepRepo;
         this.factRepo = factRepo;
@@ -66,6 +69,7 @@ public class ReportPipeline {
         this.specStep = specStep;
         this.fetchStep = fetchStep;
         this.factStep = factStep;
+        this.chartStep = chartStep;
         this.writeStep = writeStep;
         this.auditStep = auditStep;
         this.mapper = mapper;
@@ -199,6 +203,7 @@ public class ReportPipeline {
 
             List<FactRecord> facts;
             List<String> notes;
+            List<ChartRecord> charts;
             if (from.ordinal() <= Phase.FACT.ordinal()) {
                 // ② 语义解析
                 phase = Phase.SPEC;
@@ -232,22 +237,27 @@ public class ReportPipeline {
                 long factStepId = stepRepo.start(runId, phase.name(), null);
                 try {
                     FactBuildStep.FactBuildResult built = factStep.run(outline, fetched, defs, pinnedVersions);
+                    // 图表数据绑定（Phase04，确定性程序零 LLM）：从 fact 组装 option 并落库留痕
+                    List<String> allNotes = new ArrayList<>(built.notes());
+                    charts = chartStep.build(outline, built.facts(), allNotes);
+                    runRepo.saveCharts(runId, toJson(charts));
                     factRepo.deleteByRun(runId);
                     factRepo.batchInsert(runId, built.facts());
                     facts = built.facts();
-                    notes = built.notes();
+                    notes = allNotes;
                     stepRepo.finishOk(factStepId, toJson(Map.of("factCount", facts.size(), "notes", notes)));
                 } catch (RuntimeException e) {
                     stepRepo.finishBlocked(factStepId, e.getMessage());
                     throw e;
                 }
             } else {
-                // 断点续跑 WRITE/AUDIT：事实与 notes 从库读，不重取数
+                // 断点续跑 WRITE/AUDIT：事实、notes 与图表从库读，不重取数不重绑定
                 facts = factRepo.findByRun(runId);
                 if (facts.isEmpty()) {
                     throw new PolicyException("断点续跑失败：库中没有该运行的事实记录（请从头重跑）");
                 }
                 notes = readFactNotes(runId);
+                charts = readCharts(run);
             }
 
             // ⑤ 章节撰写
@@ -271,8 +281,18 @@ public class ReportPipeline {
             try {
                 Map<String, FactRecord> byKey = factsByKey(facts);
                 AuditStep.AuditOutcome outcome = auditStep.run(draft, byKey);
-                stepRepo.finishOk(auditStepId, toJson(outcome.audit()));
-                runRepo.saveReport(runId, outcome.reportMd(), toJson(outcome.audit()));
+                // 图表逐点核对（Phase04）：与数字一致率同级门禁，任何不一致不放行
+                List<ChartAuditor.ChartCheck> chartChecks = ChartAuditor.audit(mapper, charts, byKey);
+                ObjectNode auditJson = mapper.valueToTree(outcome.audit());
+                auditJson.set("chartChecks", mapper.valueToTree(chartChecks));
+                if (!ChartAuditor.passed(chartChecks)) {
+                    throw new PolicyException("图表数据核对未通过: " + chartChecks.stream()
+                            .filter(c -> !c.ok())
+                            .map(c -> c.chartId() + "（" + c.detail() + "）")
+                            .collect(java.util.stream.Collectors.joining("；")));
+                }
+                stepRepo.finishOk(auditStepId, auditJson.toString());
+                runRepo.saveReport(runId, outcome.reportMd(), auditJson.toString());
             } catch (RuntimeException e) {
                 stepRepo.finishBlocked(auditStepId, e.getMessage());
                 throw e;
@@ -370,6 +390,16 @@ public class ReportPipeline {
             return mapper.readValue(run.metricVersionsJson(), new TypeReference<LinkedHashMap<String, Integer>>() {});
         } catch (Exception e) {
             throw new IllegalStateException("指标版本快照 JSON 无法解析", e);
+        }
+    }
+
+    /** 断点续跑时回读已绑定的图表（④ 落库；无图表的 run → 空列表）。 */
+    private List<ChartRecord> readCharts(ReportRun run) {
+        if (run.chartsJson() == null || run.chartsJson().isBlank()) return List.of();
+        try {
+            return mapper.readValue(run.chartsJson(), new TypeReference<List<ChartRecord>>() {});
+        } catch (Exception e) {
+            throw new IllegalStateException("charts_json 无法解析", e);
         }
     }
 

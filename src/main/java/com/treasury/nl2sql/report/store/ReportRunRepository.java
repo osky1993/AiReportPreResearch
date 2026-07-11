@@ -31,7 +31,7 @@ public class ReportRunRepository {
     private static final String COLS = "run_id, request_text, template_id, template_version, metric_versions_json, "
             + "period_label, period_start, period_end, "
             + "compare_start, compare_end, yoy_start, yoy_end, "
-            + "status, phase, outline_json, report_md, audit_json, blocked_reason, "
+            + "status, phase, outline_json, charts_json, report_md, audit_json, blocked_reason, "
             + "outline_approved_by, outline_approved_at, publish_approved_by, publish_approved_at, created_at, updated_at";
 
     private static final RowMapper<ReportRun> MAPPER = (rs, i) -> new ReportRun(
@@ -50,6 +50,7 @@ public class ReportRunRepository {
             rs.getString("status"),
             rs.getString("phase"),
             rs.getString("outline_json"),
+            rs.getString("charts_json"),
             rs.getString("report_md"),
             rs.getString("audit_json"),
             rs.getString("blocked_reason"),
@@ -104,6 +105,11 @@ public class ReportRunRepository {
                         + "outline_approved_by = ?, outline_approved_at = NOW(), blocked_reason = NULL "
                         + "WHERE run_id = ?",
                 outlineJson, metricVersionsJson, approver, runId);
+    }
+
+    /** ④ 后落已绑定的图表（重跑覆盖，幂等）。 */
+    public void saveCharts(long runId, String chartsJson) {
+        jdbc.update("UPDATE report_run SET charts_json = ? WHERE run_id = ?", chartsJson, runId);
     }
 
     public void setStatusPhase(long runId, String status, String phase) {

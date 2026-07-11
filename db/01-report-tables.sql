@@ -28,6 +28,7 @@ CREATE TABLE report_run (
                  COMMENT '状态 AWAITING_OUTLINE_APPROVAL/RUNNING/BLOCKED/AWAITING_PUBLISH_APPROVAL/PUBLISHED/REJECTED',
   phase          VARCHAR(16) COMMENT '当前/最后步骤 OUTLINE/SPEC/FETCH/FACT/WRITE/AUDIT',
   outline_json   MEDIUMTEXT COMMENT '大纲（章节树+每章指标+未解析项）JSON',
+  charts_json    MEDIUMTEXT COMMENT '已绑定数据的图表 JSON（ChartRecord[]；④ 后程序绑定，⑥ 逐点核对；P4）',
   report_md      MEDIUMTEXT COMMENT '审计通过的报告终稿 markdown（数值后带[fact_xxx]引用）',
   audit_json     MEDIUMTEXT COMMENT '审计结果 JSON（一致率、逐数字核对明细、重写轮次）',
   blocked_reason TEXT COMMENT 'BLOCKED 时的失败关闭原因（前缀 [POLICY]/[EXCEPTION]）',
