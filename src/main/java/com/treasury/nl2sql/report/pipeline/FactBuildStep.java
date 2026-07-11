@@ -54,10 +54,15 @@ public class FactBuildStep {
         Map<String, Map<String, FactRecord>> byMetric = new LinkedHashMap<>();
         int[] seq = {0};
 
-        // 1) BASE：每条取数结果一条事实（含对比期）
+        // 1) BASE：每条取数结果一条事实（含各基期）；维度指标走多行分支（Phase03）
         for (FetchStep.FetchResult fr : fetched) {
             MetricQuerySpec spec = fr.spec();
             MetricDefinition def = require(metricDefs, spec.metricId());
+            if (def.isDimensional()) {
+                buildDimensionalGroup(fr, def, versionOf(metricVersions, spec.metricId()),
+                        facts, byMetric, notes, seq);
+                continue;
+            }
             BigDecimal value = extractValue(def, fr);
             assertQuality(def, value);
             FactRecord fact = new FactRecord(
@@ -139,8 +144,123 @@ public class FactBuildStep {
             }
         }
 
+        assertChapterFactLimit(facts);
         log.info("[FACT] 构建事实 {} 条（notes {} 条）", facts.size(), notes.size());
         return new FactBuildResult(facts, notes);
+    }
+
+    /** 章节 fact 数上限（T0 拍板 20，含 BASE+DERIVED+维度行+占比）：触顶失败关闭，守 ⑤ 的占位符纪律。 */
+    static final int CHAPTER_FACT_LIMIT = 20;
+
+    private static void assertChapterFactLimit(List<FactRecord> facts) {
+        Map<String, Long> byChapter = new LinkedHashMap<>();
+        for (FactRecord f : facts) {
+            byChapter.merge(f.chapterId(), 1L, Long::sum);
+        }
+        for (Map.Entry<String, Long> e : byChapter.entrySet()) {
+            if (e.getValue() > CHAPTER_FACT_LIMIT) {
+                throw new PolicyException("章节「" + e.getKey() + "」事实数 " + e.getValue() + " 超上限 "
+                        + CHAPTER_FACT_LIMIT + "（失败关闭，请拆分章节或减少指标/维度）");
+            }
+        }
+    }
+
+    /**
+     * 维度指标多行造 fact（Phase03 契约2）：
+     * 行 fact_NNN_&lt;slug&gt;（BASE，dimensions 非空）→ 合计 fact_NNN（DERIVED 求和，占比分母）
+     * → 占比 fact_NNN_&lt;slug&gt;_share（DERIVED percent）。0 行按 nullPolicy：ZERO=合计 0 + note、BLOCK=失败关闭。
+     */
+    private void buildDimensionalGroup(FetchStep.FetchResult fr, MetricDefinition def, Integer version,
+                                       List<FactRecord> facts, Map<String, Map<String, FactRecord>> byMetric,
+                                       List<String> notes, int[] seq) {
+        MetricQuerySpec spec = fr.spec();
+        List<Map<String, Object>> rows = fr.rows();
+        if (rows.size() > com.treasury.nl2sql.report.asset.MetricDimensionRule.MAX_DIMENSION_ROWS) {
+            // ③ 已拦截；此处死代码兜底（纯逻辑单测走这里）
+            throw new PolicyException("指标「" + def.metricId() + "」维度行数 " + rows.size() + " 超上限 "
+                    + com.treasury.nl2sql.report.asset.MetricDimensionRule.MAX_DIMENSION_ROWS + "（失败关闭，不静默截断）");
+        }
+        String dimBare = com.treasury.nl2sql.report.asset.MetricDimensionRule.bareName(def.dimensions().get(0));
+        String groupKey = nextKey(seq);   // NNN 预留给合计，行后缀其上
+        if (rows.isEmpty()) {
+            if (MetricDefinition.NULL_BLOCK.equals(def.nullPolicy())) {
+                throw new PolicyException("指标「" + def.metricId() + "」维度取数 0 行且 nullPolicy=BLOCK（失败关闭）");
+            }
+            notes.add("指标「" + def.name() + "」本期（" + spec.periodLabel() + "）无数据，维度拆解为空");
+            FactRecord empty = new FactRecord(groupKey, spec.metricId(), version,
+                    def.name() + "（合计）", spec.chapterId(),
+                    FactRecord.TYPE_DERIVED, BigDecimal.ZERO, def.unit(), renderDisplay(BigDecimal.ZERO, def.unit()),
+                    spec.periodLabel(), null, toJson(spec), null, fr.sqlHash(), fr.resultHash(), null,
+                    FactRecord.QUALITY_PASSED, null);
+            facts.add(empty);
+            byMetric.computeIfAbsent(spec.metricId(), k -> new HashMap<>()).put(spec.purpose(), empty);
+            return;
+        }
+        java.util.LinkedHashSet<String> usedSlugs = new java.util.LinkedHashSet<>();
+        List<FactRecord> rowFacts = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
+        int idx = 0;
+        for (Map<String, Object> row : rows) {
+            idx++;
+            if (!row.containsKey(dimBare)) {
+                throw new PolicyException("指标「" + def.metricId() + "」取数结果缺少维度列「" + dimBare
+                        + "」，实际列: " + row.keySet());
+            }
+            String dimValue = String.valueOf(row.get(dimBare));
+            BigDecimal value = rowValue(def, row);
+            assertQuality(def, value);
+            String key = groupKey + "_" + slugOf(dimValue, idx, usedSlugs);
+            FactRecord fact = new FactRecord(key, spec.metricId(), version,
+                    def.name() + "（" + dimValue + "）", spec.chapterId(),
+                    FactRecord.TYPE_BASE, value, def.unit(), renderDisplay(value, def.unit()),
+                    spec.periodLabel(), Map.of(dimBare, dimValue), toJson(spec),
+                    fr.sql(), fr.sqlHash(), fr.resultHash(), null,
+                    FactRecord.QUALITY_PASSED, null);
+            facts.add(fact);
+            rowFacts.add(fact);
+            total = total.add(value);
+        }
+        String rowKeys = rowFacts.stream().map(FactRecord::factKey)
+                .collect(java.util.stream.Collectors.joining(","));
+        FactRecord totalFact = new FactRecord(groupKey, spec.metricId(), version,
+                def.name() + "（合计）", spec.chapterId(),
+                FactRecord.TYPE_DERIVED, total, def.unit(), renderDisplay(total, def.unit()),
+                spec.periodLabel(), null, toJson(spec), null, fr.sqlHash(), fr.resultHash(), rowKeys,
+                FactRecord.QUALITY_PASSED, null);
+        facts.add(totalFact);
+        byMetric.computeIfAbsent(spec.metricId(), k -> new HashMap<>()).put(spec.purpose(), totalFact);
+        if (total.signum() == 0) {
+            notes.add("指标「" + def.name() + "」维度合计为 0，跳过占比");
+            return;
+        }
+        for (FactRecord rf : rowFacts) {
+            BigDecimal share = rf.value().multiply(BigDecimal.valueOf(100))
+                    .divide(total, 1, RoundingMode.HALF_UP);
+            facts.add(new FactRecord(rf.factKey() + "_share", spec.metricId(), version,
+                    rf.metricName() + "占比", spec.chapterId(),
+                    FactRecord.TYPE_DERIVED, share, "percent", renderDisplay(share, "percent"),
+                    spec.periodLabel(), rf.dimensions(), null, null, null, null,
+                    rf.factKey() + "," + groupKey,
+                    FactRecord.QUALITY_PASSED, null));
+        }
+    }
+
+    /**
+     * 维度值 → fact_key 后缀 slug（契约2）：ASCII 小写、非 [a-z0-9] 转 '_'；
+     * 非 ASCII / 转换后无实义 / 冲突 → 回退行序 rNN。
+     */
+    private static String slugOf(String dimValue, int rowIdx, java.util.Set<String> used) {
+        String fallback = String.format("r%02d", rowIdx);
+        if (dimValue == null || !dimValue.chars().allMatch(c -> c < 128)) {
+            used.add(fallback);
+            return fallback;
+        }
+        String s = dimValue.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]", "_");
+        if (s.isBlank() || s.chars().allMatch(c -> c == '_') || !used.add(s)) {
+            used.add(fallback);
+            return fallback;
+        }
+        return s;
     }
 
     /** 取数结果必须恰 1 行、含 valueColumn；NULL 按 nullPolicy 处置（ZERO=0 / BLOCK=失败关闭）。 */
@@ -148,7 +268,11 @@ public class FactBuildStep {
         if (fr.rows().size() != 1) {
             throw new PolicyException("指标「" + def.metricId() + "」取数结果应恰 1 行，实际 " + fr.rows().size() + " 行");
         }
-        Map<String, Object> row = fr.rows().get(0);
+        return rowValue(def, fr.rows().get(0));
+    }
+
+    /** 单行取值（单值指标与维度行共用）：valueColumn 存在性 + NULL 处置 + 数值类型。 */
+    private static BigDecimal rowValue(MetricDefinition def, Map<String, Object> row) {
         if (!row.containsKey(def.valueColumn())) {
             throw new PolicyException("指标「" + def.metricId() + "」取数结果缺少列「" + def.valueColumn()
                     + "」，实际列: " + row.keySet());

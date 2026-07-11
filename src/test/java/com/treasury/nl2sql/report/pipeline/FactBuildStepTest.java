@@ -200,4 +200,114 @@ class FactBuildStepTest {
                 result(spec("qs1", "m1", "CURRENT", "2026-M06"), 6)), defs);
         assertEquals(1, facts.facts().size());
     }
+
+    // ---- Phase03：维度多行（行 fact + 合计 + 占比 + 双上限失败关闭） ----
+
+    private static MetricDefinition dimMetric(String id) {
+        return new MetricDefinition(id, "指标" + id, "CNY", true, false, "v", "ZERO",
+                List.of(MetricDefinition.CHECK_NON_NEGATIVE), List.of("currency"), null, null);
+    }
+
+    private static FetchStep.FetchResult dimResult(MetricQuerySpec s, Object[][] currencyValues) {
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (Object[] cv : currencyValues) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("currency", cv[0]);
+            row.put("v", cv[1]);
+            rows.add(row);
+        }
+        return new FetchStep.FetchResult(s, "select dim", "hash", rows, "rhash");
+    }
+
+    @Test
+    void dimensionalRowsProduceRowTotalAndShareFacts() {
+        Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));
+        var built = step.run(outline(null, "m1"), List.of(
+                dimResult(spec("qs1", "m1", "CURRENT", "2026-W26"), new Object[][]{
+                        {"CNY", new BigDecimal("750000")},
+                        {"USD", new BigDecimal("200000")},
+                        {"EUR", new BigDecimal("50000")}})), defs);
+        // 3 行 + 1 合计 + 3 占比 = 7
+        assertEquals(7, built.facts().size());
+        FactRecord cny = built.facts().get(0);
+        assertEquals("fact_001_cny", cny.factKey());
+        assertEquals(Map.of("currency", "CNY"), cny.dimensions());
+        assertEquals("指标m1（CNY）", cny.metricName());
+        FactRecord total = built.facts().get(3);
+        assertEquals("fact_001", total.factKey());
+        assertEquals(FactRecord.TYPE_DERIVED, total.factType());
+        assertEquals(0, total.value().compareTo(new BigDecimal("1000000")));
+        assertEquals("fact_001_cny,fact_001_usd,fact_001_eur", total.derivedFrom());
+        FactRecord share = built.facts().get(4);
+        assertEquals("fact_001_cny_share", share.factKey());
+        assertEquals(0, share.value().compareTo(new BigDecimal("75.0")));
+        assertEquals("+75.0%", share.displayValue());
+        assertEquals("fact_001_cny,fact_001", share.derivedFrom());
+        // 后续单值指标编号顺延不受影响
+    }
+
+    @Test
+    void dimensionSlugFallsBackOnNonAsciiAndConflict() {
+        Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));
+        var built = step.run(outline(null, "m1"), List.of(
+                dimResult(spec("qs1", "m1", "CURRENT", "2026-W26"), new Object[][]{
+                        {"人民币", new BigDecimal("1")},      // 非 ASCII → r01
+                        {"USD", new BigDecimal("2")},
+                        {"usd", new BigDecimal("3")}})), defs);   // slug 冲突 → r03
+        List<String> keys = built.facts().stream().map(FactRecord::factKey)
+                .filter(k -> k.startsWith("fact_001_") && !k.endsWith("_share")).toList();
+        assertEquals(List.of("fact_001_r01", "fact_001_usd", "fact_001_r03"), keys);
+    }
+
+    @Test
+    void dimensionRowLimitFailsClosed() {
+        Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));
+        Object[][] rows = new Object[13][];
+        for (int i = 0; i < 13; i++) rows[i] = new Object[]{"c" + i, new BigDecimal("1")};
+        PolicyException e = assertThrows(PolicyException.class, () ->
+                step.run(outline(null, "m1"), List.of(
+                        dimResult(spec("qs1", "m1", "CURRENT", "2026-W26"), rows)), defs));
+        assertTrue(e.getMessage().contains("超上限"));
+    }
+
+    @Test
+    void chapterFactLimitFailsClosed() {
+        // 两个维度指标 ×（6 行+合计+6 占比）= 26 > 20 → 章节上限失败关闭
+        Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"), "m2", dimMetric("m2"));
+        Object[][] rows = new Object[6][];
+        for (int i = 0; i < 6; i++) rows[i] = new Object[]{"c" + i, new BigDecimal("1")};
+        PolicyException e = assertThrows(PolicyException.class, () ->
+                step.run(outline(null, "m1", "m2"), List.of(
+                        dimResult(spec("qs1", "m1", "CURRENT", "2026-W26"), rows),
+                        dimResult(spec("qs2", "m2", "CURRENT", "2026-W26"), rows)), defs));
+        assertTrue(e.getMessage().contains("章节"));
+        assertTrue(e.getMessage().contains("超上限"));
+    }
+
+    @Test
+    void emptyDimensionRowsHonorNullPolicy() {
+        Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));
+        var built = step.run(outline(null, "m1"), List.of(
+                dimResult(spec("qs1", "m1", "CURRENT", "2026-W26"), new Object[][]{})), defs);
+        assertEquals(1, built.facts().size());   // 仅合计 0
+        assertEquals("fact_001", built.facts().get(0).factKey());
+        assertEquals(0, built.facts().get(0).value().signum());
+        assertTrue(built.notes().get(0).contains("维度拆解为空"));
+
+        MetricDefinition blockDef = new MetricDefinition("m1", "指标m1", "CNY", true, false, "v", "BLOCK",
+                List.of(), List.of("currency"), null, null);
+        assertThrows(PolicyException.class, () -> step.run(outline(null, "m1"), List.of(
+                dimResult(spec("qs1", "m1", "CURRENT", "2026-W26"), new Object[][]{})),
+                Map.of("m1", blockDef)));
+    }
+
+    @Test
+    void zeroTotalSkipsShareWithNote() {
+        Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));
+        var built = step.run(outline(null, "m1"), List.of(
+                dimResult(spec("qs1", "m1", "CURRENT", "2026-W26"), new Object[][]{
+                        {"CNY", BigDecimal.ZERO}, {"USD", BigDecimal.ZERO}})), defs);
+        assertEquals(3, built.facts().size());   // 2 行 + 合计，无占比
+        assertTrue(built.notes().get(0).contains("跳过占比"));
+    }
 }

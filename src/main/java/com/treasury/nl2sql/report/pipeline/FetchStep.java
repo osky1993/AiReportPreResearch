@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.treasury.nl2sql.compile.MqlSqlCompiler;
 import com.treasury.nl2sql.ir.Mql;
 import com.treasury.nl2sql.report.asset.MetricDefinition;
+import com.treasury.nl2sql.report.asset.MetricDimensionRule;
 import com.treasury.nl2sql.report.domain.MetricQuerySpec;
 import com.treasury.nl2sql.validate.MqlValidator;
 import org.jooq.DSLContext;
@@ -82,6 +83,12 @@ public class FetchStep {
             } catch (Exception e) {
                 throw new PolicyException("指标「" + spec.metricId() + "」的 SQL 编译/执行失败（确定性通路不自愈）: "
                         + rootMessage(e));
+            }
+            // 维度指标行数上限（T0 拍板：触顶失败关闭，不静默截断 Top-N）
+            if (def.isDimensional() && rows.size() > MetricDimensionRule.MAX_DIMENSION_ROWS) {
+                throw new PolicyException("指标「" + spec.metricId() + "」维度行数 " + rows.size()
+                        + " 超上限 " + MetricDimensionRule.MAX_DIMENSION_ROWS
+                        + "（失败关闭转人工，请收窄口径或换单值指标）");
             }
             String resultHash = sha256(canonicalRows(rows));
             log.info("[FETCH] {} {} → {} 行, sql_hash={}", spec.specId(), spec.metricId(), rows.size(),

@@ -310,5 +310,32 @@
       "filter": [ { "field": "paid", "op": "=", "value": 0 } ],
       "metrics": [ { "op": "count", "alias": "cnt" } ]
     }
+  },
+  {
+    "metricId": "week_txn_amount_by_currency",
+    "name": "本期交易金额按币种拆解（折人民币）",
+    "unit": "CNY",
+    "timeBound": true,
+    "comparable": false,
+    "valueColumn": "total_cny",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
+    "dimensions": ["currency"],
+    "mqlTemplate": {
+      "table": "cash_transaction",
+      "joins": [ { "table": "currency_rate", "type": "inner",
+                   "on": [ { "left": "cash_transaction.currency", "right": "currency_rate.currency" } ] } ],
+      "filter": [
+        { "field": "currency_rate.rate_date", "op": "=",
+          "subquery": { "table": "currency_rate", "metrics": [ { "op": "max", "field": "rate_date", "alias": "latest" } ] } },
+        { "field": "cash_transaction.txn_date", "op": ">=", "value": "{{period_start}}" },
+        { "field": "cash_transaction.txn_date", "op": "<=", "value": "{{period_end}}" },
+        { "field": "cash_transaction.status", "op": "!=", "value": "FAILED" }
+      ],
+      "groupBy": ["cash_transaction.currency"],
+      "metrics": [ { "op": "sum",
+                     "fieldExpr": { "left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny" },
+                     "alias": "total_cny" } ]
+    }
   }
 ]
