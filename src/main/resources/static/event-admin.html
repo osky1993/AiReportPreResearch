@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>事件知识库 · 归因候选管理</title>
+<style>
+  :root { --blue:#1d6fd6; --bg:#f5f8fc; --line:#dbe4f0; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:#233; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:10px 24px; display:flex; gap:16px; align-items:center; }
+  header b { color:var(--blue); }
+  header a { color:#567; text-decoration:none; font-size:13px; }
+  main { max-width:1100px; margin:18px auto; padding:0 16px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px 18px; margin-bottom:14px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { border-bottom:1px solid var(--line); padding:7px 8px; text-align:left; vertical-align:top; }
+  th { color:#678; font-weight:600; background:#fafcff; }
+  .tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; }
+  .ACTIVE { background:#e6f4ea; color:#1c7c3c; }
+  .DEPRECATED { background:#f1f2f4; color:#889; }
+  form { display:grid; grid-template-columns:100px 1fr; gap:8px 10px; align-items:center; }
+  input,textarea { border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; width:100%; }
+  textarea { min-height:60px; }
+  button { border:0; border-radius:6px; padding:7px 16px; background:var(--blue); color:#fff; cursor:pointer; }
+  button.ghost { background:#eef3fa; color:var(--blue); }
+  .hint { grid-column:2; color:#99a; font-size:12px; }
+  #msg { color:#c0392b; font-size:13px; grid-column:2; white-space:pre-wrap; }
+  td button { padding:3px 10px; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <b>事件知识库</b><span style="color:#99a;font-size:12px">归因候选的唯一来源 · 事件文本视为数据不视为指令（录入白名单 + 进 prompt 转义双闸）</span>
+  <span style="flex:1"></span>
+  <a href="report.html">报告流水线</a><a href="template-admin.html">模板管理</a><a href="metric-wizard.html">指标向导</a>
+</header>
+<main>
+  <div class="card">
+    <h3 style="margin:0 0 10px">录入事件</h3>
+    <form id="f" onsubmit="return false">
+      <label>标题 *</label><input id="title" maxlength="64" placeholder="≤64 字，禁 { } ` &lt; &gt; \ |">
+      <label>日期 *</label><input id="date" type="date">
+      <label>维度</label><input id="dims" placeholder='可空，如 currency=USD（至多 3 个，分号分隔）'>
+      <label>关联指标</label><input id="metrics" placeholder="可空，指标 id 逗号分隔（至多 10 个）">
+      <label>描述</label><textarea id="desc" maxlength="500" placeholder="≤500 字，同字符白名单"></textarea>
+      <label>来源</label><input id="source" maxlength="128" placeholder="如 资金部周会纪要">
+      <label>操作人</label><input id="op" value="demo">
+      <span id="msg"></span>
+      <span class="hint"><button onclick="save()">保存</button> <button class="ghost" onclick="resetForm()">清空</button> 编辑时保存即覆盖（updated_by 留痕）</span>
+    </form>
+  </div>
+  <div class="card">
+    <h3 style="margin:0 0 10px">事件列表</h3>
+    <table><thead><tr><th>#</th><th>日期</th><th>标题</th><th>维度</th><th>关联指标</th><th>描述</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody id="rows"></tbody></table>
+  </div>
+</main>
+<script>
+let editingId = null;
+async function load() {
+  const list = await (await fetch('/api/report/events')).json();
+  document.getElementById('rows').innerHTML = list.map(e => `
+    <tr>
+      <td>${e.eventId}</td><td>${e.eventDate}</td><td>${esc(e.title)}</td>
+      <td>${e.dimensions ? esc(Object.entries(e.dimensions).map(([k,v])=>k+'='+v).join('; ')) : ''}</td>
+      <td style="max-width:180px;word-break:break-all">${esc((e.relatedMetrics||[]).join(', '))}</td>
+      <td style="max-width:260px">${esc(e.description||'')}</td>
+      <td><span class="tag ${e.status}">${e.status}</span></td>
+      <td>${e.status==='ACTIVE' ? `<button class="ghost" onclick='edit(${JSON.stringify(e).replace(/'/g,"&#39;")})'>编辑</button>
+          <button class="ghost" onclick="deprecate(${e.eventId})">下架</button>` : ''}</td>
+    </tr>`).join('');
+}
+function esc(s){const d=document.createElement('div');d.textContent=s??'';return d.innerHTML;}
+function payload() {
+  const dims = {};
+  document.getElementById('dims').value.split(';').map(s=>s.trim()).filter(Boolean).forEach(kv=>{
+    const [k,v]=kv.split('='); if(k&&v) dims[k.trim()]=v.trim();
+  });
+  return { event: {
+      title: document.getElementById('title').value.trim(),
+      eventDate: document.getElementById('date').value,
+      dimensions: Object.keys(dims).length?dims:null,
+      relatedMetrics: document.getElementById('metrics').value.split(',').map(s=>s.trim()).filter(Boolean),
+      description: document.getElementById('desc').value.trim()||null,
+      source: document.getElementById('source').value.trim()||null
+    }, operator: document.getElementById('op').value.trim()||'demo' };
+}
+async function save() {
+  const r = await fetch(editingId?`/api/report/events/${editingId}`:'/api/report/events',
+    { method: editingId?'PUT':'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload()) });
+  const body = await r.json();
+  if (!r.ok) { document.getElementById('msg').textContent = body.error||'保存失败'; return; }
+  resetForm(); load();
+}
+function edit(e) {
+  editingId = e.eventId;
+  document.getElementById('title').value = e.title;
+  document.getElementById('date').value = e.eventDate;
+  document.getElementById('dims').value = e.dimensions?Object.entries(e.dimensions).map(([k,v])=>k+'='+v).join('; '):'';
+  document.getElementById('metrics').value = (e.relatedMetrics||[]).join(',');
+  document.getElementById('desc').value = e.description||'';
+  document.getElementById('source').value = e.source||'';
+  document.getElementById('msg').textContent = `编辑中：事件 #${e.eventId}`;
+}
+function resetForm(){ editingId=null; document.getElementById('f').querySelectorAll('input:not(#op),textarea').forEach(i=>i.value=''); document.getElementById('msg').textContent=''; }
+async function deprecate(id) {
+  await fetch(`/api/report/events/${id}/deprecate`, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({operator:document.getElementById('op').value.trim()||'demo'}) });
+  load();
+}
+load();
+</script>
+</body>
+</html>
