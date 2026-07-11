@@ -6,10 +6,14 @@ import com.treasury.nl2sql.report.domain.ClaimRecord;
 import com.treasury.nl2sql.report.domain.FactRecord;
 import com.treasury.nl2sql.report.domain.ReportRun;
 import com.treasury.nl2sql.report.domain.ReportStep;
+import com.treasury.nl2sql.report.export.ReportExportService;
 import com.treasury.nl2sql.report.pipeline.ReportPipeline;
 import com.treasury.nl2sql.report.store.ClaimRepository;
 import com.treasury.nl2sql.report.store.ReportFactRepository;
 import com.treasury.nl2sql.report.store.ReportStepRepository;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,8 +21,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -32,15 +38,17 @@ public class ReportController {
     private final ReportFactRepository factRepo;
     private final ClaimRepository claimRepo;
     private final ReportAssetService assets;
+    private final ReportExportService exportService;
 
     public ReportController(ReportPipeline pipeline, ReportStepRepository stepRepo,
                             ReportFactRepository factRepo, ClaimRepository claimRepo,
-                            ReportAssetService assets) {
+                            ReportAssetService assets, ReportExportService exportService) {
         this.pipeline = pipeline;
         this.stepRepo = stepRepo;
         this.factRepo = factRepo;
         this.claimRepo = claimRepo;
         this.assets = assets;
+        this.exportService = exportService;
     }
 
     public record CreateRequest(String requestText) {}
@@ -48,6 +56,8 @@ public class ReportController {
     public record RegenerateRequest(String revisedRequest) {}
     public record PublishRequest(String approver) {}
     public record RejectRequest(String approver, String reason) {}
+    /** 导出请求体：chartImages 可选——缺图的图表在文档中降级为纯数据表（路线 C 演进位）。 */
+    public record ExportRequest(List<ReportExportService.ChartImage> chartImages) {}
 
     /** 详情 = run 全字段 + 步骤留痕 + 事实 + 归因（演示页 1.5s 轮询此结构）。 */
     public record RunDetail(ReportRun run, List<ReportStep> steps, List<FactRecord> facts,
@@ -103,6 +113,22 @@ public class ReportController {
     @PostMapping("/runs/{id}/resume")
     public RunDetail resume(@PathVariable long id) {
         return detail(pipeline.resume(id).runId());
+    }
+
+    /**
+     * 已签发报告导出（仅 PUBLISHED）：正文/事实/图表数据一律取库中终稿，客户端只上送图表 PNG；
+     * 每图必附数据表（display_value 同源），无图降级纯数据表。format = pdf | docx。
+     */
+    @PostMapping("/runs/{id}/export")
+    public ResponseEntity<byte[]> export(@PathVariable long id, @RequestParam String format,
+                                         @RequestBody(required = false) ExportRequest req) {
+        ReportExportService.ExportFile file =
+                exportService.export(id, format, req == null ? null : req.chartImages());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(file.filename(), StandardCharsets.UTF_8).build().toString())
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .body(file.bytes());
     }
 
     /** 证据视图：该运行的全部事实（含 SQL、双哈希、规约快照）。 */
