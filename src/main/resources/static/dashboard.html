@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>运行看板 · 智能报告流水线演示</title>
+<style>
+:root{--accent:#2563eb;--bg:#f6f7f9;--card:#fff;--line:#e5e7eb;--text:#111827;--muted:#6b7280;
+      --ok:#059669;--warn:#d97706;--bad:#dc2626;--violet:#7c3aed;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+.wrap{max-width:1400px;margin:0 auto;padding:24px 32px}
+header{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+header h1{font-size:20px}
+header .sub{color:var(--muted);font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h2{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+button{border:0;border-radius:8px;padding:7px 14px;font:inherit;cursor:pointer;background:var(--accent);color:#fff}
+button.ghost{background:#eef2ff;color:var(--accent)}
+button.on{outline:2px solid var(--accent)}
+input[type=date]{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:14px;align-items:start}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:4px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#f9fafb}
+.stat .v{font-size:22px;font-weight:800;color:var(--accent)}
+.stat .l{font-size:11px;color:var(--muted)}
+.chart{height:280px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;background:#f9fafb}
+td.num{font-family:ui-monospace,Menlo,monospace}
+.muted{color:var(--muted);font-size:12px}
+.empty{color:var(--muted);font-size:13px;padding:14px;text-align:center}
+.err{color:var(--bad);font-size:12px;margin-top:6px;white-space:pre-wrap}
+.badge{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:600}
+.b-pol{background:#fef3c7;color:var(--warn)}
+.b-exc{background:#fee2e2;color:var(--bad)}
+/* ---------- 顶部导航条（各演示页统一） ---------- */
+.topnav{ background:#fff; border-bottom:1px solid #e3e6ea; padding:10px 28px;
+  display:flex; align-items:center; gap:6px; font-size:13px; }
+.topnav .brand{ font-weight:800; color:#0f172a; margin-right:16px; }
+.topnav .brand .dot{ display:inline-block; width:10px; height:10px; background:#2563eb;
+  border-radius:3px; margin-right:7px; }
+.topnav a{ color:#475569; text-decoration:none; font-weight:600; padding:5px 13px; border-radius:999px; }
+.topnav a:hover{ background:#eef2ff; color:#2563eb; }
+.topnav a.cur{ background:#2563eb; color:#fff; }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand"><span class="dot"></span>智能报告流水线演示</span>
+  <a href="/">NL2SQL 查询</a>
+  <a href="/report.html">报告生成</a>
+  <a href="/template-admin.html">模板管理</a>
+  <a href="/metric-wizard.html">指标制作向导</a>
+  <a href="/dashboard.html" class="cur">📊 运行看板</a>
+  <a href="/智能查数与报告流水线技术说明-lastRelease.pdf" target="_blank" rel="noopener">📄 技术说明</a>
+</nav>
+<div class="wrap">
+<header>
+  <h1>📊 运行看板</h1>
+  <span class="sub">演示级统计 · 手动刷新 · 只读（观测层宕掉，报告照常出）</span>
+</header>
+
+<div class="card">
+  <div class="row">
+    窗口
+    <button class="ghost" id="btn30" onclick="setWindow('30')">近 30 天</button>
+    <button class="ghost" id="btnAll" onclick="setWindow('all')">全量</button>
+    <span class="muted">或自选</span>
+    <input type="date" id="fromDate"> ~ <input type="date" id="toDate">
+    <button onclick="load()">刷新</button>
+    <span class="muted" id="windowLabel"></span>
+  </div>
+  <div class="err" id="loadErr"></div>
+</div>
+
+<div class="stats" id="runStats"></div>
+
+<div class="grid2">
+  <div class="card"><h2>运行状态分布</h2><div class="chart" id="statusPie"></div></div>
+  <div class="card"><h2>各步成功率 / 阻断率（%）</h2><div class="chart" id="phaseBar"></div></div>
+</div>
+
+<div class="card">
+  <h2>步骤明细 <span class="muted">未完成步不计成败；分位数为空 = 窗口内无完成记录</span></h2>
+  <div id="stepTable"></div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h2>LLM 用量 <span class="muted" id="costNote"></span></h2>
+    <div class="stats" id="llmStats"></div>
+    <div class="muted" id="unmeteredNote"></div>
+  </div>
+  <div class="card">
+    <h2>BLOCKED 原因 TopN <span class="muted">[POLICY]=业务性停止 / [EXCEPTION]=意外异常</span></h2>
+    <div id="reasonTable"></div>
+  </div>
+</div>
+</div>
+
+<script src="vendor/echarts.min.js"></script>
+<script>
+let MODE = '30';
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function setWindow(mode){
+  MODE = mode;
+  $('fromDate').value = ''; $('toDate').value = '';
+  load();
+}
+
+async function load(){
+  $('loadErr').textContent = '';
+  $('btn30').classList.toggle('on', MODE==='30' && !$('fromDate').value);
+  $('btnAll').classList.toggle('on', MODE==='all' && !$('fromDate').value);
+  let qs = '';
+  if($('fromDate').value || $('toDate').value){
+    qs = `?from=${$('fromDate').value||''}&to=${$('toDate').value||''}`;
+  } else if(MODE==='all'){
+    qs = '?from=all';
+  }
+  try{
+    const resp = await fetch('/api/report/stats'+qs);
+    const d = await resp.json();
+    if(!resp.ok) throw new Error(d.error || ('HTTP '+resp.status));
+    render(d);
+  }catch(e){ $('loadErr').textContent = '加载失败: '+e.message; }
+}
+
+function render(d){
+  $('windowLabel').textContent = `统计窗口 ${d.from} ~ ${d.to}`;
+
+  // run 概览大数字
+  const bs = d.runs.byStatus || {};
+  $('runStats').innerHTML = [
+    ['总运行数', d.runs.total],
+    ['已签发', bs.PUBLISHED||0],
+    ['待审批', (bs.AWAITING_OUTLINE_APPROVAL||0)+(bs.AWAITING_PUBLISH_APPROVAL||0)],
+    ['失败关闭', bs.BLOCKED||0],
+    ['已驳回', bs.REJECTED||0],
+  ].map(([l,v])=>`<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+
+  // 状态饼图
+  const pieData = Object.entries(bs).map(([name,value])=>({name,value}));
+  draw('statusPie', pieData.length ? {
+    tooltip:{trigger:'item'}, legend:{bottom:0,type:'scroll'},
+    series:[{type:'pie', radius:['32%','62%'], data:pieData,
+      label:{formatter:'{b}\n{c}'}}]
+  } : null);
+
+  // 各步柱状
+  const steps = d.steps || [];
+  draw('phaseBar', steps.length ? {
+    tooltip:{trigger:'axis'}, legend:{bottom:0},
+    grid:{top:24,left:40,right:16,bottom:52},
+    xAxis:{type:'category', data:steps.map(s=>s.phase)},
+    yAxis:{type:'value', max:100},
+    series:[
+      {name:'成功率', type:'bar', data:steps.map(s=>s.successRate), itemStyle:{color:'#059669'}},
+      {name:'阻断率', type:'bar', data:steps.map(s=>s.blockedRate), itemStyle:{color:'#dc2626'}},
+      {name:'重试率', type:'bar', data:steps.map(s=>s.retryRate), itemStyle:{color:'#d97706'}},
+    ]
+  } : null);
+
+  // 步骤明细表
+  $('stepTable').innerHTML = steps.length ? `<table>
+    <tr><th>步骤</th><th>执行次数</th><th>成功</th><th>阻断</th><th>重试</th>
+        <th>成功率</th><th>阻断率</th><th>重试率</th><th>P50 耗时</th><th>P95 耗时</th></tr>
+    ${steps.map(s=>`<tr><td><b>${esc(s.phase)}</b></td>
+      <td class="num">${s.executions}</td><td class="num">${s.okCount}</td>
+      <td class="num">${s.blockedCount}</td><td class="num">${s.retryCount}</td>
+      <td class="num">${s.successRate}%</td><td class="num">${s.blockedRate}%</td>
+      <td class="num">${s.retryRate}%</td>
+      <td class="num">${ms(s.p50Ms)}</td><td class="num">${ms(s.p95Ms)}</td></tr>`).join('')}
+  </table>` : '<div class="empty">窗口内无步骤记录</div>';
+
+  // LLM 用量
+  const llm = d.llm || {};
+  $('llmStats').innerHTML = [
+    ['LLM 调用次数', llm.calls||0],
+    ['prompt tokens', fmt(llm.promptTokens)],
+    ['completion tokens', fmt(llm.completionTokens)],
+    ['估算成本', llm.estCost==null ? '—' : llm.estCost],
+  ].map(([l,v])=>`<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+  $('costNote').textContent = llm.costNote || '';
+  $('unmeteredNote').textContent = (llm.unmeteredCalls||0) > 0
+    ? `其中 ${llm.unmeteredCalls} 次调用未计量（供应商未返回 usage 或 P6 前的旧 run）——未计量不冒充 0`
+    : (llm.calls ? '' : '窗口内无 LLM 调用记录（P6 前的旧 run 不计量）');
+
+  // BLOCKED 原因
+  const reasons = d.runs.blockedReasons || [];
+  $('reasonTable').innerHTML = reasons.length ? `<table>
+    <tr><th>原因（前缀 + 首句归组）</th><th style="width:60px">次数</th></tr>
+    ${reasons.map(r=>{
+      const badge = r.reason.startsWith('[POLICY]') ? '<span class="badge b-pol">POLICY</span> '
+                  : r.reason.startsWith('[EXCEPTION]') ? '<span class="badge b-exc">EXCEPTION</span> ' : '';
+      const text = r.reason.replace(/^\[(POLICY|EXCEPTION)\]\s*/,'');
+      return `<tr><td>${badge}${esc(text)}</td><td class="num">${r.count}</td></tr>`;
+    }).join('')}
+  </table>` : '<div class="empty">窗口内无失败关闭记录 🎉</div>';
+}
+
+function draw(id, option){
+  const el = $(id);
+  if(typeof echarts === 'undefined'){ el.textContent = 'ECharts 未加载'; return; }
+  let inst = echarts.getInstanceByDom(el);
+  if(!inst) inst = echarts.init(el);
+  if(option){ inst.clear(); inst.setOption(option); }
+  else { inst.clear(); el.innerHTML = '<div class="empty">窗口内无数据</div>'; }
+}
+
+function ms(v){
+  if(v==null) return '—';
+  return v >= 1000 ? (v/1000).toFixed(1)+' s' : v+' ms';
+}
+function fmt(v){ return v==null ? '—' : Number(v).toLocaleString('en-US'); }
+
+setWindow('30');
+</script>
+</body>
+</html>
