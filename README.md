@@ -229,6 +229,7 @@ Phase06 将把确定性层升级为资产 publish 的自动影子回归门禁。
 | POST | `/runs/{id}/resume` | 断点续跑（仅 BLOCKED 或停摆超 2 分钟的 RUNNING）|
 | GET | `/runs/{id}/facts` | 证据视图：全部 FactRecord（含 SQL/双哈希/规约快照）|
 | POST | `/runs/{id}/export?format=pdf\|docx` | 已签发报告导出（仅 PUBLISHED）：正文/事实/图表取库中终稿，body 可选上送图表 PNG（缺图降级数据表）|
+| GET | `/runs/{id}/lineage` | 血缘导出（P6，只读）：run 级血缘单文档——`{job, run, inputs, outputs, graph:{nodes,edges}}`，对齐 OpenLineage 概念不引框架。节点 11 类（需求/模板@版本/指标@快照版本/spec/SQL/fact/图表/事件/归因/审批/报告），边 8 类（`MATCHED_TO/RESOLVED_TO/COMPILED_TO/PRODUCED/DERIVED_FROM/BOUND_TO/EVIDENCED_BY/APPROVED_BY`）；业务表输入从指标版本快照的 mqlTemplate 结构化提取（不解析 SQL）。字段全部同源库中留痕：断链（有引用无实体）→ 400 失败关闭；老 run 天然缺失的产物标 `absent` |
 | GET | `/assets` | 支撑资产：全部 PUBLISHED 模板（templates 数组）+ 指标语义定义 |
 | GET | `/calibers` | 口径资产列表（ACTIVE，升格入口用；`index.html` 一键带 MQL 跳指标向导第 ③ 步）|
 | POST | `/eval/run?layer=deterministic\|llm` | 回归评测（见上「评测基线」节；只读）|

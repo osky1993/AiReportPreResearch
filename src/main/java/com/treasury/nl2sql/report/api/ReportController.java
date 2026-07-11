@@ -7,6 +7,8 @@ import com.treasury.nl2sql.report.domain.FactRecord;
 import com.treasury.nl2sql.report.domain.ReportRun;
 import com.treasury.nl2sql.report.domain.ReportStep;
 import com.treasury.nl2sql.report.export.ReportExportService;
+import com.treasury.nl2sql.report.lineage.LineageAssembler;
+import com.treasury.nl2sql.report.lineage.LineageService;
 import com.treasury.nl2sql.report.pipeline.ReportPipeline;
 import com.treasury.nl2sql.report.store.ClaimRepository;
 import com.treasury.nl2sql.report.store.ReportFactRepository;
@@ -39,16 +41,19 @@ public class ReportController {
     private final ClaimRepository claimRepo;
     private final ReportAssetService assets;
     private final ReportExportService exportService;
+    private final LineageService lineageService;
 
     public ReportController(ReportPipeline pipeline, ReportStepRepository stepRepo,
                             ReportFactRepository factRepo, ClaimRepository claimRepo,
-                            ReportAssetService assets, ReportExportService exportService) {
+                            ReportAssetService assets, ReportExportService exportService,
+                            LineageService lineageService) {
         this.pipeline = pipeline;
         this.stepRepo = stepRepo;
         this.factRepo = factRepo;
         this.claimRepo = claimRepo;
         this.assets = assets;
         this.exportService = exportService;
+        this.lineageService = lineageService;
     }
 
     public record CreateRequest(String requestText) {}
@@ -136,6 +141,15 @@ public class ReportController {
     public List<FactRecord> facts(@PathVariable long id) {
         pipeline.require(id);
         return factRepo.findByRun(id);
+    }
+
+    /**
+     * 血缘导出（P6 契约1，只读）：run 级血缘单文档（需求→模板/指标版本→spec→SQL→fact→
+     * 图表/归因→审批），字段全部同源于库中留痕；装配断链 → 400 带断点明细（纪律 14）。
+     */
+    @GetMapping("/runs/{id}/lineage")
+    public LineageAssembler.LineageDoc lineage(@PathVariable long id) {
+        return lineageService.export(id);
     }
 
     /** 支撑资产视图：模板 + 指标语义定义（演示页「资产」页签 / 调试）。 */
