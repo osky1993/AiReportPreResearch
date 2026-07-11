@@ -25,10 +25,13 @@ public final class AnomalyDetector {
 
     private AnomalyDetector() {}
 
-    /** @return 追加的 ANOMALY facts；notes 就地追加说明（与 FactBuild notes 同流入 ⑤）。 */
-    public static List<FactRecord> detect(Outline outline, List<FactRecord> facts,
-                                          Map<String, MetricDefinition> defs, List<String> notes) {
-        List<FactRecord> anomalies = new ArrayList<>();
+    /** 命中结果：ANOMALY fact + 触发规则（rule.dimensionMetricId 供 ContributionStep 做贡献拆解）。 */
+    public record Anomaly(FactRecord fact, MetricDefinition.AnomalyRule rule) {}
+
+    /** @return 命中清单；notes 就地追加说明（与 FactBuild notes 同流入 ⑤）。 */
+    public static List<Anomaly> detect(Outline outline, List<FactRecord> facts,
+                                       Map<String, MetricDefinition> defs, List<String> notes) {
+        List<Anomaly> anomalies = new ArrayList<>();
         LinkedHashSet<String> metricIds = new LinkedHashSet<>();
         for (Outline.OutlineChapter ch : outline.chapters()) {
             metricIds.addAll(ch.metricIds());
@@ -41,7 +44,7 @@ public final class AnomalyDetector {
             for (MetricDefinition.AnomalyRule rule : def.anomalyRules()) {
                 FactRecord anomaly = evaluate(rule, def, cur, facts);
                 if (anomaly != null) {
-                    anomalies.add(anomaly);
+                    anomalies.add(new Anomaly(anomaly, rule));
                     notes.add("指标「" + def.name() + "」触发异常规则（" + anomaly.qualityNote() + "），"
                             + "已产异动事实 " + anomaly.factKey());
                     break;   // 每指标至多一条 _anom，首个命中规则胜出

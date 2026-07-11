@@ -48,6 +48,7 @@ public class ReportPipeline {
     private final SpecResolveStep specStep;
     private final FetchStep fetchStep;
     private final FactBuildStep factStep;
+    private final ContributionStep contributionStep;
     private final WriteStep writeStep;
     private final AuditStep auditStep;
     private final ObjectMapper mapper;
@@ -56,8 +57,8 @@ public class ReportPipeline {
 
     public ReportPipeline(ReportRunRepository runRepo, ReportStepRepository stepRepo, ReportFactRepository factRepo,
                           ReportAssetService assets, OutlineStep outlineStep, SpecResolveStep specStep,
-                          FetchStep fetchStep, FactBuildStep factStep, WriteStep writeStep, AuditStep auditStep,
-                          ObjectMapper mapper) {
+                          FetchStep fetchStep, FactBuildStep factStep, ContributionStep contributionStep,
+                          WriteStep writeStep, AuditStep auditStep, ObjectMapper mapper) {
         this.runRepo = runRepo;
         this.stepRepo = stepRepo;
         this.factRepo = factRepo;
@@ -66,6 +67,7 @@ public class ReportPipeline {
         this.specStep = specStep;
         this.fetchStep = fetchStep;
         this.factStep = factStep;
+        this.contributionStep = contributionStep;
         this.writeStep = writeStep;
         this.auditStep = auditStep;
         this.mapper = mapper;
@@ -124,8 +126,9 @@ public class ReportPipeline {
         Outline outline = editedOutline == null || editedOutline.isNull()
                 ? readOutline(run)
                 : parseEditedOutline(run, editedOutline);
-        Map<String, Integer> metricVersions = assets.snapshotMetricVersions(
-                outline.chapters().stream().flatMap(c -> c.metricIds().stream()).toList());
+        // 快照范围 = 大纲指标 + 其异常规则声明的贡献维度指标（P5-T2：贡献拆解取数也要按固化版本走）
+        Map<String, Integer> metricVersions = assets.snapshotMetricVersions(withContributionDims(
+                outline.chapters().stream().flatMap(c -> c.metricIds().stream()).toList()));
         runRepo.approveOutline(runId, blankTo(approver, "demo"), toJson(outline), toJson(metricVersions));
         kick(runId, Phase.SPEC);
         return require(runId);
@@ -232,10 +235,13 @@ public class ReportPipeline {
                 long factStepId = stepRepo.start(runId, phase.name(), null);
                 try {
                     FactBuildStep.FactBuildResult built = factStep.run(outline, fetched, defs, pinnedVersions);
-                    // 异常检测（Phase05，程序判定零 LLM）：命中追加 ANOMALY fact，与常规事实同落库同审计
+                    // 异常检测 + 维度贡献拆解（Phase05，程序判定零 LLM）：与常规事实同落库同审计
                     List<String> allNotes = new ArrayList<>(built.notes());
                     List<FactRecord> allFacts = new ArrayList<>(built.facts());
-                    allFacts.addAll(AnomalyDetector.detect(outline, built.facts(), defs, allNotes));
+                    List<AnomalyDetector.Anomaly> anomalies =
+                            AnomalyDetector.detect(outline, built.facts(), defs, allNotes);
+                    anomalies.forEach(a -> allFacts.add(a.fact()));
+                    allFacts.addAll(contributionStep.build(anomalies, current, defs, allNotes));
                     factRepo.deleteByRun(runId);
                     factRepo.batchInsert(runId, allFacts);
                     facts = allFacts;
@@ -364,6 +370,22 @@ public class ReportPipeline {
     }
 
     // ---------- 工具 ----------
+
+    /** 大纲指标 + 其异常规则的 dimensionMetricId（去重保序）——贡献拆解的维度指标也进版本快照。 */
+    private List<String> withContributionDims(List<String> ids) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>(ids);
+        for (String id : ids) {
+            assets.metric(id).ifPresent(def -> {
+                if (def.anomalyRules() == null) return;
+                for (var r : def.anomalyRules()) {
+                    if (r != null && r.dimensionMetricId() != null && !r.dimensionMetricId().isBlank()) {
+                        out.add(r.dimensionMetricId());
+                    }
+                }
+            });
+        }
+        return new ArrayList<>(out);
+    }
 
     /** run 固化的指标版本快照；null=Phase02 前存量 run 未固化（回退现行为，不硬 BLOCKED 老数据）。 */
     private Map<String, Integer> readMetricVersions(ReportRun run) {

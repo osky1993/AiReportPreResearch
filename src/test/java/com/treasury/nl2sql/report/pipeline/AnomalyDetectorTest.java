@@ -48,9 +48,10 @@ class AnomalyDetectorTest {
                 fact("fact_001", "m1", "3851436", "CNY"),
                 fact("fact_001_wow", "m1", "142.2", "percent"));
         List<String> notes = new ArrayList<>();
-        List<FactRecord> anomalies = AnomalyDetector.detect(outline("m1"), facts, defs, notes);
+        List<AnomalyDetector.Anomaly> anomalies = AnomalyDetector.detect(outline("m1"), facts, defs, notes);
         assertEquals(1, anomalies.size());
-        FactRecord a = anomalies.get(0);
+        assertEquals("wow", anomalies.get(0).rule().basis());
+        FactRecord a = anomalies.get(0).fact();
         assertEquals("fact_001_anom", a.factKey());
         assertEquals(FactRecord.TYPE_DERIVED, a.factType());
         assertEquals(0, a.value().compareTo(new BigDecimal("142.2")));
@@ -77,10 +78,10 @@ class AnomalyDetectorTest {
         List<FactRecord> facts = List.of(
                 fact("fact_001", "m1", "11464236", "CNY"),
                 fact("fact_001_wow", "m1", "129.6", "percent"));
-        List<FactRecord> anomalies = AnomalyDetector.detect(outline("m1"), facts, defs, new ArrayList<>());
+        List<AnomalyDetector.Anomaly> anomalies = AnomalyDetector.detect(outline("m1"), facts, defs, new ArrayList<>());
         assertEquals(1, anomalies.size(), "每指标至多一条 _anom，首个命中规则胜出");
-        assertTrue(anomalies.get(0).qualityNote().startsWith("threshold"));
-        assertEquals("CNY", anomalies.get(0).unit());
+        assertTrue(anomalies.get(0).fact().qualityNote().startsWith("threshold"));
+        assertEquals("CNY", anomalies.get(0).fact().unit());
     }
 
     @Test
