@@ -25,7 +25,7 @@
     {
       "chapterId": "cashflow",
       "title": "三、交易与收支",
-      "metrics": ["week_txn_count", "week_txn_amount_cny", "week_inflow_amount_cny", "week_outflow_amount_cny", "week_net_inflow_cny", "payroll_out_amount", "tax_txn_count"],
+      "metrics": ["week_txn_count", "week_txn_amount_cny", "week_inflow_amount_cny", "week_outflow_amount_cny", "week_net_inflow_cny", "payroll_out_amount", "tax_txn_count", "invest_out_amount_cny"],
       "comparison": "week_over_week",
       "guidance": "陈述本周交易活动与收支结构：交易笔数与总额、流入流出与净流入、工资/税款等主要支出事项，并给出环比变化。"
     },
