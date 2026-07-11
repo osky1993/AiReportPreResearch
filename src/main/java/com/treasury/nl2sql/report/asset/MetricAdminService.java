@@ -118,9 +118,10 @@ public class MetricAdminService {
             throw new ValidationFailedException(List.of(err("PLACEHOLDER", e.getMessage())));
         }
 
-        // ③ MQL_VALIDATION：白名单校验 + 维度声明↔groupBy 一致性（与启动自检共用 MetricDimensionRule）
+        // ③ MQL_VALIDATION：白名单校验 + 维度声明↔groupBy 一致性 + 异常规则形状（与启动自检共用规则类）
         List<String> mqlErrors = new ArrayList<>(trial.validate(filled));
         mqlErrors.addAll(MetricDimensionRule.check(m, filled));
+        mqlErrors.addAll(MetricAnomalyRule.check(m));
         if (!mqlErrors.isEmpty()) {
             throw new ValidationFailedException(mqlErrors.stream()
                     .map(msg -> err("MQL_VALIDATION", msg)).toList());

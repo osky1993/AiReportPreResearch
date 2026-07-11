@@ -232,10 +232,14 @@ public class ReportPipeline {
                 long factStepId = stepRepo.start(runId, phase.name(), null);
                 try {
                     FactBuildStep.FactBuildResult built = factStep.run(outline, fetched, defs, pinnedVersions);
+                    // 异常检测（Phase05，程序判定零 LLM）：命中追加 ANOMALY fact，与常规事实同落库同审计
+                    List<String> allNotes = new ArrayList<>(built.notes());
+                    List<FactRecord> allFacts = new ArrayList<>(built.facts());
+                    allFacts.addAll(AnomalyDetector.detect(outline, built.facts(), defs, allNotes));
                     factRepo.deleteByRun(runId);
-                    factRepo.batchInsert(runId, built.facts());
-                    facts = built.facts();
-                    notes = built.notes();
+                    factRepo.batchInsert(runId, allFacts);
+                    facts = allFacts;
+                    notes = allNotes;
                     stepRepo.finishOk(factStepId, toJson(Map.of("factCount", facts.size(), "notes", notes)));
                 } catch (RuntimeException e) {
                     stepRepo.finishBlocked(factStepId, e.getMessage());

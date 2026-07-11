@@ -15,6 +15,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -211,6 +212,7 @@ public class ReportAssetService {
                 }
             }
             requireDimensionRule(m, null);
+            requireAnomalyRule(m, catalog);
             return;
         }
         if (m.valueColumn() == null || m.valueColumn().isBlank()) {
@@ -222,6 +224,7 @@ public class ReportAssetService {
             throw new IllegalStateException("指标「" + m.metricId() + "」的 MQL 模板未通过校验: " + errors);
         }
         requireDimensionRule(m, mql);
+        requireAnomalyRule(m, catalog);
     }
 
     /** 维度声明↔groupBy 一致性（Phase03，规则见 MetricDimensionRule，与保存五重校验共用）。 */
@@ -229,6 +232,23 @@ public class ReportAssetService {
         List<String> errors = MetricDimensionRule.check(m, filledMql);
         if (!errors.isEmpty()) {
             throw new IllegalStateException("指标「" + m.metricId() + "」维度声明未通过校验: " + errors);
+        }
+    }
+
+    /** 异常规则校验（Phase05）：形状规则共用 MetricAnomalyRule + 目录级 dimensionMetricId 存在性/维度性。 */
+    private static void requireAnomalyRule(MetricDefinition m, Map<String, MetricDefinition> catalog) {
+        List<String> errors = new ArrayList<>(MetricAnomalyRule.check(m));
+        if (m.anomalyRules() != null) {
+            for (MetricDefinition.AnomalyRule r : m.anomalyRules()) {
+                if (r == null || r.dimensionMetricId() == null || r.dimensionMetricId().isBlank()) continue;
+                MetricDefinition dim = catalog.get(r.dimensionMetricId());
+                if (dim == null || !dim.isDimensional()) {
+                    errors.add("dimensionMetricId「" + r.dimensionMetricId() + "」不存在或未声明维度");
+                }
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new IllegalStateException("指标「" + m.metricId() + "」异常规则未通过校验: " + errors);
         }
     }
 

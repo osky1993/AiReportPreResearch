@@ -16,12 +16,12 @@ class MetricVersionSnapshotTest {
 
     private static VersionedMetric fetchMetric(String id, int version) {
         return new VersionedMetric(new MetricDefinition(id, "指标" + id, "CNY",
-                true, false, "v", "ZERO", List.of(), null, null, null), version);
+                true, false, "v", "ZERO", List.of(), null, null, null, null), version);
     }
 
     private static VersionedMetric derivedMetric(String id, int version, String left, String right) {
         return new VersionedMetric(new MetricDefinition(id, "派生" + id, "CNY",
-                true, false, null, "ZERO", List.of(), null, null,
+                true, false, null, "ZERO", List.of(), null, null, null,
                 new MetricDefinition.Derived("subtract", left, right)), version);
     }
 

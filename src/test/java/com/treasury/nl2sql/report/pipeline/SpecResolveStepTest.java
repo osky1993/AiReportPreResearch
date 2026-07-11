@@ -22,7 +22,7 @@ class SpecResolveStepTest {
 
     private static MetricDefinition metric(String id, boolean timeBound, boolean comparable) {
         return new MetricDefinition(id, "指标" + id, "CNY", timeBound, comparable, "v", "ZERO",
-                List.of(), null, null, null);
+                List.of(), null, null, null, null);
     }
 
     private static Outline.OutlineChapter legacyChapter(String id, String comparison, String... metricIds) {
@@ -87,7 +87,7 @@ class SpecResolveStepTest {
     @Test
     void derivedMetricOperandsGetYoySpecsToo() {
         MetricDefinition derived = new MetricDefinition("net", "净流入", "CNY", true, true, null, "ZERO",
-                List.of(), null, null, new MetricDefinition.Derived("subtract", "in", "out"));
+                List.of(), null, null, null, new MetricDefinition.Derived("subtract", "in", "out"));
         Outline outline = new Outline("tpl", "2026-M06", List.of(
                 listChapter("ch1", List.of("year_over_year"), "net")), List.of());
         Map<String, MetricDefinition> defs = Map.of(
