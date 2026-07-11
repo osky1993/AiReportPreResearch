@@ -106,18 +106,27 @@ public class ReportEvalService {
             List<FetchStep.FetchResult> fetched = fetchStep.run(specs, defs);
             FactBuildStep.FactBuildResult built = factStep.run(outline, fetched, defs);
 
-            // BASE 事实 → (metricId|purpose) → (值, sql_hash)
+            // BASE 事实 → (metricId|purpose[|维度])，维度指标一行一键（Phase03：键维度化，行不互相覆盖）
             Map<String, BigDecimal> produced = new LinkedHashMap<>();
             Map<String, String> producedHash = new LinkedHashMap<>();
             for (var f : built.facts()) {
                 if (!"BASE".equals(f.factType())) continue;
                 MetricQuerySpec spec = mapper.readValue(f.specJson(), MetricQuerySpec.class);
-                String key = f.metricId() + "|" + spec.purpose();
+                String key = expectationKey(f.metricId(), spec.purpose(), f.dimensions());
                 produced.put(key, f.value());
                 producedHash.put(key, f.sqlHash());
             }
             for (JsonNode e : c.path("expected")) {
-                String key = e.path("metricId").asText() + "|" + e.path("purpose").asText();
+                Map<String, String> dims = null;
+                if (e.has("dimensions")) {
+                    dims = new LinkedHashMap<>();
+                    var it = e.path("dimensions").fields();
+                    while (it.hasNext()) {
+                        var kv = it.next();
+                        dims.put(kv.getKey(), kv.getValue().asText());
+                    }
+                }
+                String key = expectationKey(e.path("metricId").asText(), e.path("purpose").asText(), dims);
                 BigDecimal expected = new BigDecimal(e.path("value").asText());
                 BigDecimal actual = produced.remove(key);
                 if (actual == null) {
@@ -138,6 +147,18 @@ public class ReportEvalService {
         }
         boolean pass = !items.isEmpty() && items.stream().allMatch(ItemResult::pass);
         return new CaseResult(id, "FACTS", pass, items);
+    }
+
+    /** 比对键：metricId|purpose[|k=v,...]——维度取值排序后拼接，维度行一行一键（无维度与 Phase02 键逐字节相同）。 */
+    static String expectationKey(String metricId, String purpose, Map<String, String> dimensions) {
+        StringBuilder sb = new StringBuilder(metricId).append('|').append(purpose);
+        if (dimensions != null && !dimensions.isEmpty()) {
+            sb.append('|').append(dimensions.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(e -> e.getKey() + "=" + e.getValue())
+                    .collect(java.util.stream.Collectors.joining(",")));
+        }
+        return sb.toString();
     }
 
     /** 确定性大纲 = 模板全章节全指标（等价于卡点1 不做删减直接确认）。 */
