@@ -355,6 +355,7 @@ function initCharts(){
     try{ echarts.init(el).setOption(JSON.parse(c.optionJson)); }
     catch(e){ el.textContent = '图表渲染失败: '+e.message; }
   });
+}
 
 /* ---------- 归因 claim 证据链（Phase05：结论强度分级、无证据不升级；confirmed 仅人工勾选可达） ---------- */
 const CLAIM_META = { observed:['观察','b-rej'], associated:['关联','b-run'],
