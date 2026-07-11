@@ -124,3 +124,14 @@ flowchart LR
 | 历史周期种子数据不足使趋势图脏 | T2 先核查数据覆盖，不足则增量种子（纪律 8）；期望值手写 SQL 直查 |
 | 与 Phase05 并行改 report.html 冲突 | 分区渲染：P4 只动章节尾图表容器与审计 chartChecks 段，P5 只动归因章与 claim 证据链段；合流前互跑对方 Gate 用例 |
 | 评测确定性层被序列 fact 打破对称检查 | T2 验证 purpose 过滤：期望清单外的 CHART_SERIES fact 不计入「多产出即失败」（比对射程限 CURRENT/COMPARE/COMPARE_YOY），或补齐期望值——T5 拍板落地 |
+
+## 六、G04 验收记录（2026-07-11，phase04 分支）
+
+| # | Gate 标准 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 周报含趋势图与结构图 | ✅ | treasury-weekly v4 声明 summary 趋势图（series×6 周）与 by_currency 结构饼图；run #33 双图随报告签发（PUBLISHED） |
+| 2 | 零 LLM 数据绑定 | ✅ | 构造上成立：序列 fact 不进 ⑤ prompt（specJson purpose 过滤，WriteStepPromptTest 断言）；`ChartBuildStep` 纯程序组装 option，正文无图表占位符，前端按章节渲染 |
+| 3 | 图表 JSON Schema 校验 100% | ✅ | TemplateValidator 型-绑定矩阵/periods 2~12/绑定指标形态与本章归属四组规则（单测正反例）；绑定产物过 ChartAuditor 自证（ChartBuildStepTest） |
+| 4 | 图表数据一致性进 ⑥ + 零回退 | ✅ | run #33 `chartChecks`：趋势 6 点 + 结构 2 点逐点严格相等，审计 39/39=100%；对抗单测三件（篡改单点/删点/幻引用）被拦；评测确定性层 **105/105=100%**（原 100 条原样 + 序列点 5 条一期一键）、匹配 15/15、失败关闭 6/6；`mvn test` **354/354** |
+
+**实施发现**：① 拍板项 ② 落地微调——维度行 fact 维持 P3 章 20 上限内（其以表格占位符进 ⑤ prompt，正属占位符纪律射程），序列 fact 才走独立 24 配额（契约1 已按实现纠正）；② 序列 fact 采用独立命名域 `fact_c<NN>_s<K>`，主序列 `fact_NNN` 编号零扰动——比「主序列后缀」更稳（不碰既有评测键与基线编号）；③ 评测比对键升为「序列点一期一键」（metricId|CHART_SERIES|periodLabel），风险表末行的「射程排除」方案弃用，期望值补齐（纪律 7）；④ 全局编辑节点按拍板后置；⑤ 模板编辑器 comparison 下拉仍只列 week_over_week（月/季模板经种子/API 管理），P6 编辑器整修时一并补。

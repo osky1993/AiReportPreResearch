@@ -54,6 +54,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .unres{background:#fef2f2;border:1px solid #fecaca;color:var(--bad);border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:8px}
 .blockbox{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-bottom:10px}
 .blockbox .r{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--bad);white-space:pre-wrap;word-break:break-all}
+.chartgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+.chartbox{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff}
+.chartbox .charttitle{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;gap:8px}
+.chartbox .chart{height:260px}
 .report{background:#fff;border:1px solid var(--line);border-radius:8px;padding:18px 22px}
 .report h2{font-size:16px;margin:14px 0 8px;border-left:3px solid var(--accent);padding-left:8px}
 .report p{margin:6px 0}
@@ -128,6 +132,7 @@ details.step pre{background:#f9fafb;padding:6px 8px;overflow:auto;max-height:220
 </div>
 </div>
 
+<script src="vendor/echarts.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 let RUNS = [], CUR = null, TIMER = null, OUTLINE_EDIT = null;
@@ -221,6 +226,7 @@ function render(){
   if(['AWAITING_PUBLISH_APPROVAL','PUBLISHED','REJECTED'].includes(r.status) && r.reportMd) html += reportHtml(r,d);
   html += stepsHtml(d.steps);
   $('detailPane').innerHTML = html;
+  initCharts();   // DOM 就绪后初始化 ECharts（Phase04）
   schedulePoll();
 }
 
@@ -305,11 +311,13 @@ async function act(path, body){
 /* ---------- 报告 + 证据 + HITL 卡点2 ---------- */
 function reportHtml(r, d){
   const audit = r.auditJson ? JSON.parse(r.auditJson) : null;
+  const cc = audit && audit.chartChecks ? audit.chartChecks : [];
+  const chartAudit = cc.length ? `<span>图表核对 <b>${cc.filter(c=>c.ok).length}/${cc.length}</b> 张（逐点严格相等）</span>` : '';
   const auditLine = audit ? `<div class="auditline">
       <span>⑥ 证据审计：<b>${audit.passed?'通过':'未通过'}</b></span>
       <span>核对数字 <b>${audit.totalNumbers}</b> 个</span>
       <span>一致 <b>${audit.matchedNumbers}</b> 个（一致率 <b>${(audit.totalNumbers?100*audit.matchedNumbers/audit.totalNumbers:100).toFixed(0)}%</b>）</span>
-      <span>LLM 重写 <b>${audit.rewriteRounds}</b> 轮</span></div>` : '';
+      <span>LLM 重写 <b>${audit.rewriteRounds}</b> 轮</span>${chartAudit}</div>` : '';
   const actions = r.status==='AWAITING_PUBLISH_APPROVAL' ? `
     <div class="row">审批人 <input type="text" id="approver2" value="demo" style="width:100px">
       <button class="okbtn" onclick="approvePublish()">✍️ 审批发布</button>
@@ -319,7 +327,32 @@ function reportHtml(r, d){
        : `<div class="muted" style="margin-top:8px">已驳回：${esc(r.blockedReason||'')}</div>`);
   return `<div class="card"><h2>报告${r.status==='PUBLISHED'?'（已签发）':'终稿'} <span class="muted" style="margin-left:auto">点击 [fact_xxx] 查看证据</span></h2>
       ${auditLine}<div class="report">${mdToHtml(r.reportMd)}</div>${actions}</div>
+    ${chartsCard(r)}
     <div class="card"><h2>证据：事实记录（FactRecord，${d.facts.length} 条）</h2>${factsTable(d.facts)}</div>`;
+}
+
+/* ---------- 报告图表（Phase04：数据 100% 程序绑定自 fact，LLM 零接触） ---------- */
+function parsedCharts(r){
+  if(!r || !r.chartsJson) return [];
+  try{ return JSON.parse(r.chartsJson) || []; }catch(e){ return []; }
+}
+function chartsCard(r){
+  const charts = parsedCharts(r);
+  if(!charts.length) return '';
+  return `<div class="card"><h2>报告图表 <span class="muted" style="font-weight:400">每个数据点绑定一个 fact，⑥ 逐点核对（chartChecks）</span></h2>
+    <div class="chartgrid">${charts.map((c,i)=>`
+      <div class="chartbox"><div class="charttitle"><b>${esc(c.title)}</b>
+        <span>章 ${esc(c.chapterId)} · ${c.boundFactKeys.length} 点 · ${esc(c.type)}</span></div>
+      <div class="chart" id="chartbox_${i}"></div></div>`).join('')}</div></div>`;
+}
+function initCharts(){
+  if(typeof echarts === 'undefined' || !CUR) return;
+  parsedCharts(CUR.run).forEach((c,i)=>{
+    const el = document.getElementById('chartbox_'+i);
+    if(!el) return;
+    try{ echarts.init(el).setOption(JSON.parse(c.optionJson)); }
+    catch(e){ el.textContent = '图表渲染失败: '+e.message; }
+  });
 }
 
 async function approvePublish(){ await act(`/runs/${CUR.run.runId}/publish/approve`, {approver: $('approver2').value}); }

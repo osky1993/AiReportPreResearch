@@ -106,15 +106,13 @@ public class ReportEvalService {
             List<FetchStep.FetchResult> fetched = fetchStep.run(specs, defs);
             FactBuildStep.FactBuildResult built = factStep.run(outline, fetched, defs);
 
-            // BASE 事实 → (metricId|purpose[|维度])，维度指标一行一键（Phase03：键维度化，行不互相覆盖）
+            // BASE 事实 → (metricId|purpose[|维度][|序列期])：维度行一行一键（P3）、序列点一期一键（P4）
             Map<String, BigDecimal> produced = new LinkedHashMap<>();
             Map<String, String> producedHash = new LinkedHashMap<>();
             for (var f : built.facts()) {
                 if (!"BASE".equals(f.factType())) continue;
                 MetricQuerySpec spec = mapper.readValue(f.specJson(), MetricQuerySpec.class);
-                // 图表序列不在取数等价率射程（P4）：序列正确性由 ⑥ 图表核对与 FACTS 的期望值扩充另行覆盖
-                if (MetricQuerySpec.PURPOSE_CHART_SERIES.equals(spec.purpose())) continue;
-                String key = expectationKey(f.metricId(), spec.purpose(), f.dimensions());
+                String key = expectationKey(f.metricId(), spec.purpose(), f.dimensions(), spec.periodLabel());
                 produced.put(key, f.value());
                 producedHash.put(key, f.sqlHash());
             }
@@ -128,7 +126,8 @@ public class ReportEvalService {
                         dims.put(kv.getKey(), kv.getValue().asText());
                     }
                 }
-                String key = expectationKey(e.path("metricId").asText(), e.path("purpose").asText(), dims);
+                String key = expectationKey(e.path("metricId").asText(), e.path("purpose").asText(), dims,
+                        e.path("periodLabel").asText(null));
                 BigDecimal expected = new BigDecimal(e.path("value").asText());
                 BigDecimal actual = produced.remove(key);
                 if (actual == null) {
@@ -151,14 +150,21 @@ public class ReportEvalService {
         return new CaseResult(id, "FACTS", pass, items);
     }
 
-    /** 比对键：metricId|purpose[|k=v,...]——维度取值排序后拼接，维度行一行一键（无维度与 Phase02 键逐字节相同）。 */
-    static String expectationKey(String metricId, String purpose, Map<String, String> dimensions) {
+    /**
+     * 比对键：metricId|purpose[|k=v,...][|periodLabel]——维度取值排序后拼接、维度行一行一键（P3）；
+     * 图表序列（CHART_SERIES，P4）一期一键（期标签定位）。无维度无序列时与 Phase02 键逐字节相同。
+     */
+    static String expectationKey(String metricId, String purpose, Map<String, String> dimensions,
+                                 String periodLabel) {
         StringBuilder sb = new StringBuilder(metricId).append('|').append(purpose);
         if (dimensions != null && !dimensions.isEmpty()) {
             sb.append('|').append(dimensions.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .map(e -> e.getKey() + "=" + e.getValue())
                     .collect(java.util.stream.Collectors.joining(",")));
+        }
+        if (MetricQuerySpec.PURPOSE_CHART_SERIES.equals(purpose)) {
+            sb.append('|').append(periodLabel);
         }
         return sb.toString();
     }

@@ -53,7 +53,12 @@
         { "metricId": "tax_txn_count", "purpose": "COMPARE", "value": 0, "referenceSql": "SELECT COUNT(*) FROM cash_transaction WHERE category='TAX' AND status<>'FAILED' AND txn_date BETWEEN '2026-06-15' AND '2026-06-21'" },
         { "metricId": "invest_out_amount_cny", "purpose": "COMPARE", "value": 287200.00, "referenceSql": "SELECT SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.direction='OUT' AND t.category='INVEST' AND t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-15' AND '2026-06-21'" },
         { "metricId": "week_txn_amount_by_currency", "purpose": "CURRENT", "dimensions": { "currency": "CNY" }, "value": 3850000.00, "referenceSql": "SELECT t.currency, SUM(t.amount*r.rate_to_cny) FROM cash_transaction t JOIN currency_rate r ON t.currency=r.currency AND r.rate_date=(SELECT MAX(rate_date) FROM currency_rate) WHERE t.status<>'FAILED' AND t.txn_date BETWEEN '2026-06-22' AND '2026-06-28' GROUP BY t.currency -- P3-T6 模板 v3 维度章节，只增不改（契约3）" },
-        { "metricId": "week_txn_amount_by_currency", "purpose": "CURRENT", "dimensions": { "currency": "USD" }, "value": 1436.00, "referenceSql": "同上（USD 行）" }
+        { "metricId": "week_txn_amount_by_currency", "purpose": "CURRENT", "dimensions": { "currency": "USD" }, "value": 1436.00, "referenceSql": "同上（USD 行）" },
+        { "metricId": "week_txn_amount_cny", "purpose": "CHART_SERIES", "periodLabel": "2026-W21", "value": 500000.00, "referenceSql": "SUM 折CNY，窗口 2026-05-18~05-24 -- P4-T5 模板 v4 趋势图序列点（近六周），一期一键" },
+        { "metricId": "week_txn_amount_cny", "purpose": "CHART_SERIES", "periodLabel": "2026-W22", "value": 0, "referenceSql": "SUM 折CNY，窗口 2026-05-25~05-31 直查无行，nullPolicy=ZERO 归 0" },
+        { "metricId": "week_txn_amount_cny", "purpose": "CHART_SERIES", "periodLabel": "2026-W23", "value": 2961600.00, "referenceSql": "SUM 折CNY，窗口 2026-06-01~06-07" },
+        { "metricId": "week_txn_amount_cny", "purpose": "CHART_SERIES", "periodLabel": "2026-W24", "value": 2626800.00, "referenceSql": "SUM 折CNY，窗口 2026-06-08~06-14" },
+        { "metricId": "week_txn_amount_cny", "purpose": "CHART_SERIES", "periodLabel": "2026-W25", "value": 1590100.00, "referenceSql": "SUM 折CNY，窗口 2026-06-15~06-21（与 COMPARE 同窗，独立取数一期一键）" }
       ] },
 
     { "type": "FACTS", "id": "f-monthly-m06", "templateId": "treasury-monthly", "periodLabel": "2026-M06",

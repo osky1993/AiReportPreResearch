@@ -139,6 +139,13 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
     12）→ ④ 逐行造 fact（`fact_017_cny`/`fact_017_usd`，dimensions 非空）+ 合计 + 占比 `_share`
     → ⑤ markdown 表格逐格 `{{fact_key}}` 占位符 → ⑥ 逐格核对（实录 run #31，43/43 一致率
     100%）。章节 fact 总数上限 20，触顶 BLOCKED 不静默截断。
+11c. **报告带图（Phase04，每张图有出生证明）**：周报 v4 声明趋势图（`week_txn_amount_cny`
+    近六周序列）与结构图（币种构成饼图）→ ② 追加 CHART_SERIES 逐期取数（序列点即 fact，
+    `fact_c01_s1..s5`，独立命名域与配额）→ ④⑤ 之间 `ChartBuildStep` **确定性程序**组装 ECharts
+    option（图表不进 ⑤ prompt——LLM 连图表数据的存在都不知道，零接触在构造上成立）→ ⑥
+    `ChartAuditor` 逐点严格相等核对进审计包 `chartChecks`，任何不一致不放行（实录 run #33：
+    趋势 6 点 + 结构 2 点逐点一致，审计 39/39=100%，PUBLISHED）。前端 `report.html` 以本地
+    vendored ECharts 渲染（无 CDN），模板编辑器支持章节图表配置（型/绑定下拉）。
 12. **资产自检兜底**：把 `metrics.json` 某占位符改错（如 `{{period_strat}}`）再启动（清空
     `report_metric` 表触发重种）→ **启动即失败**；库中 PUBLISHED 资产坏了同样拒绝启动。
 13. **断点续跑**：`UPDATE report_run SET status='BLOCKED', phase='WRITE' WHERE run_id=X;`
@@ -178,17 +185,17 @@ curl -s localhost:8080/api/report/runs/1/publish/approve -H 'Content-Type: appli
 ### 评测基线（Phase02 建立，回归门禁的一部分）
 
 黄金需求集 `resources/report/eval/golden-set.json`（15 MATCH + 6 BLOCKED + 7 FACTS，
-FACTS 的 100 条期望值全部**手写 SQL 直查得出**、referenceSql 逐条落档——期望值不得由被评测系统自产自证；
-维度行按 `dimensions` 一行一条期望值定位）。分层评测，只读不写状态表：
+FACTS 的 105 条期望值全部**手写 SQL 直查得出**、referenceSql 逐条落档——期望值不得由被评测系统自产自证；
+维度行按 `dimensions` 一行一键、图表序列点按 `periodLabel` 一期一键定位）。分层评测，只读不写状态表：
 
 ```bash
 curl -X POST 'localhost:8080/api/report/eval/run?layer=deterministic'   # ②③④ 取数等价，零 LLM，秒级
 curl -X POST 'localhost:8080/api/report/eval/run?layer=llm'             # ① 匹配/失败关闭，烧 token，分钟级
 ```
 
-| 基线指标 | Phase03 基线（2026-07-11，19 指标 / 7 模板） | 首版基线（2026-07-10） | 说明 |
+| 基线指标 | Phase04 基线（2026-07-11，19 指标 / 7 模板） | 首版基线（2026-07-10） | 说明 |
 |---|---|---|---|
-| 取数等价率 | **100/100 = 100%** | 47/47 = 100% | ③ 产出值 vs 手写 SQL 期望（含月/季 COMPARE_YOY 与维度行），值不一致即失败；sql_hash 随报告输出作复现记录 |
+| 取数等价率 | **105/105 = 100%** | 47/47 = 100% | ③ 产出值 vs 手写 SQL 期望（含月/季 COMPARE_YOY、维度行与 P4 图表序列点），值不一致即失败；sql_hash 随报告输出作复现记录 |
 | 数字一致率 | **100%（恒等）** | 100%（恒等） | ⑥ 的发布硬门禁，不足 100% 根本出不了报告，评测直接引用审计包 |
 | 模板匹配正确率 | **15/15 = 100%** | 11/11 = 100% | ① 对口语变体/同义词/周·月·季标签的模板命中与周期识别 |
 | 失败关闭正确率 | **6/6 = 100%** | 6/6 = 100% | 无关领域/空泛/年报/缺周期一律 BLOCKED 不硬凑 |

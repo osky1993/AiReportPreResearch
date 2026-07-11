@@ -9,7 +9,11 @@
       "title": "一、核心结论",
       "metrics": ["cny_total_balance", "week_txn_amount_cny", "week_net_inflow_cny"],
       "comparison": "week_over_week",
-      "guidance": "用 3~5 句话概括本周资金全貌与最重要的变化：整体头寸水平、交易总量、净流入方向及其环比变化。只引用提供给本章的事实，不下因果结论。"
+      "guidance": "用 3~5 句话概括本周资金全貌与最重要的变化：整体头寸水平、交易总量、净流入方向及其环比变化。只引用提供给本章的事实，不下因果结论。",
+      "charts": [
+        { "chartId": "trend_txn_amount", "type": "line", "title": "近六周交易总额（折人民币）",
+          "binding": { "kind": "series", "metricId": "week_txn_amount_cny", "periods": 6 } }
+      ]
     },
     {
       "chapterId": "position",
@@ -37,7 +41,11 @@
       "title": "五、按币种拆解",
       "metrics": ["week_txn_amount_by_currency"],
       "comparison": null,
-      "guidance": "以表格呈现本周交易金额按币种的拆解（折人民币口径）：每行一个币种，列出金额与占比，表格后用一句话点明合计与占比最高的币种。只引用提供给本章的事实，不猜测原因。"
+      "guidance": "以表格呈现本周交易金额按币种的拆解（折人民币口径）：每行一个币种，列出金额与占比，表格后用一句话点明合计与占比最高的币种。只引用提供给本章的事实，不猜测原因。",
+      "charts": [
+        { "chartId": "mix_by_currency", "type": "pie", "title": "本周交易金额币种构成（折人民币）",
+          "binding": { "kind": "dimension", "metricId": "week_txn_amount_by_currency" } }
+      ]
     }
   ]
 }

@@ -184,6 +184,25 @@ function render(){
         <textarea onchange="setCh(${i},'guidance',this.value)">${esc(c.guidance||'')}</textarea></div>
       <div class="field"><div class="fl">✍️ 风格提示词 stylePrompt（只影响文风；数字安全由 ⑥ 审计死代码兜底）</div>
         <textarea onchange="setCh(${i},'stylePrompt',this.value)">${esc(c.stylePrompt||'')}</textarea></div>
+      <div class="field"><div class="fl">📊 图表 charts（P4：数据由程序从 fact 绑定，LLM 零接触；series→line/bar，dimension→pie/bar）</div>
+        ${(c.charts||[]).map((g,j)=>`<div class="row" style="margin:4px 0;gap:6px;flex-wrap:wrap">
+          <input type="text" style="width:110px" placeholder="chartId" value="${esc(g.chartId||'')}" onchange="setChart(${i},${j},'chartId',this.value)">
+          <input type="text" style="width:150px" placeholder="标题" value="${esc(g.title||'')}" onchange="setChart(${i},${j},'title',this.value)">
+          <select onchange="setChart(${i},${j},'kind',this.value)">
+            ${['series','dimension'].map(k=>`<option value="${k}" ${(g.binding&&g.binding.kind)===k?'selected':''}>${k}</option>`).join('')}
+          </select>
+          <select onchange="setChart(${i},${j},'type',this.value)">
+            ${['line','bar','pie'].map(t=>`<option value="${t}" ${g.type===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+          <select onchange="setChart(${i},${j},'metricId',this.value)">
+            <option value="">绑定指标…</option>
+            ${c.metrics.map(m=>`<option value="${m}" ${(g.binding&&g.binding.metricId)===m?'selected':''}>${m}</option>`).join('')}
+          </select>
+          <input type="number" style="width:80px" min="2" max="12" placeholder="periods" title="series 期数 2~12"
+            value="${g.binding&&g.binding.periods!=null?g.binding.periods:''}" onchange="setChart(${i},${j},'periods',this.value)">
+          <button class="danger mini" onclick="delChart(${i},${j})">✕</button>
+        </div>`).join('')}
+        <button class="ghost mini" onclick="addChart(${i})">+ 加图表</button></div>
       ${chapterErr(i).map(e=>`<div class="err">✖ ${esc(e.location)}：${esc(e.message)}</div>`).join('')}
     </div>`).join('');
 
@@ -245,6 +264,22 @@ function toggleMetric(i,m){
 function setKeywords(v){ EDIT.keywords = v.split(/[,，]/).map(s=>s.trim()).filter(Boolean); }
 function addCh(){ EDIT.chapters.push({chapterId:'ch'+(EDIT.chapters.length+1), title:'', metrics:[], comparison:null, guidance:'', stylePrompt:''}); render(); }
 function delCh(i){ EDIT.chapters.splice(i,1); render(); }
+/* ---------- 图表配置（P4）：写入 chapter.charts[]，schema 校验在服务端（validate/保存把关） ---------- */
+function addChart(i){
+  (EDIT.chapters[i].charts = EDIT.chapters[i].charts || []).push(
+    {chartId:'chart_'+((EDIT.chapters[i].charts||[]).length+1), type:'line', title:'',
+     binding:{kind:'series', metricId:'', periods:6}});
+  render();
+}
+function delChart(i,j){ EDIT.chapters[i].charts.splice(j,1); if(!EDIT.chapters[i].charts.length) EDIT.chapters[i].charts=null; render(); }
+function setChart(i,j,k,v){
+  const g = EDIT.chapters[i].charts[j];
+  if(k==='chartId'||k==='title'||k==='type'){ g[k]=v; }
+  else if(k==='kind'){ g.binding.kind=v; if(v==='dimension'){ g.binding.periods=null; if(g.type==='line') g.type='pie'; } else if(g.binding.periods==null){ g.binding.periods=6; if(g.type==='pie') g.type='line'; } }
+  else if(k==='metricId'){ g.binding.metricId=v; }
+  else if(k==='periods'){ g.binding.periods = v==='' ? null : parseInt(v,10); }
+  render();
+}
 function moveCh(i,d){ const c=EDIT.chapters.splice(i,1)[0]; EDIT.chapters.splice(i+d,0,c); render(); }
 
 function payload(){
