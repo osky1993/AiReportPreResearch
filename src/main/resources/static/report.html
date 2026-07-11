@@ -360,21 +360,35 @@ function initCharts(){
   });
 }
 
-/* ---------- 已签发报告导出（路线 A：页面 ECharts 截图上送，正文/事实服务端只取库中终稿；
+/* ---------- 已签发报告导出（路线 A：ECharts 图上送 PNG，正文/事实服务端只取库中终稿；
               某图截不到则不上送，服务端自动降级为数据表） ---------- */
+/** 离屏确定性出图：不复用页面画布（可能截到动画中间帧），而是用库中终稿的 optionJson
+    关动画重新渲染——像素与 ⑥ 核对过的 option 严格同源。失败返回 null（服务端降级数据表）。 */
+function captureChart(c){
+  if(typeof echarts === 'undefined') return null;
+  const div = document.createElement('div');
+  div.style.cssText = 'position:fixed;left:-10000px;top:0;width:900px;height:420px;';
+  document.body.appendChild(div);
+  try{
+    const inst = echarts.init(div);
+    const opt = JSON.parse(c.optionJson);
+    opt.animation = false;
+    inst.setOption(opt);
+    const url = inst.getDataURL({type:'png', pixelRatio:2, backgroundColor:'#fff'});
+    inst.dispose();
+    return url;
+  }catch(e){ return null; }
+  finally{ div.remove(); }
+}
 async function exportReport(format){
   if(!CUR || CUR.run.status !== 'PUBLISHED') return;
   const errEl = $('exportErr'); if(errEl) errEl.textContent = '';
   try{
     const chartImages = [];
-    if(typeof echarts !== 'undefined'){
-      parsedCharts(CUR.run).forEach((c,i)=>{
-        const el = document.getElementById('chartbox_'+i);
-        const inst = el && echarts.getInstanceByDom(el);
-        if(inst) chartImages.push({chartId: c.chartId,
-          imageBase64: inst.getDataURL({type:'png', pixelRatio:2, backgroundColor:'#fff'})});
-      });
-    }
+    parsedCharts(CUR.run).forEach(c=>{
+      const img = captureChart(c);
+      if(img) chartImages.push({chartId: c.chartId, imageBase64: img});
+    });
     const resp = await fetch(`/api/report/runs/${CUR.run.runId}/export?format=${format}`,
       {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({chartImages})});
     if(!resp.ok){
