@@ -2,6 +2,7 @@
   "templateId": "treasury-weekly",
   "name": "司库资金周报",
   "keywords": ["周报", "资金周报", "司库周报", "每周资金报告", "资金情况周报"],
+  "periodTypes": ["WEEK"],
   "chapters": [
     {
       "chapterId": "summary",

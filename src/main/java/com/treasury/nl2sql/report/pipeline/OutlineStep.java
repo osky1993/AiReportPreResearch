@@ -19,8 +19,9 @@ import java.util.stream.Collectors;
  *   候选召回（程序：keywords + embedding，见 {@link TemplateMatcher}）
  *   → LLM 在候选 id 中单选（合并进本步唯一一次 LLM 调用，不加时延）
  *   → 服务端把关（选出的 id 必须在候选集内，否则失败关闭并携带候选清单）。
- * LLM 只做三件事：在候选中选模板、抽取报告期标签（只输出如 2026-W26 的 ISO 周标签，
- * **不产日期**——窗口由 PeriodResolver 推导）、把映射不上的指标表述放进 unresolved。
+ * LLM 只做三件事：在候选中选模板、抽取报告期标签（只输出如 2026-W26 / 2026-M06 / 2026-Q2 的标签，
+ * **不产日期**——窗口由 PeriodResolver 推导，周期粒度须在模板 periodTypes 内，程序把关）、
+ * 把映射不上的指标表述放进 unresolved。
  * 章节树与推荐指标来自命中模板（固定），LLM 不发明章节；人确认（HITL 卡点1）后口径锁死。
  */
 @Component
@@ -76,6 +77,13 @@ public class OutlineStep {
         String periodLabel = node.path("periodLabel").isTextual() ? node.path("periodLabel").asText() : null;
         // 解析不了直接失败关闭（PolicyException），不猜测补全
         PeriodResolver.Window window = PeriodResolver.resolve(periodLabel);
+        // 周期-模板匹配把关：解析出的粒度必须在模板声明的 periodTypes 内（服务端把关，不信 LLM 选择）
+        String granularity = PeriodResolver.granularity(window.label());
+        if (!tpl.effectivePeriodTypes().contains(granularity)) {
+            throw new PolicyException("模板「" + tpl.name() + "」不支持 " + granularity + " 粒度的报告期（支持: "
+                    + String.join("/", tpl.effectivePeriodTypes()) + "，当前报告期 " + window.label()
+                    + "）；请调整报告期或换用相应周期的模板");
+        }
 
         List<String> unresolved = new ArrayList<>();
         for (JsonNode u : node.path("unresolved")) {
@@ -84,7 +92,7 @@ public class OutlineStep {
 
         List<Outline.OutlineChapter> chapters = tpl.chapters().stream()
                 .map(c -> new Outline.OutlineChapter(c.chapterId(), c.title(),
-                        new ArrayList<>(c.metrics()), c.comparison(), c.guidance(), c.stylePrompt()))
+                        new ArrayList<>(c.metrics()), c.comparison(), c.comparisons(), c.guidance(), c.stylePrompt()))
                 .toList();
         log.info("[OUTLINE] 模板={}, 报告期={}, unresolved={}", templateId, window.label(), unresolved);
         return new Outline(templateId, window.label(), chapters, unresolved);
@@ -134,7 +142,7 @@ public class OutlineStep {
             ## 输出 JSON 结构
             {
               "templateId": "命中的模板 id；需求与所有候选模板都明显不符时为 null",
-              "periodLabel": "报告期的 ISO 周标签，如 2026-W26；无法确定为 null",
+              "periodLabel": "报告期标签，如 2026-W26 / 2026-M06 / 2026-Q2；无法确定为 null",
               "unresolved": ["需求中点名要求、但指标目录里找不到对应项的表述（没有则空数组）"],
               "unanswerable": false,
               "reason": "templateId 或 periodLabel 为 null 时说明原因"
@@ -143,8 +151,9 @@ public class OutlineStep {
             ## 规则
             - templateId 只允许取候选清单中的 id，禁止发明新 id；多个候选都像时选最贴合需求措辞的那个，
               实在无法区分则 templateId=null 并在 reason 里说明——不要猜。
-            - periodLabel 只允许 ISO 周标签（YYYY-Www）。需求说「2026 年第 26 周」→ "2026-W26"。
-              需求要求月报/季报/年报，或没有给出可确定的周，则 periodLabel=null 并在 reason 里说明——不要猜。
+            - periodLabel 只允许三种标签：ISO 周（YYYY-Www）、月（YYYY-Mmm）、季（YYYY-Qn）。
+              需求说「2026 年第 26 周」→ "2026-W26"；「2026 年 6 月」→ "2026-M06"；「2026 年二季度」→ "2026-Q2"。
+              需求要求年报、或没有给出可确定的周期，则 periodLabel=null 并在 reason 里说明——不要猜。
             - 不要输出任何具体日期，日期窗口由程序推导。
             - 需求里点名的统计口径若能对应指标目录中的某一项，视为已覆盖；对应不上的放进 unresolved 原样列出。
             - 需求与所有候选模板完全无关时输出 {"unanswerable": true, "reason": "..."}。

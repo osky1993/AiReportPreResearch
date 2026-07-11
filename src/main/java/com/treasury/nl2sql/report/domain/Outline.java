@@ -16,7 +16,8 @@ public record Outline(
         List<String> unresolved) {
 
     /**
-     * @param comparison  本章是否要求环比（week_over_week / null）；
+     * @param comparison  本章比较声明（旧单值字段；旧 run 的 outline_json 快照只有它）
+     * @param comparisons 本章比较声明列表（Phase03 起，如 ["month_over_month","year_over_year"]）；
      *                    仅 comparable 指标真正派生对比期查询
      * @param stylePrompt 本章风格提示词（随大纲快照固化；⑤ 作为 user 段材料注入，
      *                    不进 system 铁律段；旧 run 的 outline_json 无此字段 → null）
@@ -26,6 +27,14 @@ public record Outline(
             String title,
             List<String> metricIds,
             String comparison,
+            List<String> comparisons,
             String guidance,
-            String stylePrompt) {}
+            String stylePrompt) {
+
+        /** 归一化视图：新列表优先、旧单值回退、皆空 → 空列表。②④⑤ 只准读这个（旧快照原样解析不改写）。 */
+        public List<String> effectiveComparisons() {
+            if (comparisons != null && !comparisons.isEmpty()) return List.copyOf(comparisons);
+            return comparison != null ? List.of(comparison) : List.of();
+        }
+    }
 }

@@ -36,7 +36,7 @@ class FactBuildStepTest {
 
     private static Outline outline(String comparison, String... metricIds) {
         return new Outline("tpl", "2026-W26",
-                List.of(new Outline.OutlineChapter("ch1", "第一章", List.of(metricIds), comparison, "g", null)),
+                List.of(new Outline.OutlineChapter("ch1", "第一章", List.of(metricIds), comparison, null, "g", null)),
                 List.of());
     }
 

@@ -101,7 +101,7 @@ public class TemplateDraftService {
                 continue;
             }
             chapters.add(new ReportTemplateDef.ChapterDef("ch" + idx++, ch.title(), kept,
-                    ch.comparison(), ch.guidance(), ch.stylePrompt()));
+                    ch.comparison(), ch.comparisons(), ch.guidance(), ch.stylePrompt()));
         }
         // ⑥ 失败关闭：剔除后起草不出合法草案
         if (chapters.isEmpty()) {
@@ -111,7 +111,8 @@ public class TemplateDraftService {
 
         // ⑦ templateId slugify + 撞库避让
         String templateId = uniqueSlug(raw.templateId());
-        ReportTemplateDef draft = new ReportTemplateDef(templateId, raw.name(), raw.keywords(), chapters);
+        ReportTemplateDef draft = new ReportTemplateDef(templateId, raw.name(), raw.keywords(),
+                raw.periodTypes(), chapters);
 
         // ⑧ 终检（保存同款规则；通过 = 编辑器里点保存必过）
         List<ValidationError> errors = TemplateValidator.validate(draft, catalog);

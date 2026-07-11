@@ -2,6 +2,7 @@
   "templateId": "treasury-flash",
   "name": "资金快报",
   "keywords": ["快报", "资金快报", "资金速览", "流动性快报", "头寸速览"],
+  "periodTypes": ["WEEK"],
   "chapters": [
     {
       "chapterId": "flash_position",

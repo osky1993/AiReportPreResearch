@@ -46,7 +46,7 @@ class TemplateDraftServiceTest {
         lenient().when(assets.allMetrics()).thenReturn(catalog);
         lenient().when(assets.metricCatalogText()).thenReturn("- cny_total_balance：余额\n- large_txn_count：大额\n");
         ReportTemplateDef weekly = new ReportTemplateDef("treasury-weekly", "司库资金周报",
-                List.of("周报"), List.of(new ReportTemplateDef.ChapterDef("c1", "一、", List.of("cny_total_balance"), null, "g", null)));
+                List.of("周报"), null, List.of(new ReportTemplateDef.ChapterDef("c1", "一、", List.of("cny_total_balance"), null, null, "g", null)));
         lenient().when(assets.template("treasury-weekly")).thenReturn(Optional.of(weekly));
         lenient().when(assets.allTemplates()).thenReturn(List.of(weekly));
         lenient().when(matcher.recall(anyString())).thenReturn(List.of());
