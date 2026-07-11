@@ -323,7 +323,10 @@ function reportHtml(r, d){
       <button class="okbtn" onclick="approvePublish()">✍️ 审批发布</button>
       <input type="text" id="rejectReason" placeholder="驳回原因" style="flex:1;min-width:160px">
       <button class="danger" onclick="rejectPublish()">驳回</button></div><div class="err" id="actErr"></div>`
-    : (r.status==='PUBLISHED' ? `<div class="muted" style="margin-top:8px">✅ ${esc(r.publishApprovedBy)} 于 ${esc((r.publishApprovedAt||'').replace('T',' ').slice(0,19))} 签发</div>`
+    : (r.status==='PUBLISHED' ? `<div class="muted" style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">✅ ${esc(r.publishApprovedBy)} 于 ${esc((r.publishApprovedAt||'').replace('T',' ').slice(0,19))} 签发
+        <button class="ghost" style="padding:4px 10px;font-size:12px" onclick="exportReport('pdf')">📄 导出 PDF</button>
+        <button class="ghost" style="padding:4px 10px;font-size:12px" onclick="exportReport('docx')">📝 导出 Word</button>
+        <span class="err" id="exportErr" style="margin:0"></span></div>`
        : `<div class="muted" style="margin-top:8px">已驳回：${esc(r.blockedReason||'')}</div>`);
   return `<div class="card"><h2>报告${r.status==='PUBLISHED'?'（已签发）':'终稿'} <span class="muted" style="margin-left:auto">点击 [fact_xxx] 查看证据</span></h2>
       ${auditLine}<div class="report">${mdToHtml(r.reportMd)}</div>${actions}</div>
@@ -355,6 +358,39 @@ function initCharts(){
     try{ echarts.init(el).setOption(JSON.parse(c.optionJson)); }
     catch(e){ el.textContent = '图表渲染失败: '+e.message; }
   });
+}
+
+/* ---------- 已签发报告导出（路线 A：页面 ECharts 截图上送，正文/事实服务端只取库中终稿；
+              某图截不到则不上送，服务端自动降级为数据表） ---------- */
+async function exportReport(format){
+  if(!CUR || CUR.run.status !== 'PUBLISHED') return;
+  const errEl = $('exportErr'); if(errEl) errEl.textContent = '';
+  try{
+    const chartImages = [];
+    if(typeof echarts !== 'undefined'){
+      parsedCharts(CUR.run).forEach((c,i)=>{
+        const el = document.getElementById('chartbox_'+i);
+        const inst = el && echarts.getInstanceByDom(el);
+        if(inst) chartImages.push({chartId: c.chartId,
+          imageBase64: inst.getDataURL({type:'png', pixelRatio:2, backgroundColor:'#fff'})});
+      });
+    }
+    const resp = await fetch(`/api/report/runs/${CUR.run.runId}/export?format=${format}`,
+      {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({chartImages})});
+    if(!resp.ok){
+      const body = await resp.json().catch(()=>({}));
+      throw new Error(body.error || ('HTTP '+resp.status));
+    }
+    const blob = await resp.blob();
+    const cd = resp.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    const filename = m ? decodeURIComponent(m[1]) : `report-${CUR.run.runId}.${format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }catch(e){ if(errEl) errEl.textContent = '导出失败: '+e.message; else alert('导出失败: '+e.message); }
 }
 
 /* ---------- 归因 claim 证据链（Phase05：结论强度分级、无证据不升级；confirmed 仅人工勾选可达） ---------- */
