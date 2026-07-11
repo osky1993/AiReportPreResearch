@@ -1,6 +1,7 @@
 package com.treasury.nl2sql.report.domain;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * 事实记录契约（ideaV2 两大数据契约之二）：报告可引用的最小事实单元。
@@ -10,6 +11,7 @@ import java.math.BigDecimal;
  * @param factType BASE=取数事实 / DERIVED=程序派生（环比、净流入等）
  * @param metricVersion 取数时使用的指标定义版本（run 快照固化；DERIVED 记其结果指标的版本；null=未固化存量 run）
  * @param displayValue 程序统一渲染的展示串（如 "280.00 万元"、"+12.5%"），替换占位符时原样写入正文
+ * @param dimensions 维度取值（Phase03 填充，如 {"currency":"USD"}）；null=非维度事实（落库 '{}'，回读仍 null）
  * @param sqlText 实际执行的 SQL（DERIVED 为 null）
  * @param derivedFrom DERIVED 时的来源 factKey（逗号分隔）
  */
@@ -24,6 +26,7 @@ public record FactRecord(
         String unit,
         String displayValue,
         String periodLabel,
+        Map<String, String> dimensions,
         String specJson,
         String sqlText,
         String sqlHash,

@@ -64,7 +64,7 @@ public class FactBuildStep {
                     nextKey(seq), spec.metricId(), versionOf(metricVersions, spec.metricId()),
                     def.name(), spec.chapterId(),
                     FactRecord.TYPE_BASE, value, def.unit(), renderDisplay(value, def.unit()),
-                    spec.periodLabel(), toJson(spec),
+                    spec.periodLabel(), null, toJson(spec),
                     fr.sql(), fr.sqlHash(), fr.resultHash(), null,
                     FactRecord.QUALITY_PASSED, null);
             facts.add(fact);
@@ -96,7 +96,7 @@ public class FactBuildStep {
                             nextKey(seq), metricId, versionOf(metricVersions, metricId),
                             def.name(), ch.chapterId(),
                             FactRecord.TYPE_DERIVED, value, def.unit(), renderDisplay(value, def.unit()),
-                            l.periodLabel(), null, null, null, null,
+                            l.periodLabel(), null, null, null, null, null,
                             l.factKey() + "," + r.factKey(),
                             FactRecord.QUALITY_PASSED, null);
                     facts.add(fact);
@@ -132,7 +132,7 @@ public class FactBuildStep {
                             key, metricId, versionOf(metricVersions, metricId),
                             def.name() + "（" + ct.label() + "）", ch.chapterId(),
                             FactRecord.TYPE_DERIVED, change, "percent", renderDisplay(change, "percent"),
-                            cur.periodLabel(), null, null, null, null,
+                            cur.periodLabel(), null, null, null, null, null,
                             cur.factKey() + "," + cmp.factKey(),
                             FactRecord.QUALITY_PASSED, null));
                 }

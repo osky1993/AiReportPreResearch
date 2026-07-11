@@ -54,7 +54,7 @@ class WriteStepPromptTest {
     @Test
     void factsStillGroupedPerChapter() {
         FactRecord f1 = new FactRecord("fact_001", "m1", 1, "指标一", "c1", "BASE",
-                new java.math.BigDecimal("1"), "CNY", "1.00 元", "2026-W26", "{}", null, null, null, null, "PASSED", null);
+                new java.math.BigDecimal("1"), "CNY", "1.00 元", "2026-W26", null, "{}", null, null, null, null, "PASSED", null);
         String user = step.userPrompt(outline("电报式", null), List.of(f1), List.of());
         assertTrue(user.contains("fact_001"));
     }

@@ -18,6 +18,9 @@ import java.util.List;
  * @param valueColumn 取数结果（恰 1 行）里承载指标值的列名
  * @param nullPolicy  取数值为 NULL 时的处置：ZERO=按 0（如空窗口的 SUM）/ BLOCK=失败关闭
  * @param qualityChecks 质量断言清单：NON_NEGATIVE（负值即失败关闭）
+ * @param dimensions  可展开维度（Phase03，如 ["currency"]；MVP 至多 1 个）。声明后 ③ 接受多行、
+ *                    ④ 逐行造 fact；mqlTemplate 的 groupBy 必须与之一致（MetricDimensionRule 把关）。
+ *                    未声明（null/空）= 单值指标，行为与 Phase03 前完全一致
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)   // 入库 body_json 不带 null 字段（否则 mqlTemplate:null 会回读成 NullNode）
@@ -30,6 +33,7 @@ public record MetricDefinition(
         String valueColumn,
         String nullPolicy,
         List<String> qualityChecks,
+        List<String> dimensions,
         JsonNode mqlTemplate,
         Derived derived) {
 
@@ -45,5 +49,11 @@ public record MetricDefinition(
     @JsonIgnore
     public boolean isDerivedMetric() {
         return derived != null;
+    }
+
+    /** 是否声明了可展开维度（Phase03 白名单式增量：未声明的指标走原单行通路）。 */
+    @JsonIgnore
+    public boolean isDimensional() {
+        return dimensions != null && !dimensions.isEmpty();
     }
 }

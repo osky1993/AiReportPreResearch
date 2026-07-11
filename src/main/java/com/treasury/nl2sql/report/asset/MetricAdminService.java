@@ -118,8 +118,9 @@ public class MetricAdminService {
             throw new ValidationFailedException(List.of(err("PLACEHOLDER", e.getMessage())));
         }
 
-        // ③ MQL_VALIDATION：白名单校验
-        List<String> mqlErrors = trial.validate(filled);
+        // ③ MQL_VALIDATION：白名单校验 + 维度声明↔groupBy 一致性（与启动自检共用 MetricDimensionRule）
+        List<String> mqlErrors = new ArrayList<>(trial.validate(filled));
+        mqlErrors.addAll(MetricDimensionRule.check(m, filled));
         if (!mqlErrors.isEmpty()) {
             throw new ValidationFailedException(mqlErrors.stream()
                     .map(msg -> err("MQL_VALIDATION", msg)).toList());
@@ -133,10 +134,24 @@ public class MetricAdminService {
             throw new ValidationFailedException(List.of(err("TRIAL_EXECUTION", e.getMessage())));
         }
 
-        // ⑤ RESULT_SHAPE：恰 1 行且 valueColumn 列存在
-        if (rows.size() != 1) {
+        // ⑤ RESULT_SHAPE：单值指标恰 1 行；维度指标 1~上限 行且每行含维度列（Phase03）
+        if (!m.isDimensional() && rows.size() != 1) {
             throw new ValidationFailedException(List.of(err("RESULT_SHAPE",
-                    "试执行返回 " + rows.size() + " 行——指标要求恰 1 行 1 值，请改为聚合口径或收窄条件")));
+                    "试执行返回 " + rows.size() + " 行——指标要求恰 1 行 1 值，请改为聚合口径或收窄条件；"
+                            + "按维度拆解请声明 dimensions")));
+        }
+        if (m.isDimensional()) {
+            if (rows.isEmpty() || rows.size() > MetricDimensionRule.MAX_DIMENSION_ROWS) {
+                throw new ValidationFailedException(List.of(err("RESULT_SHAPE",
+                        "维度指标试执行返回 " + rows.size() + " 行——要求 1~" + MetricDimensionRule.MAX_DIMENSION_ROWS
+                                + " 行（0 行无法验证形状，超限见契约2 上限）")));
+            }
+            for (String d : m.dimensions()) {
+                if (!rows.get(0).containsKey(d)) {
+                    throw new ValidationFailedException(List.of(err("RESULT_SHAPE",
+                            "试执行结果中不存在维度列「" + d + "」，实际列: " + rows.get(0).keySet())));
+                }
+            }
         }
         if (!rows.get(0).containsKey(m.valueColumn())) {
             throw new ValidationFailedException(List.of(err("RESULT_SHAPE",

@@ -43,7 +43,7 @@ class MetricAdminServiceTest {
     /** 合法期间指标（模板含占位符）。 */
     private MetricDefinition periodMetric() {
         return new MetricDefinition("invest_out_amount", "本期投资支出金额", "CNY", true, true,
-                "amt", "ZERO", List.of("NON_NEGATIVE"),
+                "amt", "ZERO", List.of("NON_NEGATIVE"), null,
                 json("""
                     {"table":"cash_transaction","filter":[
                       {"field":"category","op":"=","value":"INVEST"},
@@ -67,7 +67,7 @@ class MetricAdminServiceTest {
     @Test
     void structureViolationsAreCollected() {
         MetricDefinition bad = new MetricDefinition("Bad Id!", " ", null, false, true,
-                null, "MAYBE", List.of("POSITIVE"), null,
+                null, "MAYBE", List.of("POSITIVE"), null, null,
                 new MetricDefinition.Derived("subtract", "a", "b"));
         ValidationFailedException e = assertThrows(ValidationFailedException.class,
                 () -> service.save(bad, null, "demo"));
@@ -87,7 +87,7 @@ class MetricAdminServiceTest {
 
     @Test
     void timeBoundTrueRequiresPlaceholder() {
-        MetricDefinition m = new MetricDefinition("m_x1", "x", "CNY", true, false, "amt", "ZERO", null,
+        MetricDefinition m = new MetricDefinition("m_x1", "x", "CNY", true, false, "amt", "ZERO", null, null,
                 json("""
                     {"table":"cash_transaction","filter":[{"field":"txn_date","op":">=","value":"2026-06-22"}],
                      "metrics":[{"op":"sum","field":"amount","alias":"amt"}]}"""), null);
@@ -99,7 +99,7 @@ class MetricAdminServiceTest {
 
     @Test
     void timeBoundFalseForbidsPlaceholder() {
-        MetricDefinition m = new MetricDefinition("m_x2", "x", "CNY", false, false, "amt", "ZERO", null,
+        MetricDefinition m = new MetricDefinition("m_x2", "x", "CNY", false, false, "amt", "ZERO", null, null,
                 json("""
                     {"table":"cash_transaction","filter":[{"field":"txn_date","op":">=","value":"{{period_start}}"}],
                      "metrics":[{"op":"sum","field":"amount","alias":"amt"}]}"""), null);

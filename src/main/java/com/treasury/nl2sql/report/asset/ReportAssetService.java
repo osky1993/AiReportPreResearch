@@ -210,6 +210,7 @@ public class ReportAssetService {
                             + "」不存在或不是取数指标");
                 }
             }
+            requireDimensionRule(m, null);
             return;
         }
         if (m.valueColumn() == null || m.valueColumn().isBlank()) {
@@ -219,6 +220,15 @@ public class ReportAssetService {
         List<String> errors = validator.validate(mql);
         if (!errors.isEmpty()) {
             throw new IllegalStateException("指标「" + m.metricId() + "」的 MQL 模板未通过校验: " + errors);
+        }
+        requireDimensionRule(m, mql);
+    }
+
+    /** 维度声明↔groupBy 一致性（Phase03，规则见 MetricDimensionRule，与保存五重校验共用）。 */
+    private static void requireDimensionRule(MetricDefinition m, Mql filledMql) {
+        List<String> errors = MetricDimensionRule.check(m, filledMql);
+        if (!errors.isEmpty()) {
+            throw new IllegalStateException("指标「" + m.metricId() + "」维度声明未通过校验: " + errors);
         }
     }
 

@@ -21,7 +21,7 @@ class FactBuildStepTest {
 
     private static MetricDefinition metric(String id, String unit, boolean comparable, String nullPolicy) {
         return new MetricDefinition(id, "指标" + id, unit, true, comparable, "v", nullPolicy,
-                List.of(MetricDefinition.CHECK_NON_NEGATIVE), null, null);
+                List.of(MetricDefinition.CHECK_NON_NEGATIVE), null, null, null);
     }
 
     private static MetricQuerySpec spec(String id, String metricId, String purpose, String label) {
@@ -73,7 +73,7 @@ class FactBuildStepTest {
                 "in", metric("in", "CNY", false, "ZERO"),
                 "out", metric("out", "CNY", false, "ZERO"),
                 "net", new MetricDefinition("net", "净流入", "CNY", true, false, null, "ZERO", List.of(),
-                        null, new MetricDefinition.Derived("subtract", "in", "out")));
+                        null, null, new MetricDefinition.Derived("subtract", "in", "out")));
         var facts = step.run(outline(null, "in", "out", "net"), List.of(
                 result(spec("qs1", "in", "CURRENT", "2026-W26"), new BigDecimal("3000000")),
                 result(spec("qs2", "out", "CURRENT", "2026-W26"), new BigDecimal("2800000"))), defs);
@@ -125,7 +125,7 @@ class FactBuildStepTest {
                 "in", metric("in", "CNY", true, "ZERO"),
                 "out", metric("out", "CNY", false, "ZERO"),
                 "net", new MetricDefinition("net", "净流入", "CNY", true, false, null, "ZERO", List.of(),
-                        null, new MetricDefinition.Derived("subtract", "in", "out")));
+                        null, null, new MetricDefinition.Derived("subtract", "in", "out")));
         Map<String, Integer> versions = Map.of("in", 3, "out", 1, "net", 2);
         var facts = step.run(outline("week_over_week", "in", "out", "net"), List.of(
                 result(spec("qs1", "in", "CURRENT", "2026-W26"), new BigDecimal("3000000")),
