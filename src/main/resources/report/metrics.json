@@ -94,6 +94,11 @@
     "valueColumn": "total_cny",
     "nullPolicy": "ZERO",
     "qualityChecks": ["NON_NEGATIVE"],
+    "anomalyRules": [
+      { "type": "volatility", "basis": "wow", "absPct": 30, "dimensionMetricId": "week_txn_amount_by_currency" },
+      { "type": "volatility", "basis": "mom", "absPct": 30, "dimensionMetricId": "week_txn_amount_by_currency" },
+      { "type": "volatility", "basis": "yoy", "absPct": 50 }
+    ],
     "mqlTemplate": {
       "table": "cash_transaction",
       "joins": [

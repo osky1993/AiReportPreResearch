@@ -12,7 +12,7 @@ class MetricDimensionRuleTest {
 
     private static MetricDefinition metric(List<String> dimensions, boolean comparable) {
         return new MetricDefinition("m1", "指标", "CNY", true, comparable, "v", "ZERO",
-                List.of(), dimensions, null, null);
+                List.of(), dimensions, null, null, null);
     }
 
     private static Mql mqlWithGroupBy(String... groupBy) {
@@ -64,7 +64,7 @@ class MetricDimensionRuleTest {
     @Test
     void derivedMetricWithDimensionsIsRejected() {
         MetricDefinition derived = new MetricDefinition("net", "净流入", "CNY", true, false, null, "ZERO",
-                List.of(), List.of("currency"), null, new MetricDefinition.Derived("subtract", "a", "b"));
+                List.of(), List.of("currency"), null, null, new MetricDefinition.Derived("subtract", "a", "b"));
         assertTrue(MetricDimensionRule.check(derived, null).stream()
                 .anyMatch(e -> e.contains("派生指标")));
     }

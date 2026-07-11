@@ -46,6 +46,13 @@
         { "chartId": "mix_by_currency", "type": "pie", "title": "本周交易金额币种构成（折人民币）",
           "binding": { "kind": "dimension", "metricId": "week_txn_amount_by_currency" } }
       ]
+    },
+    {
+      "chapterId": "anomaly_insight",
+      "title": "六、异动解读",
+      "metrics": ["week_txn_amount_cny"],
+      "comparison": null,
+      "guidance": "按本章归因材料（claims）逐条呈现异动解读：段首等级徽章文本，narrative 原样转写（数值占位符保留），段尾列证据引用。无异动时只写一句「本期各项监控指标未见显著异动」。禁止补充材料之外的原因、禁止把关联说成因果。"
     }
   ]
 }

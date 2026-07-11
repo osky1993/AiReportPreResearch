@@ -50,6 +50,46 @@ CREATE TABLE IF NOT EXISTS report_metric (
   KEY idx_metric_status (metric_id, status)
 ) COMMENT='指标语义定义资产表（版本化，行不可变）';
 
+-- 事件知识库（Phase05 契约2，T0 拍板：业务记录不是口径资产——单行可编辑 + 留痕列，不上多版本；
+-- DEPRECATED 即下架不物理删除。description 视为不可信输入：录入白名单 + 进 prompt 前转义双闸）。
+CREATE TABLE IF NOT EXISTS report_event (
+  event_id        BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '事件ID',
+  title           VARCHAR(64)  NOT NULL COMMENT '事件标题（≤64，字符白名单）',
+  event_date      DATE         NOT NULL COMMENT '事件日期（EventMatcher 时间窗匹配键）',
+  dimensions_json TEXT         COMMENT '关联维度取值 JSON 如 {"currency":"USD"}（可空）',
+  related_metrics VARCHAR(512) COMMENT '关联指标 id 逗号分隔（可空，匹配加权）',
+  description     VARCHAR(500) COMMENT '事件描述（≤500，字符白名单，禁花括号/围栏字符）',
+  source          VARCHAR(128) COMMENT '信息来源（如 资金部周会纪要）',
+  status          VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE' COMMENT '状态 ACTIVE/DEPRECATED',
+  created_by      VARCHAR(128) COMMENT '录入人',
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '录入时间',
+  updated_by      VARCHAR(128) COMMENT '最后修改人（留痕）',
+  updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后修改时间',
+  KEY idx_event_date (event_date, status)
+) COMMENT='业务事件知识库（归因候选来源；Phase05）';
+
+-- 种子事件（幂等：同标题存在即跳过；与增量种子的异动数据呼应，撑归因演示与评测）
+INSERT INTO report_event (title, event_date, dimensions_json, related_metrics, description, source, created_by)
+SELECT * FROM (SELECT '华东大客户季度回款集中到账' t, DATE '2026-06-23' d,
+  '{"currency":"CNY"}' dj, 'week_txn_amount_cny,week_inflow_amount_cny' rm,
+  '华东区两家经销商季度货款于本周集中结算，单周流入显著高于常态水平。' de, '资金部周会纪要' s, 'seed' c) x
+WHERE NOT EXISTS (SELECT 1 FROM report_event WHERE title = x.t);
+INSERT INTO report_event (title, event_date, dimensions_json, related_metrics, description, source, created_by)
+SELECT * FROM (SELECT '六月工资集中发放' t, DATE '2026-06-25' d,
+  NULL dj, 'payroll_out_amount,week_outflow_amount_cny' rm,
+  '当月工资批次于二十五日统一发放，含季度绩效部分，支出高于上月批次。' de, '人力资源部通知' s, 'seed' c) x
+WHERE NOT EXISTS (SELECT 1 FROM report_event WHERE title = x.t);
+INSERT INTO report_event (title, event_date, dimensions_json, related_metrics, description, source, created_by)
+SELECT * FROM (SELECT '核心收付系统迁移（历史）' t, DATE '2025-06-12' d,
+  NULL dj, 'week_txn_amount_cny,week_txn_count' rm,
+  '上年六月核心收付系统切换停机三个交易日，当期交易量为历史低基数。' de, '科技部变更记录' s, 'seed' c) x
+WHERE NOT EXISTS (SELECT 1 FROM report_event WHERE title = x.t);
+INSERT INTO report_event (title, event_date, dimensions_json, related_metrics, description, source, created_by)
+SELECT * FROM (SELECT '美元供应商付款周期调整' t, DATE '2026-05-20' d,
+  '{"currency":"USD"}' dj, 'week_outflow_amount_cny' rm,
+  '海外供应商账期由月结改为季结，美元流出节奏后移。' de, '采购部备忘' s, 'seed' c) x
+WHERE NOT EXISTS (SELECT 1 FROM report_event WHERE title = x.t);
+
 -- ---------- ALTER 段：既有库升级 ----------
 -- report_run 加 template_version（新装库由 01-report-tables.sql 的 CREATE 直接带上此列）。
 -- MySQL 8 不支持 ADD COLUMN IF NOT EXISTS，用 information_schema 守卫保证可重复执行。

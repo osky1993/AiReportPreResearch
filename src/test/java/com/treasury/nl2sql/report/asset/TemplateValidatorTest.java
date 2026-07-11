@@ -14,7 +14,7 @@ class TemplateValidatorTest {
 
     private static MetricDefinition metricDef(String id, boolean timeBound, List<String> dims) {
         return new MetricDefinition(id, "指标" + id, "CNY", timeBound, false, "v", "ZERO",
-                List.of(), dims, null, null);
+                List.of(), dims, null, null, null);
     }
 
     private static final Map<String, MetricDefinition> CATALOG = Map.of(

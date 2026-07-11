@@ -7,6 +7,7 @@
 -- 可重复执行（DROP 后重建 = 清空全部运行记录，回到零状态）。
 -- =============================================================
 
+DROP TABLE IF EXISTS report_claim;
 DROP TABLE IF EXISTS report_fact;
 DROP TABLE IF EXISTS report_step;
 DROP TABLE IF EXISTS report_run;
@@ -78,3 +79,17 @@ CREATE TABLE report_fact (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   UNIQUE KEY uk_run_fact (run_id, fact_key)
 ) COMMENT='事实记录表（FactRecord 落库形态）';
+
+CREATE TABLE report_claim (
+  id                BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '自增ID',
+  run_id            BIGINT NOT NULL COMMENT '所属运行ID',
+  claim_id          VARCHAR(16) NOT NULL COMMENT '运行内唯一归因编号 如 cl_001',
+  anomaly_fact_key  VARCHAR(64) NOT NULL COMMENT '所解释的异动事实 fact_key（_anom）',
+  attribution_level VARCHAR(16) NOT NULL COMMENT '归因等级 observed/associated/hypothesis/confirmed（confirmed 仅卡点2 人工勾选可达，LLM 永不产出）',
+  evidence_refs     VARCHAR(512) COMMENT '证据引用 逗号分隔（factKey 或 EVT-n，服务端把关 ⊆ 候选集）',
+  narrative         VARCHAR(512) COMMENT '解释叙述（数值仍走 {{fact_key}} 占位符纪律；hypothesis 必须含缓和措辞）',
+  confirmed_by      VARCHAR(128) COMMENT '人工确认人（卡点2 勾选；Phase05 拍板：不建独立工作流）',
+  confirmed_at      DATETIME COMMENT '人工确认时间',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  UNIQUE KEY uk_run_claim (run_id, claim_id)
+) COMMENT='归因记录表（ClaimRecord 落库形态；Phase05）';

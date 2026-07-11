@@ -21,6 +21,8 @@ import java.util.List;
  * @param dimensions  可展开维度（Phase03，如 ["currency"]；MVP 至多 1 个）。声明后 ③ 接受多行、
  *                    ④ 逐行造 fact；mqlTemplate 的 groupBy 必须与之一致（MetricDimensionRule 把关）。
  *                    未声明（null/空）= 单值指标，行为与 Phase03 前完全一致
+ * @param anomalyRules 异常规则（Phase05 契约1，程序判定零 LLM）：命中产 ANOMALY fact；
+ *                     null/空 = 不做异常检测，行为与 Phase05 前完全一致
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)   // 入库 body_json 不带 null 字段（否则 mqlTemplate:null 会回读成 NullNode）
@@ -34,6 +36,7 @@ public record MetricDefinition(
         String nullPolicy,
         List<String> qualityChecks,
         List<String> dimensions,
+        List<AnomalyRule> anomalyRules,
         JsonNode mqlTemplate,
         Derived derived) {
 
@@ -44,6 +47,20 @@ public record MetricDefinition(
     /** 派生指标：left/right 为其他取数指标的 metricId，op 目前仅 subtract。 */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Derived(String op, String left, String right) {}
+
+    /**
+     * 异常规则（Phase05 契约1）：
+     *  - threshold：本期值 op value（op ∈ >=/<=/>/<）——绝对阈值；
+     *  - volatility：|对应比较 fact 的变化率| ≥ absPct（basis ∈ wow/mom/qoq/yoy，要求 comparable）。
+     * @param dimensionMetricId 可选：异动时做维度贡献拆解的维度指标（P5-T2 消费）
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record AnomalyRule(String type, String op, java.math.BigDecimal value,
+                              String basis, java.math.BigDecimal absPct, String dimensionMetricId) {
+        public static final String TYPE_THRESHOLD = "threshold";
+        public static final String TYPE_VOLATILITY = "volatility";
+    }
 
     /** 命名避开 record 组件 derived 的属性名，配合 JsonIgnore 防止污染入库的 body_json。 */
     @JsonIgnore

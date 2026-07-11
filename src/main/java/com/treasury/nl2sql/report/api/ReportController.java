@@ -2,10 +2,12 @@ package com.treasury.nl2sql.report.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.treasury.nl2sql.report.asset.ReportAssetService;
+import com.treasury.nl2sql.report.domain.ClaimRecord;
 import com.treasury.nl2sql.report.domain.FactRecord;
 import com.treasury.nl2sql.report.domain.ReportRun;
 import com.treasury.nl2sql.report.domain.ReportStep;
 import com.treasury.nl2sql.report.pipeline.ReportPipeline;
+import com.treasury.nl2sql.report.store.ClaimRepository;
 import com.treasury.nl2sql.report.store.ReportFactRepository;
 import com.treasury.nl2sql.report.store.ReportStepRepository;
 import org.springframework.http.ResponseEntity;
@@ -28,13 +30,16 @@ public class ReportController {
     private final ReportPipeline pipeline;
     private final ReportStepRepository stepRepo;
     private final ReportFactRepository factRepo;
+    private final ClaimRepository claimRepo;
     private final ReportAssetService assets;
 
     public ReportController(ReportPipeline pipeline, ReportStepRepository stepRepo,
-                            ReportFactRepository factRepo, ReportAssetService assets) {
+                            ReportFactRepository factRepo, ClaimRepository claimRepo,
+                            ReportAssetService assets) {
         this.pipeline = pipeline;
         this.stepRepo = stepRepo;
         this.factRepo = factRepo;
+        this.claimRepo = claimRepo;
         this.assets = assets;
     }
 
@@ -44,8 +49,9 @@ public class ReportController {
     public record PublishRequest(String approver) {}
     public record RejectRequest(String approver, String reason) {}
 
-    /** 详情 = run 全字段 + 步骤留痕 + 事实（演示页 1.5s 轮询此结构）。 */
-    public record RunDetail(ReportRun run, List<ReportStep> steps, List<FactRecord> facts) {}
+    /** 详情 = run 全字段 + 步骤留痕 + 事实 + 归因（演示页 1.5s 轮询此结构）。 */
+    public record RunDetail(ReportRun run, List<ReportStep> steps, List<FactRecord> facts,
+                            List<ClaimRecord> claims) {}
 
     @PostMapping("/runs")
     public RunDetail create(@RequestBody CreateRequest req) {
@@ -85,6 +91,14 @@ public class ReportController {
         return detail(pipeline.rejectPublish(id, req.approver(), req.reason()).runId());
     }
 
+    /** 卡点2 归因确认（Phase05 T0 拍板：勾选 + confirmed_by/at 留痕）：仅 hypothesis 可升 confirmed。 */
+    @PostMapping("/runs/{id}/claims/{claimId}/confirm")
+    public RunDetail confirmClaim(@PathVariable long id, @PathVariable String claimId,
+                                  @RequestBody PublishRequest req) {
+        pipeline.confirmClaim(id, claimId, req.approver());
+        return detail(id);
+    }
+
     /** 断点续跑：仅 BLOCKED（或已停摆的 RUNNING）。 */
     @PostMapping("/runs/{id}/resume")
     public RunDetail resume(@PathVariable long id) {
@@ -111,7 +125,8 @@ public class ReportController {
     }
 
     private RunDetail detail(long runId) {
-        return new RunDetail(pipeline.require(runId), stepRepo.findByRun(runId), factRepo.findByRun(runId));
+        return new RunDetail(pipeline.require(runId), stepRepo.findByRun(runId), factRepo.findByRun(runId),
+                claimRepo.findByRun(runId));
     }
 
     /** 非法状态迁移 / 参数问题 → 400 + 说明（演示页直接展示 error 字段）。 */
