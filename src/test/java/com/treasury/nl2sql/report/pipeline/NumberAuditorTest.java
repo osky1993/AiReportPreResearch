@@ -220,4 +220,40 @@ class NumberAuditorTest {
         AuditResult audit = NumberAuditor.verifyRendered("本期220.00 USD[fact_010]。", fx, 0);
         assertFalse(audit.passed(), "外币数值被篡改必须被拦");
     }
+
+    // ---------- Phase03 维度表格对抗三件（契约2：⑥ 全文正则不分表格内外，逐格核对） ----------
+
+    private static final Map<String, FactRecord> DIM_FACTS = Map.of(
+            "fact_007_cny", fact("fact_007_cny", "750000", "CNY"),
+            "fact_007_usd", fact("fact_007_usd", "250000", "CNY"),
+            "fact_007", fact("fact_007", "1000000", "CNY"),
+            "fact_007_cny_share", fact("fact_007_cny_share", "75.0", "percent"));
+
+    @Test
+    void bareNumberInsideMarkdownTableIsCaughtByCheck1() {
+        String draft = "| 币种 | 金额 | 占比 |\n|---|---|---|\n| CNY | {{fact_007_cny}} | 75% |\n";
+        List<String> v = NumberAuditor.checkDraft(draft, DIM_FACTS);
+        assertEquals(1, v.size(), "表格单元格里的裸数字与正文同罪: " + v);
+        assertTrue(v.get(0).contains("75"));
+    }
+
+    @Test
+    void tamperedDimensionRowValueInTableIsCaughtByCheck2() {
+        // 行值故意错一分（75.00 万元 → 75.01 万元语义），逐格核对必须打红
+        String rendered = "| 币种 | 金额 |\n|---|---|\n| CNY | 75.01 万元[fact_007_cny] |\n"
+                + "| USD | 25.00 万元[fact_007_usd] |\n合计 100.00 万元[fact_007]。";
+        AuditResult audit = NumberAuditor.verifyRendered(rendered, DIM_FACTS, 0);
+        assertFalse(audit.passed());
+        assertTrue(audit.violations().get(0).contains("fact_007_cny"));
+    }
+
+    @Test
+    void shareFactRoundTripsThroughCheck2() {
+        String rendered = "| 币种 | 金额 | 占比 |\n|---|---|---|\n"
+                + "| CNY | 75.00 万元[fact_007_cny] | +75.0%[fact_007_cny_share] |\n"
+                + "合计 100.00 万元[fact_007]。";
+        AuditResult audit = NumberAuditor.verifyRendered(rendered, DIM_FACTS, 0);
+        assertTrue(audit.passed(), "占比 _share（percent）反解析核对必须通过: " + audit.violations());
+        assertEquals(3, audit.matchedNumbers());
+    }
 }

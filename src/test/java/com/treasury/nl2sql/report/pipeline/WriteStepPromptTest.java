@@ -58,4 +58,18 @@ class WriteStepPromptTest {
         String user = step.userPrompt(outline("电报式", null), List.of(f1), List.of());
         assertTrue(user.contains("fact_001"));
     }
+
+    @Test
+    void dimensionalFactsTriggerTableGuidanceOnlyInTheirChapter() {
+        FactRecord dim = new FactRecord("fact_001_usd", "m1", 1, "指标一（USD）", "c1", "BASE",
+                new java.math.BigDecimal("1"), "CNY", "1.00 元", "2026-W26",
+                java.util.Map.of("currency", "USD"), "{}", null, null, null, null, "PASSED", null);
+        FactRecord plain = new FactRecord("fact_002", "m2", 1, "指标二", "c2", "BASE",
+                new java.math.BigDecimal("2"), "笔", "2 笔", "2026-W26", null, "{}", null, null, null, null, "PASSED", null);
+        String user = step.userPrompt(outline(null, null), List.of(dim, plain), List.of());
+        assertTrue(user.contains("markdown 表格"), "维度章节应注入表格呈现引导");
+        assertTrue(user.contains("\"currency\":\"USD\""), "facts JSON 应携带 dimensions");
+        // 引导只出现一次（仅含维度事实的 c1 章）
+        assertEquals(1, user.split("markdown 表格", -1).length - 1);
+    }
 }

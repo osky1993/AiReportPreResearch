@@ -118,6 +118,12 @@ public class WriteStep {
             }
             sb.append("本章可引用的事实：\n");
             sb.append(chapterFactsJson(ch, facts)).append("\n");
+            if (hasDimensionalFacts(ch, facts)) {
+                sb.append("本章含维度拆解事实组（dimensions 非空的为拆解行）：请用 markdown 表格呈现该组——"
+                        + "每行一个维度取值，列为维度、金额（写行事实的 {{fact_key}} 占位符）、"
+                        + "占比（写对应 _share 事实的占位符）；表格后可用一句话引用合计事实。"
+                        + "表格单元格内同样禁止书写任何阿拉伯数字。\n");
+            }
         }
         if (!notes.isEmpty()) {
             sb.append("\n## notes（正文需要遵守的说明）\n");
@@ -139,15 +145,23 @@ public class WriteStep {
             o.put("value", f.value());
             o.put("unit", f.unit());
             o.put("display", f.displayValue());
+            if (f.dimensions() != null) o.set("dimensions", mapper.valueToTree(f.dimensions()));
             // _wow 文案逐字节保留（周报基线 prompt 稳定），月/季环比与同比走新分支
             if (f.factKey().endsWith("_wow")) o.put("note", "环比变化率（正=较对比期上升）");
             else if (f.factKey().endsWith("_mom") || f.factKey().endsWith("_qoq")) {
                 o.put("note", "环比变化率（较上一周期，正=上升）");
             } else if (f.factKey().endsWith("_yoy")) {
                 o.put("note", "同比变化率（较去年同期，正=上升）");
+            } else if (f.factKey().endsWith("_share")) {
+                o.put("note", "该维度行占合计的百分比");
             }
         }
         return arr.toString();
+    }
+
+    /** 本章是否含维度拆解事实（决定是否注入表格呈现引导）。 */
+    private static boolean hasDimensionalFacts(Outline.OutlineChapter ch, List<FactRecord> facts) {
+        return facts.stream().anyMatch(f -> ch.metricIds().contains(f.metricId()) && f.dimensions() != null);
     }
 
     private static String stripFence(String s) {

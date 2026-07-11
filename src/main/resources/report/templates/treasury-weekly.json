@@ -31,6 +31,13 @@
       "metrics": ["in_transit_txn_count", "large_txn_count", "pending_payment_count", "loan_outstanding_balance", "due_repayment_count"],
       "comparison": null,
       "guidance": "逐项列出需要关注的事项：在途交易、大额交易、待审批付款单、贷款余额与未偿还还款计划。只陈述事实与数量，不猜测原因。"
+    },
+    {
+      "chapterId": "by_currency",
+      "title": "五、按币种拆解",
+      "metrics": ["week_txn_amount_by_currency"],
+      "comparison": null,
+      "guidance": "以表格呈现本周交易金额按币种的拆解（折人民币口径）：每行一个币种，列出金额与占比，表格后用一句话点明合计与占比最高的币种。只引用提供给本章的事实，不猜测原因。"
     }
   ]
 }
