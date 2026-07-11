@@ -1,5 +1,6 @@
 package com.treasury.nl2sql.report.asset;
 
+import com.treasury.nl2sql.report.domain.ChartDef;
 import com.treasury.nl2sql.report.domain.MetricQuerySpec;
 import com.treasury.nl2sql.report.pipeline.ComparisonType;
 import com.treasury.nl2sql.report.pipeline.PeriodResolver;
@@ -7,6 +8,7 @@ import com.treasury.nl2sql.report.pipeline.PeriodResolver;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -22,14 +24,21 @@ public final class TemplateValidator {
     public record ValidationError(String location, String message) {}
 
     private static final Pattern TEMPLATE_ID = Pattern.compile("^[a-z][a-z0-9-]{2,63}$");
+    private static final Pattern CHART_ID = Pattern.compile("^[a-z][a-z0-9_]{2,31}$");
     private static final Set<String> PERIOD_TYPES =
             Set.of(PeriodResolver.TYPE_WEEK, PeriodResolver.TYPE_MONTH, PeriodResolver.TYPE_QUARTER);
+    /** 型-绑定矩阵（P4 契约1）：series 是序列画折线/柱状，dimension 是构成画饼图/柱状。 */
+    private static final Map<String, Set<String>> CHART_KIND_TYPES = Map.of(
+            ChartDef.KIND_SERIES, Set.of(ChartDef.TYPE_LINE, ChartDef.TYPE_BAR),
+            ChartDef.KIND_DIMENSION, Set.of(ChartDef.TYPE_PIE, ChartDef.TYPE_BAR));
+    private static final int CHART_SERIES_MIN = 2;
+    private static final int CHART_SERIES_MAX = 12;
     private static final int PROMPT_MAX_LEN = 1000;
 
     private TemplateValidator() {}
 
-    /** @param publishedMetricIds 注册表中 PUBLISHED 指标 id 集（引用存在性以此为准） */
-    public static List<ValidationError> validate(ReportTemplateDef tpl, Set<String> publishedMetricIds) {
+    /** @param catalog 注册表中 PUBLISHED 指标（引用存在性与图表绑定合法性以此为准） */
+    public static List<ValidationError> validate(ReportTemplateDef tpl, Map<String, MetricDefinition> catalog) {
         List<ValidationError> errors = new ArrayList<>();
         if (tpl == null) {
             errors.add(new ValidationError("", "模板体为空"));
@@ -94,13 +103,14 @@ public final class TemplateValidator {
                     String metricId = ch.metrics().get(j);
                     if (metricId == null || metricId.isBlank()) {
                         errors.add(new ValidationError(at + ".metrics[" + j + "]", "metricId 不能为空"));
-                    } else if (!publishedMetricIds.contains(metricId)) {
+                    } else if (!catalog.containsKey(metricId)) {
                         errors.add(new ValidationError(at + ".metrics[" + j + "]",
                                 "引用了不存在（或未发布）的指标: " + metricId));
                     }
                 }
             }
             validateComparisons(ch, at, tpl.effectivePeriodTypes(), errors);
+            validateCharts(ch, at, catalog, errors);
             if (ch.guidance() != null && ch.guidance().length() > PROMPT_MAX_LEN) {
                 errors.add(new ValidationError(at + ".guidance", "guidance 超长（≤" + PROMPT_MAX_LEN + " 字）"));
             }
@@ -147,6 +157,74 @@ public final class TemplateValidator {
                 if (!ct.get().allows(pt)) {
                     errors.add(new ValidationError(loc, "比较类型 " + token + " 不适用于模板声明的周期粒度 "
                             + pt + "（矩阵：WEEK→wow；MONTH→mom/yoy；QUARTER→qoq/yoy）"));
+                }
+            }
+        }
+    }
+
+    /**
+     * 章节图表声明校验（Phase04 契约1）：chartId 格式与章内唯一 → type/kind 枚举与矩阵
+     * → 绑定指标存在且形态匹配（series 须 timeBound 取数指标 + periods 2~12；
+     * dimension 须声明维度的指标 + periods 为空）→ 绑定指标必须挂在本章 metrics（图表不引入章外口径）。
+     */
+    private static void validateCharts(ReportTemplateDef.ChapterDef ch, String at,
+                                       Map<String, MetricDefinition> catalog, List<ValidationError> errors) {
+        if (ch.charts() == null || ch.charts().isEmpty()) return;
+        Set<String> seenChartIds = new HashSet<>();
+        for (int j = 0; j < ch.charts().size(); j++) {
+            ChartDef chart = ch.charts().get(j);
+            String loc = at + ".charts[" + j + "]";
+            if (chart == null) {
+                errors.add(new ValidationError(loc, "图表声明为空"));
+                continue;
+            }
+            if (chart.chartId() == null || !CHART_ID.matcher(chart.chartId()).matches()) {
+                errors.add(new ValidationError(loc + ".chartId",
+                        "chartId 必须匹配 ^[a-z][a-z0-9_]{2,31}$（当前: " + chart.chartId() + "）"));
+            } else if (!seenChartIds.add(chart.chartId())) {
+                errors.add(new ValidationError(loc + ".chartId", "chartId 章内重复: " + chart.chartId()));
+            }
+            if (chart.title() == null || chart.title().isBlank() || chart.title().length() > 64) {
+                errors.add(new ValidationError(loc + ".title", "图表标题必填且 ≤64 字"));
+            }
+            ChartDef.Binding b = chart.binding();
+            if (b == null || b.kind() == null || !CHART_KIND_TYPES.containsKey(b.kind())) {
+                errors.add(new ValidationError(loc + ".binding",
+                        "binding.kind 只允许 series/dimension（当前: " + (b == null ? null : b.kind()) + "）"));
+                continue;
+            }
+            if (chart.type() == null || !CHART_KIND_TYPES.get(b.kind()).contains(chart.type())) {
+                errors.add(new ValidationError(loc + ".type", "图型与绑定不匹配（矩阵：series→line/bar；"
+                        + "dimension→pie/bar；当前 kind=" + b.kind() + " type=" + chart.type() + "）"));
+            }
+            MetricDefinition def = b.metricId() == null ? null : catalog.get(b.metricId());
+            if (def == null) {
+                errors.add(new ValidationError(loc + ".binding.metricId",
+                        "绑定了不存在（或未发布）的指标: " + b.metricId()));
+                continue;
+            }
+            if (ch.metrics() == null || !ch.metrics().contains(b.metricId())) {
+                errors.add(new ValidationError(loc + ".binding.metricId",
+                        "图表绑定的指标必须同时挂在本章 metrics（图表不引入章外口径）: " + b.metricId()));
+            }
+            if (ChartDef.KIND_SERIES.equals(b.kind())) {
+                if (def.isDerivedMetric() || def.isDimensional() || !def.timeBound()) {
+                    errors.add(new ValidationError(loc + ".binding.metricId",
+                            "series 绑定要求期间型取数指标（timeBound=true、非派生、非维度）: " + b.metricId()));
+                }
+                if (b.periods() == null || b.periods() < CHART_SERIES_MIN || b.periods() > CHART_SERIES_MAX) {
+                    errors.add(new ValidationError(loc + ".binding.periods",
+                            "series 绑定的 periods 必须为 " + CHART_SERIES_MIN + "~" + CHART_SERIES_MAX
+                                    + "（当前: " + b.periods() + "）"));
+                }
+            } else {
+                if (!def.isDimensional()) {
+                    errors.add(new ValidationError(loc + ".binding.metricId",
+                            "dimension 绑定要求声明了 dimensions 的指标: " + b.metricId()));
+                }
+                if (b.periods() != null) {
+                    errors.add(new ValidationError(loc + ".binding.periods",
+                            "dimension 绑定不接受 periods（维度行组即数据）"));
                 }
             }
         }

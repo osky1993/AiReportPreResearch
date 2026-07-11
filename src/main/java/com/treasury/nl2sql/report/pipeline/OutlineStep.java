@@ -92,7 +92,8 @@ public class OutlineStep {
 
         List<Outline.OutlineChapter> chapters = tpl.chapters().stream()
                 .map(c -> new Outline.OutlineChapter(c.chapterId(), c.title(),
-                        new ArrayList<>(c.metrics()), c.comparison(), c.comparisons(), c.guidance(), c.stylePrompt()))
+                        new ArrayList<>(c.metrics()), c.comparison(), c.comparisons(), c.guidance(),
+                        c.stylePrompt(), c.charts()))
                 .toList();
         log.info("[OUTLINE] 模板={}, 报告期={}, unresolved={}", templateId, window.label(), unresolved);
         return new Outline(templateId, window.label(), chapters, unresolved);

@@ -36,7 +36,7 @@ class FactBuildStepTest {
 
     private static Outline outline(String comparison, String... metricIds) {
         return new Outline("tpl", "2026-W26",
-                List.of(new Outline.OutlineChapter("ch1", "第一章", List.of(metricIds), comparison, null, "g", null)),
+                List.of(new Outline.OutlineChapter("ch1", "第一章", List.of(metricIds), comparison, null, "g", null, null)),
                 List.of());
     }
 
@@ -152,7 +152,7 @@ class FactBuildStepTest {
 
     private static Outline monthlyOutline(List<String> comparisons, String... metricIds) {
         return new Outline("tpl", "2026-M06",
-                List.of(new Outline.OutlineChapter("ch1", "第一章", List.of(metricIds), null, comparisons, "g", null)),
+                List.of(new Outline.OutlineChapter("ch1", "第一章", List.of(metricIds), null, comparisons, "g", null, null)),
                 List.of());
     }
 

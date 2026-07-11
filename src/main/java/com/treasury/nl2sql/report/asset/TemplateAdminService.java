@@ -184,7 +184,7 @@ public class TemplateAdminService {
 
     /** 干跑校验（validate 端点：不写库，返回全部错误）。 */
     public List<ValidationError> validateOnly(ReportTemplateDef tpl) {
-        return TemplateValidator.validate(tpl, assets.allMetrics().keySet());
+        return TemplateValidator.validate(tpl, assets.allMetrics());
     }
 
     private void validateOrThrow(ReportTemplateDef tpl) {

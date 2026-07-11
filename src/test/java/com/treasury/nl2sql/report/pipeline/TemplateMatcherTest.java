@@ -19,7 +19,7 @@ class TemplateMatcherTest {
 
     private static ReportTemplateDef tpl(String id, String name, List<String> keywords, String... chapterTitles) {
         List<ReportTemplateDef.ChapterDef> chapters = java.util.Arrays.stream(chapterTitles)
-                .map(t -> new ReportTemplateDef.ChapterDef("ch_" + t, t, List.of("m1"), null, null, null, null))
+                .map(t -> new ReportTemplateDef.ChapterDef("ch_" + t, t, List.of("m1"), null, null, null, null, null))
                 .toList();
         return new ReportTemplateDef(id, name, keywords, null, chapters);
     }

@@ -16,6 +16,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -83,13 +84,13 @@ public class TemplateDraftService {
         List<String> notes = new ArrayList<>();
 
         // ③④⑤ chapterId 重排（结构规整）+ 幻觉指标剔除转 unresolved + 剔空章节
-        Set<String> catalog = assets.allMetrics().keySet();
+        Map<String, MetricDefinition> catalog = assets.allMetrics();
         List<ReportTemplateDef.ChapterDef> chapters = new ArrayList<>();
         int idx = 1;
         for (ReportTemplateDef.ChapterDef ch : raw.chapters()) {
             List<String> kept = new ArrayList<>();
             for (String metricId : new LinkedHashSet<>(ch.metrics() == null ? List.<String>of() : ch.metrics())) {
-                if (catalog.contains(metricId)) {
+                if (catalog.containsKey(metricId)) {
                     kept.add(metricId);
                 } else {
                     unresolved.add("章节「" + ch.title() + "」：" + metricId);
@@ -101,7 +102,7 @@ public class TemplateDraftService {
                 continue;
             }
             chapters.add(new ReportTemplateDef.ChapterDef("ch" + idx++, ch.title(), kept,
-                    ch.comparison(), ch.comparisons(), ch.guidance(), ch.stylePrompt()));
+                    ch.comparison(), ch.comparisons(), ch.guidance(), ch.stylePrompt(), ch.charts()));
         }
         // ⑥ 失败关闭：剔除后起草不出合法草案
         if (chapters.isEmpty()) {

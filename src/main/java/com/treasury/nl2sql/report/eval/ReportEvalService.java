@@ -165,7 +165,7 @@ public class ReportEvalService {
     private static Outline outlineOf(ReportTemplateDef tpl, String periodLabel) {
         List<Outline.OutlineChapter> chapters = tpl.chapters().stream()
                 .map(ch -> new Outline.OutlineChapter(ch.chapterId(), ch.title(), ch.metrics(),
-                        ch.comparison(), ch.comparisons(), ch.guidance(), ch.stylePrompt()))
+                        ch.comparison(), ch.comparisons(), ch.guidance(), ch.stylePrompt(), ch.charts()))
                 .toList();
         return new Outline(tpl.templateId(), periodLabel, chapters, List.of());
     }

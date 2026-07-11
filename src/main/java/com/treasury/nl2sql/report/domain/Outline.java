@@ -21,6 +21,7 @@ public record Outline(
      *                    仅 comparable 指标真正派生对比期查询
      * @param stylePrompt 本章风格提示词（随大纲快照固化；⑤ 作为 user 段材料注入，
      *                    不进 system 铁律段；旧 run 的 outline_json 无此字段 → null）
+     * @param charts      本章图表声明（Phase04，随大纲快照固化——口径锁死含图表口径；旧快照 → null）
      */
     public record OutlineChapter(
             String chapterId,
@@ -29,7 +30,8 @@ public record Outline(
             String comparison,
             List<String> comparisons,
             String guidance,
-            String stylePrompt) {
+            String stylePrompt,
+            List<ChartDef> charts) {
 
         /** 归一化视图：新列表优先、旧单值回退、皆空 → 空列表。②④⑤ 只准读这个（旧快照原样解析不改写）。 */
         public List<String> effectiveComparisons() {

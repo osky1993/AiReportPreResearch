@@ -26,11 +26,11 @@ class SpecResolveStepTest {
     }
 
     private static Outline.OutlineChapter legacyChapter(String id, String comparison, String... metricIds) {
-        return new Outline.OutlineChapter(id, "章" + id, List.of(metricIds), comparison, null, "g", null);
+        return new Outline.OutlineChapter(id, "章" + id, List.of(metricIds), comparison, null, "g", null, null);
     }
 
     private static Outline.OutlineChapter listChapter(String id, List<String> comparisons, String... metricIds) {
-        return new Outline.OutlineChapter(id, "章" + id, List.of(metricIds), null, comparisons, "g", null);
+        return new Outline.OutlineChapter(id, "章" + id, List.of(metricIds), null, comparisons, "g", null, null);
     }
 
     private static final PeriodResolver.Window W26 = PeriodResolver.resolve("2026-W26");

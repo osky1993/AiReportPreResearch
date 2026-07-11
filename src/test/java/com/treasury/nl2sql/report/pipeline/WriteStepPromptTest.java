@@ -19,8 +19,8 @@ class WriteStepPromptTest {
 
     private static Outline outline(String style1, String style2) {
         return new Outline("tpl", "2026-W26", List.of(
-                new Outline.OutlineChapter("c1", "一、概览", List.of("m1"), null, null, "指引一", style1),
-                new Outline.OutlineChapter("c2", "二、收支", List.of("m2"), "week_over_week", null, "指引二", style2)),
+                new Outline.OutlineChapter("c1", "一、概览", List.of("m1"), null, null, "指引一", style1, null),
+                new Outline.OutlineChapter("c2", "二、收支", List.of("m2"), "week_over_week", null, "指引二", style2, null)),
                 List.of());
     }
 

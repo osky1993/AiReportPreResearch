@@ -1,21 +1,30 @@
 package com.treasury.nl2sql.report.asset;
 
 import com.treasury.nl2sql.report.asset.TemplateValidator.ValidationError;
+import com.treasury.nl2sql.report.domain.ChartDef;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 模板校验规则单测（纯逻辑，无 DB/Spring）——契约见 README「模板管理 API」。 */
 class TemplateValidatorTest {
 
-    private static final Set<String> CATALOG = Set.of("m_balance", "m_inflow");
+    private static MetricDefinition metricDef(String id, boolean timeBound, List<String> dims) {
+        return new MetricDefinition(id, "指标" + id, "CNY", timeBound, false, "v", "ZERO",
+                List.of(), dims, null, null);
+    }
+
+    private static final Map<String, MetricDefinition> CATALOG = Map.of(
+            "m_balance", metricDef("m_balance", false, null),
+            "m_inflow", metricDef("m_inflow", true, null),
+            "m_by_ccy", metricDef("m_by_ccy", true, List.of("currency")));
 
     private static ReportTemplateDef.ChapterDef chapter(String id, String title, List<String> metrics,
                                                         String comparison, String guidance, String stylePrompt) {
-        return new ReportTemplateDef.ChapterDef(id, title, metrics, comparison, null, guidance, stylePrompt);
+        return new ReportTemplateDef.ChapterDef(id, title, metrics, comparison, null, guidance, stylePrompt, null);
     }
 
     private static ReportTemplateDef okTemplate() {
@@ -90,7 +99,7 @@ class TemplateValidatorTest {
 
     private static ReportTemplateDef.ChapterDef chapterWithList(List<String> comparisons) {
         return new ReportTemplateDef.ChapterDef("c1", "一、概览", List.of("m_balance"),
-                null, comparisons, null, null);
+                null, comparisons, null, null, null);
     }
 
     @Test
@@ -134,7 +143,7 @@ class TemplateValidatorTest {
     void comparisonFieldRulesAreEnforced() {
         // 新旧字段同时填 → 互斥拦截
         ReportTemplateDef both = withPeriodTypes(List.of("MONTH"), new ReportTemplateDef.ChapterDef(
-                "c1", "一", List.of("m_balance"), "month_over_month", List.of("year_over_year"), null, null));
+                "c1", "一", List.of("m_balance"), "month_over_month", List.of("year_over_year"), null, null, null));
         assertTrue(TemplateValidator.validate(both, CATALOG).stream()
                 .anyMatch(e -> e.message().contains("不得同时填写")));
         // 未知 token
@@ -149,5 +158,66 @@ class TemplateValidatorTest {
         assertTrue(TemplateValidator.validate(withPeriodTypes(List.of("MONTH"),
                         chapterWithList(List.of("month_over_month", "quarter_over_quarter"))), CATALOG).stream()
                 .anyMatch(e -> e.message().contains("至多声明一个")));
+    }
+
+    // ---- Phase04：图表声明 ----
+
+    private static ReportTemplateDef.ChapterDef chapterWithCharts(List<String> metrics, ChartDef... charts) {
+        return new ReportTemplateDef.ChapterDef("c1", "一、概览", metrics, null, null, null, null, List.of(charts));
+    }
+
+    private static ReportTemplateDef tplOf(ReportTemplateDef.ChapterDef ch) {
+        return new ReportTemplateDef("fx-report", "外汇报告", List.of("外汇"), null, List.of(ch));
+    }
+
+    @Test
+    void validSeriesAndDimensionChartsPass() {
+        ChartDef trend = new ChartDef("trend_inflow", "line", "近六周流入",
+                new ChartDef.Binding("series", "m_inflow", 6));
+        ChartDef pie = new ChartDef("mix_ccy", "pie", "币种构成",
+                new ChartDef.Binding("dimension", "m_by_ccy", null));
+        assertTrue(TemplateValidator.validate(
+                tplOf(chapterWithCharts(List.of("m_inflow", "m_by_ccy"), trend, pie)), CATALOG).isEmpty());
+    }
+
+    @Test
+    void chartTypeBindingMatrixIsEnforced() {
+        // series→pie 不许；dimension→line 不许
+        ChartDef seriesPie = new ChartDef("t1_chart", "pie", "x", new ChartDef.Binding("series", "m_inflow", 6));
+        assertTrue(TemplateValidator.validate(tplOf(chapterWithCharts(List.of("m_inflow"), seriesPie)), CATALOG)
+                .stream().anyMatch(e -> e.location().endsWith(".type")));
+        ChartDef dimLine = new ChartDef("t2_chart", "line", "x", new ChartDef.Binding("dimension", "m_by_ccy", null));
+        assertTrue(TemplateValidator.validate(tplOf(chapterWithCharts(List.of("m_by_ccy"), dimLine)), CATALOG)
+                .stream().anyMatch(e -> e.location().endsWith(".type")));
+    }
+
+    @Test
+    void chartBindingShapeIsEnforced() {
+        // series 绑快照指标 → 拦；periods 越界 → 拦；dimension 绑非维度指标 → 拦；dimension 带 periods → 拦
+        assertTrue(TemplateValidator.validate(tplOf(chapterWithCharts(List.of("m_balance"),
+                        new ChartDef("c_a", "line", "x", new ChartDef.Binding("series", "m_balance", 6)))), CATALOG)
+                .stream().anyMatch(e -> e.message().contains("timeBound")));
+        assertTrue(TemplateValidator.validate(tplOf(chapterWithCharts(List.of("m_inflow"),
+                        new ChartDef("c_b", "line", "x", new ChartDef.Binding("series", "m_inflow", 13)))), CATALOG)
+                .stream().anyMatch(e -> e.location().endsWith(".binding.periods")));
+        assertTrue(TemplateValidator.validate(tplOf(chapterWithCharts(List.of("m_inflow"),
+                        new ChartDef("c_c", "pie", "x", new ChartDef.Binding("dimension", "m_inflow", null)))), CATALOG)
+                .stream().anyMatch(e -> e.message().contains("dimensions")));
+        assertTrue(TemplateValidator.validate(tplOf(chapterWithCharts(List.of("m_by_ccy"),
+                        new ChartDef("c_d", "pie", "x", new ChartDef.Binding("dimension", "m_by_ccy", 6)))), CATALOG)
+                .stream().anyMatch(e -> e.location().endsWith(".binding.periods")));
+    }
+
+    @Test
+    void chartMetricMustBeInChapterMetricsAndIdsUnique() {
+        // 绑定指标未挂本章 metrics → 拦
+        assertTrue(TemplateValidator.validate(tplOf(chapterWithCharts(List.of("m_balance"),
+                        new ChartDef("c_e", "line", "x", new ChartDef.Binding("series", "m_inflow", 6)))), CATALOG)
+                .stream().anyMatch(e -> e.message().contains("本章 metrics")));
+        // chartId 章内重复 → 拦
+        ChartDef a = new ChartDef("dup_id", "line", "x", new ChartDef.Binding("series", "m_inflow", 6));
+        ChartDef b = new ChartDef("dup_id", "bar", "y", new ChartDef.Binding("series", "m_inflow", 4));
+        assertTrue(TemplateValidator.validate(tplOf(chapterWithCharts(List.of("m_inflow"), a, b)), CATALOG)
+                .stream().anyMatch(e -> e.message().contains("重复")));
     }
 }

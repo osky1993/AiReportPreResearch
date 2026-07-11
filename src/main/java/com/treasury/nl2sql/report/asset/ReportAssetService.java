@@ -191,7 +191,7 @@ public class ReportAssetService {
 
     /** 与保存/validate 端点共用 TemplateValidator 规则，任何错误即启动失败。 */
     private void checkTemplate(ReportTemplateDef tpl, Map<String, MetricDefinition> catalog) {
-        List<TemplateValidator.ValidationError> errors = TemplateValidator.validate(tpl, catalog.keySet());
+        List<TemplateValidator.ValidationError> errors = TemplateValidator.validate(tpl, catalog);
         if (!errors.isEmpty()) {
             throw new IllegalStateException("模板「" + (tpl == null ? "?" : tpl.templateId()) + "」未通过校验: "
                     + errors.stream().map(e -> e.location() + " " + e.message()).collect(Collectors.joining("；")));

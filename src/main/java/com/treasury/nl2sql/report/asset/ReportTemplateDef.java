@@ -32,6 +32,7 @@ public record ReportTemplateDef(
      *                    取值见 ComparisonType，校验器把关与 periodTypes 的匹配矩阵）
      * @param guidance    给 ⑤ 撰写 LLM 的本章写作指引
      * @param stylePrompt 本章风格提示词（P1 仅预留存储，P4 起由 WriteStep 注入 user 段；可空）
+     * @param charts      本章图表声明（Phase04；null=无图，旧资产天然兼容）
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -42,7 +43,8 @@ public record ReportTemplateDef(
             String comparison,
             List<String> comparisons,
             String guidance,
-            String stylePrompt) {
+            String stylePrompt,
+            List<com.treasury.nl2sql.report.domain.ChartDef> charts) {
 
         /** 归一化视图：新列表优先、旧单值回退、皆空 → 空列表。全链路只准读这个（不在加载时改写——版本行不可变）。 */
         public List<String> effectiveComparisons() {
