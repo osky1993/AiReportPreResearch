@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## 这是什么
 
-`AiReportPreResearch` 是 `../nl2mql2sqlDemo`（NL→MQL→SQL「两跳」查询引擎）的 **fork + 上层演进**：在原查询底座之上，叠加 `ideaV2-核心路径.md` 定义的**报告生成 6 步流水线编排层**，做出「锁口径(人) → 结构化取数(引擎) → 程序造事实 → LLM 只照事实写 → 程序核数字 → 人签发」的最小可信闭环。演示场景：司库资金周报 / 资金快报。
+`AiReportPreResearch` 是 `../nl2mql2sqlDemo`（NL→MQL→SQL「两跳」查询引擎）的 **fork + 上层演进**：在原查询底座之上，叠加 `plan/ideaV2-核心路径.md` 定义的**报告生成 6 步流水线编排层**，做出「锁口径(人) → 结构化取数(引擎) → 程序造事实 → LLM 只照事实写 → 程序核数字 → 人签发」的最小可信闭环。演示场景：司库资金周报 / 资金快报。
 
 **两层同处一个包根 `com.treasury.nl2sql`，但边界清晰**：
 
@@ -13,7 +13,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 | 底座查询引擎 | `com.treasury.nl2sql.{ir,compile,validate,llm,embedding,schema,service,glossary,fewshot,eval,guard,store,api}` | 原 demo 原样继承，**代码/端点零改动** |
 | 报告流水线 | `com.treasury.nl2sql.report.{domain,asset,pipeline,store,api}` | 本项目新增 |
 
-> **底座层的权威文档是 `../nl2mql2sqlDemo/AGENTS.md`**——它详述 IR 模型（`ir/Mql.java`）、`MqlValidator` 安全边界、`Nl2SqlService.query()` 链路、口径沉淀等。改底座前先读它。本文件只详述**报告流水线层**与两层的衔接契约。项目自带文档：`README.md`（能力全景 + 演示脚本）、`ideaV2-核心路径.md`（主线设计）、`phase01.md`（Phase01 分解与验收记录）。
+> **底座层的权威文档是 `../nl2mql2sqlDemo/AGENTS.md`**——它详述 IR 模型（`ir/Mql.java`）、`MqlValidator` 安全边界、`Nl2SqlService.query()` 链路、口径沉淀等。改底座前先读它。本文件只详述**报告流水线层**与两层的衔接契约。项目自带文档：`README.md`（能力全景 + 演示脚本）、`plan/`（设计与阶段计划：`ideaV2*.md` 主线设计、`roadmap.md` 总路线、`phase01~06.md` 各阶段分解与验收记录）、`docs/`（技术说明 PDF 各版本与架构图归档）。
 
 ## 常用命令
 
@@ -97,4 +97,4 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
 
 ## 技术说明 PDF 随包分发
 
-pom 把项目根下 `*lastRelease.pdf` 复制进 `static/`（当前 `智能查数与报告流水线技术说明-lastRelease.pdf`），由 Spring Boot 静态资源直接对外，导航条「📄 技术说明」按钮可浏览器直查。换版只需替换该 `*lastRelease.pdf`。编制/重构技术说明书走 `/tech-spec-authoring` skill。
+当前 lastRelease（`智能查数与报告流水线技术说明-lastRelease.pdf`）直接位于 `src/main/resources/static/` 随包分发，由 Spring Boot 静态资源对外，导航条「📄 技术说明」按钮可浏览器直查；pom 另保留「项目根下 `*lastRelease.pdf` 复制进 `static/`」的资源规则。换版替换 `static/` 下该 PDF 即可；带版本号的历史 PDF 归档在 `docs/`。编制/重构技术说明书走 `/tech-spec-authoring` skill。

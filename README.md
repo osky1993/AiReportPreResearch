@@ -1,12 +1,13 @@
 # AiReportPreResearch — 智能报告生成流水线（ideaV2 核心路径演示系统）
 
-在 `nl2mql2sqlDemo`（NL→MQL→SQL 查询引擎）之上叠加 `ideaV2-核心路径.md` 定义的
+在 `nl2mql2sqlDemo`（NL→MQL→SQL 查询引擎）之上叠加 `plan/ideaV2-核心路径.md` 定义的
 **报告生成 6 步流水线编排层**，做出「锁口径(人) → 结构化取数(引擎) → 程序造事实 →
 LLM 只照着事实写 → 程序核数字 → 人签发」的最小可信闭环。
 
 - 演示场景：**司库资金周报** + **资金快报**（多模板按需求自动匹配；reportbi 库，种子数据覆盖 2026-05-12 ~ 06-30，推荐报告期 2026-W26）
 - 演示页：启动后打开 **http://localhost:8080/report.html**（原查询引擎演示页仍在 `/`）
-- 设计文档：`ideaV2-核心路径.md`（主线）、`ideaV2.md`（全量）、`ideaV2-业务版说明.md`（业务版）
+- 设计文档（`plan/`）：`ideaV2-核心路径.md`（主线）、`ideaV2.md`（全量）、`ideaV2-业务版说明.md`（业务版）；阶段计划：`roadmap.md` + `phase01~06.md`
+- 归档材料（`docs/`）：技术说明 PDF 各版本 + 架构图 PNG（图源 `docs/arch-src/`）
 
 ## 一、流水线与两条底线
 
