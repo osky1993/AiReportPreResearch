@@ -34,6 +34,10 @@ th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertic
 th{color:var(--muted);font-weight:600;background:#f9fafb}
 .muted{color:var(--muted);font-size:12px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.chip-cat{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;margin-top:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip{background:#eef2ff;color:var(--accent);border:1px solid #dbe3ff;border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer}
+.chip:hover{background:#e0e7ff}
 .warnbox{background:#fffbeb;border:1px solid #fde68a;color:var(--warn);border-radius:8px;padding:8px 10px;font-size:12px;margin:8px 0}
 .errlist{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;font-size:12px;color:var(--bad);margin-top:8px;white-space:pre-wrap}
 .okmsg{color:var(--ok);font-size:13px;margin-top:8px;font-weight:600}
@@ -154,10 +158,23 @@ function step1(){
   return `<div class="card"><h2>① 试查：用自然语言问出这个指标的数</h2>
     <div class="muted">期间指标请写明具体日期范围（如 2026-06-22 到 06-28），第 3 步会把日期替换为报告期占位符。</div>
     <textarea id="q" placeholder="例：2026年6月22日到6月28日投资类支出折人民币总金额（不含失败交易）">${esc(WIZ.question)}</textarea>
+    <div class="chip-cat">期间指标示例（带日期范围 → 第 ③ 步参数化为 {{period_start/end}}）</div>
+    <div class="chips">
+      <span class="chip" onclick="fillTrial(this)">2026年6月22日到6月28日投资类支出折人民币总金额（不含失败交易，按最新汇率折算）</span>
+      <span class="chip" onclick="fillTrial(this)">2026年6月22日到6月28日投资类支出的美元原币总金额（不含失败交易）</span>
+      <span class="chip" onclick="fillTrial(this)">2026年6月22日到6月28日税款缴纳的交易笔数（不含失败交易）</span>
+    </div>
+    <div class="chip-cat">存量指标示例（当前快照，无日期条件 → 第 ③ 步无需参数化）</div>
+    <div class="chips">
+      <span class="chip" onclick="fillTrial(this)">当前人民币定期存款账户的余额合计</span>
+      <span class="chip" onclick="fillTrial(this)">当前处于待审批状态的付款单数量</span>
+    </div>
     <div class="row"><button id="tryBtn" onclick="doTry()">试查（走查询引擎，约 5~20 秒）</button></div>
     <div class="err" id="opErr"></div>
     ${resultHtml}${errBox()}</div>`;
 }
+
+function fillTrial(el){ $('q').value = el.textContent; $('q').focus(); }
 
 async function doTry(){
   const q = $('q').value.trim();
