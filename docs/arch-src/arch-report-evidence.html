@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>智能报告流水线 · 一个数字的一生</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif; }
+  .canvas { position:relative; width:1460px; height:736px; }
+  .node { position:absolute; width:180px; height:140px; background:#fff; border:2px solid #2f6fe4; border-radius:12px; padding:10px 12px; }
+  .node h4 { margin:0 0 5px; font-size:14px; color:#1d5fd6; font-weight:700; white-space:nowrap; }
+  .node .sub { font-family:"SF Mono",Menlo,monospace; font-size:11px; color:#233046; line-height:1.5; white-space:nowrap; }
+  .node .badge { margin-top:6px; font-size:10.5px; color:#8a97ab; border-top:1px dashed #d5dbe6; padding-top:4px; line-height:1.4; white-space:nowrap; }
+  .node.dark { background:#2f6fe4; border-color:#2f6fe4; } .node.dark h4 { color:#fff; font-size:15px; } .node.dark .sub { color:#dce8ff; }
+  .node.ll { background:#fffbea; border-color:#e9a83c; } .node.ll h4 { color:#c05f10; }
+  .node.hu { background:#e9f5fc; border-color:#7cb9dc; }
+  .node.dt { background:#f5f6f9; border-color:#c9d0dc; } .node.dt h4 { color:#3d4a5e; }
+  .bar { position:absolute; background:#f5f6f9; border:2px solid #c9d0dc; border-radius:10px; padding:11px 20px; font-size:13.5px; color:#3d4a5e; white-space:nowrap; }
+  svg.arrows { position:absolute; inset:0; pointer-events:none; }
+  .legend { position:absolute; left:60px; top:696px; display:flex; gap:32px; align-items:center; }
+  .legend .it { display:flex; gap:8px; align-items:center; font-size:13.5px; color:#3d4a5e; }
+  .legend .sw { width:24px; height:15px; border-radius:5px; border:2px solid; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+<svg class="arrows" width="1460" height="736">
+  <defs>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#7a8aa0"/></marker>
+  </defs>
+  <!-- 第一行 → -->
+  <path d="M242 130 H256" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M442 130 H456" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M642 130 H656" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M842 130 H856" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M1042 130 H1056" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M1242 130 H1256" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <!-- U 弯 -->
+  <path d="M1346 202 C 1346 270 1346 270 1346 326" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <!-- 第二行 ← -->
+  <path d="M1256 400 H1242" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M1056 400 H1042" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M856 400 H842" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M656 400 H642" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M456 400 H442" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <!-- 尾节点 落到底部产出 -->
+  <path d="M352 472 C 352 515 420 532 500 540" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+</svg>
+
+<!-- 第一行（左→右） -->
+<div class="node dark" style="left:62px; top:60px;">
+  <h4>需求</h4><div class="sub">「生成 2026 年第 26 周<br>的司库资金周报」</div>
+  <div class="badge" style="border-color:#5b8ded; color:#c8daff;">report_run 一行一运行</div>
+</div>
+<div class="node" style="left:262px; top:60px;">
+  <h4>模板 @ 版本</h4><div class="sub">treasury-weekly @ v7<br>章节树 · 图表声明</div>
+  <div class="badge">🔒 卡点1 固化 template_version</div>
+</div>
+<div class="node" style="left:462px; top:60px;">
+  <h4>指标 @ 快照</h4><div class="sub">week_txn_amount_cny<br>@ v2（含参数化 MQL）</div>
+  <div class="badge">metric_versions_json 快照</div>
+</div>
+<div class="node" style="left:662px; top:60px;">
+  <h4>周期窗口 + 填模板</h4><div class="sub">PeriodResolver<br>2026-06-22 ~ 06-28</div>
+  <div class="badge">LLM 不产日期 · 程序推导</div>
+</div>
+<div class="node" style="left:862px; top:60px;">
+  <h4>SQL</h4><div class="sub">MqlValidator 白名单<br>→ jOOQ 只读编译</div>
+  <div class="badge">sql_hash: c6fa05…（可复现）</div>
+</div>
+<div class="node dt" style="left:1062px; top:60px;">
+  <h4>执行结果</h4><div class="sub">恰一行一值 · 质量断言<br>非负 / 空值策略</div>
+  <div class="badge">result_hash: 9c3d…（防篡改）</div>
+</div>
+<div class="node" style="left:1262px; top:62px;">
+  <h4>FactRecord</h4><div class="sub">fact_002 = 3,851,436.00<br>「385.14 万元」渲染定死</div>
+  <div class="badge">report_fact 落库 · PASSED</div>
+</div>
+
+<!-- 第二行（右→左） -->
+<div class="node" style="left:1262px; top:330px;">
+  <h4>派生凭证</h4><div class="sub">fact_002_wow 环比<br>由程序算 · 非 LLM</div>
+  <div class="badge">DERIVED · derivedFrom 链</div>
+</div>
+<div class="node ll" style="left:1062px; top:330px;">
+  <h4>⑤ LLM 草稿</h4><div class="sub">本周交易总额<br>{{fact_002}}，环比…</div>
+  <div class="badge">禁写数字 · 占位符窄接口</div>
+</div>
+<div class="node" style="left:862px; top:330px;">
+  <h4>程序替换写入</h4><div class="sub">385.14 万元[fact_002]</div>
+  <div class="badge">数值出自程序之手<br>转录错误构造上不可能</div>
+</div>
+<div class="node" style="left:662px; top:330px;">
+  <h4>⑥ 回读核对</h4><div class="sub">反解析「385.14 万元」<br>== fact.value ✓</div>
+  <div class="badge">一致率 100% 才放行</div>
+</div>
+<div class="node hu" style="left:462px; top:330px;">
+  <h4>✍️ 卡点2 钻取签发</h4><div class="sub">点 [fact_002] 直看<br>SQL + 双哈希 + 规约</div>
+  <div class="badge">签发人担责 · 证据齐备</div>
+</div>
+<div class="node dt" style="left:262px; top:330px;">
+  <h4>产出</h4><div class="sub">报告 / PDF · Word<br>（图表必附数据表）</div>
+  <div class="badge">GET /lineage 血缘单文档</div>
+</div>
+
+<!-- 底部留痕横条 -->
+<div class="bar" style="left:62px; top:540px; width:1336px;">全链留痕在库：report_run · report_step（attempt 只追加） · report_fact · 资产版本行（不可变） —— <b>GET /runs/{id}/lineage 一键导出整条链，断链（有引用无实体）→ 400 失败关闭，不出「半份血缘」</b></div>
+
+<div class="legend">
+  <div class="it"><span class="sw" style="background:#fff;border-color:#2f6fe4;"></span>确定性程序 / 资产</div>
+  <div class="it"><span class="sw" style="background:#fffbea;border-color:#e9a83c;"></span>LLM（唯一一次经手，只写占位符）</div>
+  <div class="it"><span class="sw" style="background:#e9f5fc;border-color:#7cb9dc;"></span>人（签发）</div>
+  <div class="it"><span class="sw" style="background:#f5f6f9;border-color:#c9d0dc;"></span>数据 / 产出</div>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>智能报告流水线 · 六步泳道时序</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif; }
+  .canvas { position:relative; width:1720px; height:780px; }
+  .lane { position:absolute; left:130px; width:1570px; border-radius:12px; border:1.5px solid; }
+  .lanelabel { position:absolute; left:10px; width:110px; font-size:15px; font-weight:700; text-align:center; line-height:1.5; }
+  .node { position:absolute; width:132px; height:96px; background:#fff; border:2px solid #2f6fe4; border-radius:10px; padding:8px 8px; }
+  .node h4 { margin:0 0 4px; font-size:13.5px; color:#1d5fd6; font-weight:700; white-space:nowrap; }
+  .node .sub { font-family:"SF Mono",Menlo,monospace; font-size:11px; color:#233046; line-height:1.45; white-space:nowrap; }
+  .node .nt { font-size:10.5px; color:#8a97ab; margin-top:4px; line-height:1.35; white-space:nowrap; }
+  .node.hu { background:#e9f5fc; border-color:#7cb9dc; }
+  .node.ll { background:#fffbea; border-color:#e9a83c; } .node.ll h4 { color:#c05f10; }
+  .node.opt { border-style:dashed; }
+  .bar { position:absolute; background:#f5f6f9; border:2px solid #c9d0dc; border-radius:10px; padding:10px 18px; font-size:13px; color:#3d4a5e; white-space:nowrap; }
+  .lbl { position:absolute; font-size:12px; white-space:nowrap; }
+  svg.arrows { position:absolute; inset:0; pointer-events:none; }
+  .legend { position:absolute; left:150px; top:736px; display:flex; gap:32px; align-items:center; }
+  .legend .it { display:flex; gap:8px; align-items:center; font-size:13.5px; color:#3d4a5e; }
+  .legend .sw { width:24px; height:15px; border-radius:5px; border:2px solid; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+<!-- 泳道底色 -->
+<div class="lane" style="top:60px; height:150px; background:#eef7fc; border-color:#cfe6f4;"></div>
+<div class="lane" style="top:225px; height:210px; background:#f7f9ff; border-color:#d9e2f5;"></div>
+<div class="lane" style="top:450px; height:150px; background:#fffdf2; border-color:#f0deb0;"></div>
+<div class="lanelabel" style="top:112px; color:#1d7fae;">人<br>双卡点 ◆</div>
+<div class="lanelabel" style="top:305px; color:#1d5fd6;">确定性<br>程序</div>
+<div class="lanelabel" style="top:502px; color:#c05f10;">LLM<br>受限调用</div>
+
+<svg class="arrows" width="1720" height="780">
+  <defs>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#7a8aa0"/></marker>
+    <marker id="at" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#1d7fae"/></marker>
+    <marker id="ao" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#d06a10"/></marker>
+  </defs>
+  <!-- 时间轴 -->
+  <path d="M140 36 H1690" stroke="#c3ccd9" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <!-- 主链 -->
+  <path d="M216 184 C 216 320 368 330 368 474" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M368 476 C 368 330 520 320 520 186" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M520 184 C 520 235 672 233 672 279" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M740 330 H754" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M892 330 H906" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M976 379 C 976 430 1128 430 1128 474" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M1196 525 H1210" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M1280 476 C 1280 430 1432 432 1432 382" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M1432 281 C 1432 233 1584 235 1584 187" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <path d="M1584 184 C 1584 230 1604 235 1604 279" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <!-- 打回重生成 -->
+  <path d="M508 184 C 470 320 470 500 438 519" stroke="#1d7fae" stroke-width="2.2" stroke-dasharray="7 6" fill="none" marker-end="url(#at)"/>
+  <!-- 违规回灌 -->
+  <path d="M1400 379 C 1400 444 1316 448 1314 476" stroke="#d06a10" stroke-width="2.2" stroke-dasharray="6 5" fill="none" marker-end="url(#ao)"/>
+  <!-- 失败关闭 -->
+  <path d="M639 379 V624" stroke="#9aa7ba" stroke-width="1.8" stroke-dasharray="6 5" fill="none" marker-end="url(#ag)"/>
+  <path d="M791 379 V624" stroke="#9aa7ba" stroke-width="1.8" stroke-dasharray="6 5" fill="none" marker-end="url(#ag)"/>
+  <path d="M943 379 V624" stroke="#9aa7ba" stroke-width="1.8" stroke-dasharray="6 5" fill="none" marker-end="url(#ag)"/>
+</svg>
+
+<div class="lbl" style="left:140px; top:14px; color:#8a97ab; font-weight:700;">时间 →</div>
+
+<!-- 人 lane -->
+<div class="node hu" style="left:150px; top:87px;"><h4>发起需求</h4><div class="sub">POST /runs</div><div class="nt">① 同步执行 5~20 秒</div></div>
+<div class="node hu" style="left:454px; top:87px;"><h4>🔒 卡点1 锁口径</h4><div class="sub">勾减指标 · 确认周期</div><div class="nt">固化模板版本+指标快照<br>确认后口径锁死</div></div>
+<div class="node hu" style="left:1518px; top:87px;"><h4>✍️ 卡点2 签发</h4><div class="sub">证据钻取 · 逐条核看</div><div class="nt">服务端复核审计包<br>驳回 → REJECTED</div></div>
+
+<!-- 程序 lane -->
+<div class="node" style="left:606px; top:282px;"><h4>② 语义解析</h4><div class="sub">大纲 → 点菜单展开</div><div class="nt">环比/同比自动配单</div></div>
+<div class="node" style="left:758px; top:282px;"><h4>③ 确定性取数</h4><div class="sub">模板→白名单→jOOQ</div><div class="nt">零 LLM · 双哈希留痕<br>同输入必同 SQL</div></div>
+<div class="node" style="left:910px; top:282px;"><h4>④ 造事实 / 图表</h4><div class="sub">fact+DERIVED+序列点</div><div class="nt">展示串一次渲染定死</div></div>
+<div class="node" style="left:1366px; top:282px;"><h4>⑥ 审计三检</h4><div class="sub">扫描→替换→回读核对</div><div class="nt">数字/图表/因果三面<br>一致率 100% 才放行</div></div>
+<div class="node" style="left:1538px; top:282px;"><h4>PUBLISHED</h4><div class="sub">导出 PDF / Docx</div><div class="nt">血缘档案可一键导出</div></div>
+
+<!-- LLM lane -->
+<div class="node ll" style="left:302px; top:477px;"><h4>① 大纲生成</h4><div class="sub">三段式匹配·候选单选</div><div class="nt">LLM 不产日期<br>匹配不到 → BLOCKED</div></div>
+<div class="node ll opt" style="left:1062px; top:477px;"><h4>归因挑选（可选）</h4><div class="sub">候选事件内单选</div><div class="nt">仅带归因章时 · 只挑不编</div></div>
+<div class="node ll" style="left:1214px; top:477px;"><h4>⑤ 章节撰写</h4><div class="sub">只写 {{fact_key}}</div><div class="nt">禁写数字 · 30~90 秒<br>stylePrompt 只进 user 段</div></div>
+
+<!-- 失败关闭 bar -->
+<div class="bar" style="left:470px; top:630px; width:980px;">任何拿不准 → <b>失败关闭 BLOCKED</b>[POLICY | EXCEPTION] · 转人工 · 打回面板重跑 / 断点续跑（⑤⑥ 续跑不重取数） · ⑥ 重写超限同罪</div>
+
+<!-- 标注 -->
+<div class="lbl" style="left:394px; top:300px; color:#1d7fae; font-weight:700;">打回重生成 ↺ attempt+1</div>
+<div class="lbl" style="left:1408px; top:430px; color:#d06a10; font-weight:700;">违规清单回灌 ≤2 轮 ↻</div>
+<div class="lbl" style="left:565px; top:243px; color:#8a97ab;">②~⑥ 守护线程异步 · 前端 1.5s 轮询</div>
+
+<div class="legend">
+  <div class="it"><span class="sw" style="background:#e9f5fc;border-color:#7cb9dc;"></span>人（双卡点）</div>
+  <div class="it"><span class="sw" style="background:#fff;border-color:#2f6fe4;"></span>确定性程序</div>
+  <div class="it"><span class="sw" style="background:#fffbea;border-color:#e9a83c;"></span>LLM（受限）</div>
+  <div class="it"><span class="sw" style="background:#f5f6f9;border-color:#c9d0dc;"></span>失败关闭 / 终态</div>
+</div>
+
+</div>
+</body>
+</html>

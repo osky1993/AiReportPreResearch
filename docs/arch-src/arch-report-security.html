@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>智能报告流水线 · 安全边界</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif; }
+  .canvas { position:relative; width:1300px; height:920px; }
+  .box { position:absolute; background:#fff; border:2.5px solid #2f6fe4; border-radius:14px; padding:12px 18px; }
+  .box h3 { margin:0 0 6px; font-size:18px; color:#1d5fd6; font-weight:700; white-space:nowrap; }
+  .box h3 small { font-weight:600; font-size:13px; color:#5a6b85; margin-left:8px; }
+  .mono { font-family:"SF Mono",Menlo,monospace; font-size:12.5px; color:#233046; line-height:1.55; white-space:nowrap; }
+  .note { font-size:12px; color:#8a97ab; margin-top:5px; line-height:1.45; white-space:nowrap; }
+  .mitl { background:#fffbea; border-color:#e9a83c; } .mitl h3 { color:#c05f10; }
+  .hitl { background:#e9f5fc; border-color:#7cb9dc; }
+  .data { background:#f5f6f9; border-color:#c9d0dc; } .data h3 { color:#3d4a5e; }
+  .gate { position:absolute; background:#fff; border:2.5px solid #1d5fd6; border-radius:10px; padding:7px 14px; font-size:12.5px; color:#1d5fd6; font-weight:700; line-height:1.45; text-align:center; box-shadow:0 0 0 5px #fff; white-space:nowrap; }
+  .gate small { display:block; font-weight:600; color:#5a6b85; font-size:11px; }
+  .btitle { position:absolute; font-size:19px; font-weight:800; color:#1d5fd6; letter-spacing:1px; white-space:nowrap; }
+  .bar { position:absolute; background:#f5f6f9; border:2px solid #c9d0dc; border-radius:10px; padding:11px 20px; font-size:13.5px; color:#3d4a5e; white-space:nowrap; }
+  svg.arrows { position:absolute; inset:0; pointer-events:none; }
+  .legend { position:absolute; left:70px; top:878px; display:flex; gap:30px; align-items:center; }
+  .legend .it { display:flex; gap:8px; align-items:center; font-size:13.5px; color:#3d4a5e; }
+  .legend .sw { width:24px; height:15px; border-radius:5px; border:2px solid; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+<!-- 可信边界 -->
+<div style="position:absolute; left:70px; top:300px; width:1160px; height:480px; border:3.5px dashed #2f6fe4; border-radius:22px; background:#fbfdff;"></div>
+<div class="btitle" style="left:104px; top:322px;">可信边界 —— 只圈确定性程序与人的签名，LLM 永远在边界外供稿</div>
+
+<svg class="arrows" width="1300" height="920">
+  <defs>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#7a8aa0"/></marker>
+    <marker id="ao" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#d06a10"/></marker>
+  </defs>
+  <!-- 供稿/操作 穿墙 -->
+  <path d="M390 214 V258" stroke="#d06a10" stroke-width="2.5" stroke-dasharray="7 6" fill="none" marker-end="url(#ao)"/>
+  <path d="M765 214 V258" stroke="#d06a10" stroke-width="2.5" stroke-dasharray="7 6" fill="none" marker-end="url(#ao)"/>
+  <path d="M1060 214 V258" stroke="#7a8aa0" stroke-width="2.5" stroke-dasharray="7 6" fill="none" marker-end="url(#ag)"/>
+  <!-- 闸门 → 内部 -->
+  <path d="M390 336 V378" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M765 336 C 765 362 640 356 614 380" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M1060 336 V378" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <!-- 程序 ↔ 数据（墙①） -->
+  <path d="M400 576 V622" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <!-- 程序 → 人（证据） -->
+  <path d="M634 480 H948" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+</svg>
+
+<!-- 边界外 -->
+<div class="box mitl" style="left:200px; top:80px; width:380px; height:134px;">
+  <h3>LLM <small>边界外 · 不可信供稿方</small></h3>
+  <div class="mono">供稿三样：模板选择（单选票据） · 占位符草稿<br>候选事件挑选 · 制作期起草 / 反翻译</div>
+  <div class="note">会犯错是前提 —— 供的稿必须过墙才被接纳</div>
+</div>
+<div class="box mitl" style="left:620px; top:80px; width:290px; height:134px;">
+  <h3>用户可编辑内容</h3>
+  <div class="mono">stylePrompt 章节文风<br>事件知识库文本</div>
+  <div class="note">prompt 注入的入口，按不可信处理<br>（run #18/#35 对抗实测拦截）</div>
+</div>
+<div class="box" style="left:940px; top:80px; width:240px; height:134px;">
+  <h3>前端页面 <small>展示层</small></h3>
+  <div class="mono">六个单文件页面<br>所有按钮只是「建议」</div>
+  <div class="note">不承担任何校验职责</div>
+</div>
+
+<!-- 边界上的闸门 -->
+<div class="gate" style="left:236px; top:266px; width:310px;">墙③ 占位符窄接口 + 死代码审计<small>正文禁数字 · 数字/图表/因果三面核对 100%</small></div>
+<div class="gate" style="left:626px; top:266px; width:280px;">双闸隔离<small>只进 user 段 · 录入白名单 + 进 prompt 转义</small></div>
+<div class="gate" style="left:950px; top:266px; width:220px;">墙④ 服务端门禁<small>状态守卫 · 非法迁移 400</small></div>
+
+<!-- 边界内 -->
+<div class="box" style="left:110px; top:382px; width:520px; height:194px;">
+  <h3>确定性程序 <small>数字的整条生命线在此</small></h3>
+  <div class="mono">ReportPipeline 编排 · PeriodResolver（LLM 不产日期）<br>MqlValidator 白名单 → MqlSqlCompiler jOOQ 只读<br>FactBuild / ChartBuild → 三审计器（Number/Chart/Causality）</div>
+  <div class="note">墙② 运行期取数零 LLM —— SQL 只出自人工核验的固化模板，失败即停不自愈</div>
+</div>
+<div class="box hitl" style="left:952px; top:382px; width:240px; height:194px;">
+  <h3>人 · 双卡点 ◆</h3>
+  <div class="mono">卡点1 锁口径（事前）<br>卡点2 签发担责（事后）</div>
+  <div class="note">系统备齐担责所需全部证据：<br>SQL · 双哈希 · 规约 · 审计包<br>中文数词残余的人工兜底</div>
+</div>
+<div class="box data" style="left:110px; top:626px; width:1082px; height:118px;">
+  <h3>数据 <small>墙① 只读编译 + 参数绑定 + 表列白名单 + 元数据隔离</small></h3>
+  <div class="mono">MySQL reportbi —— jOOQ 生成不出写语句 · 流水线状态表排除在查询白名单外（报告查不到自己的内脏）</div>
+  <div class="note">全程留痕：三表 + sql_hash / result_hash 双哈希 + 血缘可导 —— 事后可完整复盘</div>
+</div>
+
+<!-- 标注 -->
+<div class="lbl" style="position:absolute; left:404px; top:224px; font-size:12px; color:#c05f10; font-weight:700; white-space:nowrap;">供稿过墙</div>
+<div class="lbl" style="position:absolute; left:779px; top:224px; font-size:12px; color:#c05f10; font-weight:700; white-space:nowrap;">文风过闸</div>
+<div class="lbl" style="position:absolute; left:1074px; top:224px; font-size:12px; color:#5a6b85; font-weight:700; white-space:nowrap;">操作过门</div>
+<div class="lbl" style="position:absolute; left:414px; top:590px; font-size:12px; color:#5a6b85; white-space:nowrap;">只读 · 白名单</div>
+<div class="lbl" style="position:absolute; left:882px; top:456px; font-size:12px; color:#5a6b85; white-space:nowrap;">证据摊给签发人</div>
+
+<!-- 收束 -->
+<div class="bar" style="left:70px; top:800px; width:1160px;">四道墙全是死代码，没有一道依赖「模型表现好」或任何 prompt —— 边界接纳的是<b>「通过校验的结构」</b>，从来不是<b>「模型的话」</b>。</div>
+
+<div class="legend">
+  <div class="it"><span class="sw" style="background:#fffbea;border-color:#e9a83c;"></span>边界外 · 不可信输入</div>
+  <div class="it"><span class="sw" style="background:#fff;border-color:#1d5fd6;"></span>边界闸门（校验）</div>
+  <div class="it"><span class="sw" style="background:#e9f5fc;border-color:#7cb9dc;"></span>人的签名</div>
+  <div class="it"><span class="sw" style="background:#f5f6f9;border-color:#c9d0dc;"></span>数据（只读可及）</div>
+</div>
+
+</div>
+</body>
+</html>

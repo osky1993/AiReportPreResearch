@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>智能报告流水线 · 技术架构</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#fff; font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif; }
+  .canvas { position:relative; width:1240px; height:1000px; }
+  .box { position:absolute; background:#fff; border:2.5px solid #2f6fe4; border-radius:14px; padding:13px 20px; }
+  .box h3 { margin:0 0 7px; font-size:20px; color:#1d5fd6; font-weight:700; letter-spacing:.5px; white-space:nowrap; }
+  .box h3 small { font-weight:600; font-size:13.5px; color:#5a6b85; margin-left:8px; }
+  .mono { font-family:"SF Mono",Menlo,monospace; font-size:13.5px; color:#233046; line-height:1.65; white-space:nowrap; }
+  .mono.s { font-size:12.5px; }
+  .note { font-size:12.5px; color:#8a97ab; margin-top:5px; line-height:1.5; white-space:nowrap; }
+  .base { background:#e9f5fc; border-color:#7cb9dc; }
+  .mitl { background:#fffbea; border-color:#e9a83c; } .mitl h3 { color:#c05f10; }
+  .data { background:#f5f6f9; border-color:#c9d0dc; } .data h3 { color:#3d4a5e; }
+  .entry { position:absolute; background:#2f6fe4; color:#fff; border-radius:14px; font-size:20px; font-weight:700; display:flex; align-items:center; justify-content:center; letter-spacing:1px; }
+  .lbl { position:absolute; font-size:12.5px; color:#c05f10; font-weight:700; white-space:nowrap; }
+  svg.arrows { position:absolute; inset:0; pointer-events:none; }
+  .legend { position:absolute; left:150px; top:956px; display:flex; gap:34px; align-items:center; }
+  .legend .it { display:flex; gap:8px; align-items:center; font-size:14px; color:#3d4a5e; }
+  .legend .sw { width:26px; height:16px; border-radius:5px; border:2px solid; }
+  .k { color:#1d5fd6; font-weight:700; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+<svg class="arrows" width="1240" height="1000">
+  <defs>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#7a8aa0"/></marker>
+    <marker id="ao" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#d06a10"/></marker>
+  </defs>
+  <path d="M500 69 V96" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M500 213 V244" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M500 469 V504" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M500 659 V690" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <!-- 底座 → 外部服务（OpenAI 兼容出网） -->
+  <path d="M854 580 H1040 V402" stroke="#d06a10" stroke-width="2.5" stroke-dasharray="7 6" fill="none" marker-end="url(#ao)"/>
+</svg>
+
+<div class="entry" style="left:365px; top:16px; width:270px; height:52px;">浏览器</div>
+
+<div class="box" style="left:150px; top:100px; width:700px; height:112px;">
+  <h3>前端 <small>无构建 · 无框架 · 无内存态</small></h3>
+  <div class="mono s">单文件 vanilla JS ×6：report / template-admin / metric-wizard / event-admin / dashboard / index</div>
+  <div class="mono s">vendored ECharts（无 CDN） · 1.5s 轮询读库 · 前端只做展示与预检</div>
+</div>
+
+<div class="box" style="left:150px; top:248px; width:700px; height:220px;">
+  <h3>应用层 · 报告流水线 <small>com.treasury.nl2sql.report</small></h3>
+  <div class="mono s">
+    <span class="k">api/</span>　　　 REST 控制器 · 服务端状态守卫（非法迁移 400）<br>
+    <span class="k">pipeline/</span>　六步编排 if/switch · ① 同步 · ②~⑥ 守护线程异步<br>
+    <span class="k">asset/</span>　　 注册表 · TemplateValidator 三处共用 · 向导 / 起草<br>
+    <span class="k">store/</span>　　 JdbcTemplate 仓库 · 版本行不可变 · attempt 追加<br>
+    <span class="k">lineage/ observe/</span>　只读观测：血缘装配 · 统计 · token 计量<br>
+    <span class="k">export/</span>　　PDF / Docx 组装 · 离屏图表回传 · 数据表兜底
+  </div>
+</div>
+
+<div class="box mitl" style="left:890px; top:248px; width:300px; height:150px;">
+  <h3>外部服务 <small>OpenAI 兼容</small></h3>
+  <div class="mono s">LLM API（大纲/撰写/归因/起草）<br>Embedding API（模板匹配召回）</div>
+  <div class="note">切换厂商 = 改 3 个配置值<br>密钥不入库：local.yml / env</div>
+</div>
+
+<div class="box base" style="left:150px; top:508px; width:700px; height:150px;">
+  <h3>查询引擎底座 <small>fork 自 nl2mql2sqlDemo · 零改动继承</small></h3>
+  <div class="mono s">ir/Mql 受约束中间表示 · validate/MqlValidator 白名单校验<br>compile/MqlSqlCompiler（jOOQ 只读 · 参数绑定） · schema/SchemaService 启动反射<br>llm/ embedding/ 客户端抽象（OpenAI 兼容）</div>
+  <div class="note">Nl2SqlService 自由生成路径只做资产制作期工具（向导「试查」），不进报告主流水线</div>
+</div>
+
+<div class="box data" style="left:150px; top:694px; width:700px; height:104px;">
+  <h3>数据 <small>MySQL 8 · reportbi @ 127.0.0.1:23306</small></h3>
+  <div class="mono s">业务 23 表 · 状态 3 表（report_run / step / fact） · 资产 / 事件表</div>
+  <div class="mono s">schema.exclude-tables 元数据隔离 · sql_hash / result_hash 双哈希留痕</div>
+</div>
+
+<div class="box" style="left:150px; top:834px; width:1040px; height:104px;">
+  <h3>运行形态与工程支撑</h3>
+  <div class="mono s">单体 Spring Boot 3 · Java 17（建议 JDK 21 运行） · Maven · 单实例 :8080 · 无状态机框架 · 状态全在库</div>
+  <div class="mono s">启动 fail-fast：schema 反射 + 资产全量自检，坏了拒绝启动 · mvn test 403 用例 · 评测 POST /eval 两层基线</div>
+</div>
+
+<div class="lbl" style="left:880px; top:560px;">OpenAI 兼容协议出网</div>
+
+<div class="legend">
+  <div class="it"><span class="sw" style="background:#fff;border-color:#2f6fe4;"></span>报告层自研</div>
+  <div class="it"><span class="sw" style="background:#e9f5fc;border-color:#7cb9dc;"></span>底座引擎复用</div>
+  <div class="it"><span class="sw" style="background:#fffbea;border-color:#e9a83c;"></span>外部智能服务</div>
+  <div class="it"><span class="sw" style="background:#f5f6f9;border-color:#c9d0dc;"></span>数据</div>
+</div>
+
+</div>
+</body>
+</html>

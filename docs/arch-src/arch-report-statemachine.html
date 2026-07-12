@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>智能报告流水线 · 双状态机</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif; }
+  .canvas { position:relative; width:1460px; height:840px; }
+  .panel { position:absolute; border:2px dashed #c6d2e8; border-radius:18px; background:#fcfdff; }
+  .ptitle { position:absolute; font-size:19px; font-weight:700; color:#1d5fd6; }
+  .ptitle small { font-family:"SF Mono",Menlo,monospace; font-size:13px; color:#5a6b85; font-weight:600; margin-left:10px; }
+  .st { position:absolute; border:2.5px solid #2f6fe4; border-radius:999px; background:#fff; display:flex; align-items:center; justify-content:center; font-family:"SF Mono",Menlo,monospace; font-size:14px; font-weight:700; color:#1d5fd6; white-space:nowrap; }
+  .st.hu { background:#e9f5fc; border-color:#7cb9dc; color:#1d7fae; }
+  .st.dark { background:#2f6fe4; color:#fff; }
+  .st.bl { background:#fffbea; border-color:#e9a83c; color:#c05f10; }
+  .st.gr { background:#f5f6f9; border-color:#c9d0dc; color:#3d4a5e; }
+  .lbl { position:absolute; font-size:12px; color:#5a6b85; white-space:nowrap; line-height:1.45; }
+  .lbl b { color:#1d5fd6; }
+  .foot { position:absolute; font-size:12.5px; color:#8a97ab; line-height:1.6; }
+  svg.arrows { position:absolute; inset:0; pointer-events:none; }
+  .legend { position:absolute; left:60px; top:796px; display:flex; gap:30px; align-items:center; }
+  .legend .it { display:flex; gap:8px; align-items:center; font-size:13.5px; color:#3d4a5e; }
+  .legend .sw { width:24px; height:15px; border-radius:8px; border:2px solid; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+<div class="panel" style="left:50px; top:46px; width:640px; height:700px;"></div>
+<div class="panel" style="left:770px; top:46px; width:640px; height:700px;"></div>
+<div class="ptitle" style="left:80px; top:66px;">运行状态机 <small>report_run</small></div>
+<div class="ptitle" style="left:800px; top:66px;">资产状态机 <small>report_template · report_metric</small></div>
+
+<svg class="arrows" width="1460" height="840">
+  <defs>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#7a8aa0"/></marker>
+    <marker id="at" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#1d7fae"/></marker>
+    <marker id="ao" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#d06a10"/></marker>
+  </defs>
+  <!-- 运行机主链 -->
+  <path d="M260 166 V202" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M260 258 V310" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M260 366 V418" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M260 474 V526" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <!-- ①失败 直接 BLOCKED -->
+  <path d="M350 138 C 560 138 560 250 560 306" stroke="#9aa7ba" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#ag)"/>
+  <!-- 打回 self-loop -->
+  <path d="M110 218 C 60 218 60 242 110 242" stroke="#1d7fae" stroke-width="2.2" stroke-dasharray="7 6" fill="none" marker-end="url(#at)"/>
+  <!-- RUNNING ↔ BLOCKED -->
+  <path d="M420 326 H478" stroke="#d06a10" stroke-width="2.2" fill="none" marker-end="url(#ao)"/>
+  <path d="M478 350 H420" stroke="#1d7fae" stroke-width="2.2" stroke-dasharray="7 6" fill="none" marker-end="url(#at)"/>
+  <!-- 驳回 -->
+  <path d="M420 446 H478" stroke="#7a8aa0" stroke-width="2.2" fill="none" marker-end="url(#ag)"/>
+  <!-- 资产机主链 -->
+  <path d="M1090 166 V202" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M1090 258 V330" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M1090 386 V458" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <!-- DRAFT 直接下架 -->
+  <path d="M960 244 C 880 300 880 420 966 474" stroke="#9aa7ba" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#ag)"/>
+  <!-- 改 = 再存新 DRAFT -->
+  <path d="M1184 355 C 1244 305 1244 255 1188 244" stroke="#9aa7ba" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#ag)"/>
+  <!-- 跨机：run 固化资产快照 -->
+  <path d="M424 240 C 660 240 780 360 994 360" stroke="#1d7fae" stroke-width="2.4" stroke-dasharray="8 6" fill="none" marker-end="url(#at)"/>
+</svg>
+
+<!-- 运行机节点（主列 cx=260） -->
+<div class="st dark" style="left:170px; top:112px; width:180px; height:52px;">发起 POST /runs</div>
+<div class="st hu" style="left:110px; top:206px; width:300px; height:52px; font-size:13px;">AWAITING_OUTLINE_APPROVAL</div>
+<div class="st" style="left:170px; top:314px; width:180px; height:52px;">RUNNING</div>
+<div class="st hu" style="left:110px; top:422px; width:300px; height:52px; font-size:13px;">AWAITING_PUBLISH_APPROVAL</div>
+<div class="st dark" style="left:170px; top:530px; width:180px; height:52px;">PUBLISHED</div>
+<div class="st bl" style="left:482px; top:302px; width:150px; height:48px;">BLOCKED</div>
+<div class="st gr" style="left:482px; top:422px; width:150px; height:48px;">REJECTED</div>
+
+<div class="lbl" style="left:276px; top:172px;"><b>① 成功</b> → 等卡点1</div>
+<div class="lbl" style="left:276px; top:272px;"><b>确认口径 ◆</b> 固化模板版本+指标快照</div>
+<div class="lbl" style="left:276px; top:382px;"><b>⑥ 审计 100%</b> → 等卡点2</div>
+<div class="lbl" style="left:276px; top:490px;"><b>服务端复核审计包 ◆</b> 签发</div>
+<div class="lbl" style="left:436px; top:118px;">① 失败（匹配不到 / 周期不支持）</div>
+<div class="lbl" style="left:26px; top:196px; color:#1d7fae; font-weight:700;">打回重跑①<br>attempt+1</div>
+<div class="lbl" style="left:424px; top:296px; color:#c05f10;">任一步失败</div>
+<div class="lbl" style="left:424px; top:356px; color:#1d7fae;">resume 续跑</div>
+<div class="lbl" style="left:426px; top:426px;">驳回</div>
+<div class="foot" style="left:90px; top:620px; width:560px;">失败关闭：blocked_reason 前缀 [POLICY]=业务性停止 / [EXCEPTION]=意外异常<br>停摆超 2 分钟的 RUNNING 亦可 resume · SPEC~FACT 整段重跑，WRITE/AUDIT 续跑不重取数<br>状态守卫在服务端：非法迁移一律 400，前端按钮只是「建议」</div>
+
+<!-- 资产机节点（主列 cx=1090） -->
+<div class="st dark" style="left:970px; top:112px; width:240px; height:52px; font-size:15px;">保存（新建 / 编辑）</div>
+<div class="st" style="left:1000px; top:206px; width:180px; height:52px;">DRAFT vN</div>
+<div class="st dark" style="left:1000px; top:334px; width:180px; height:52px;">PUBLISHED</div>
+<div class="st gr" style="left:1000px; top:462px; width:180px; height:52px;">DEPRECATED</div>
+
+<div class="lbl" style="left:1106px; top:172px;"><b>校验通过才落库</b>（五重校验）</div>
+<div class="lbl" style="left:790px; top:272px; width:196px; text-align:right;"><b>publish 一个事务</b><br>旧版下架 + 新版上线 + reload<br>自检失败整体回滚</div>
+<div class="lbl" style="left:1106px; top:410px;">新版发布自动下架 / 手动 deprecate</div>
+<div class="lbl" style="left:800px; top:492px;">DRAFT 直接下架</div>
+<div class="lbl" style="left:1256px; top:266px;">要改？再存新 DRAFT<br>行不可变，绝无 UPDATE</div>
+<div class="foot" style="left:810px; top:620px; width:560px;">同一资产至多一个 PUBLISHED · DRAFT 不参与运行 · 被运行引用的版本永不物理删除<br>classpath 种子仅对空库幂等种入——人为下架的资产不会被种子复活<br>发布即热生效：匹配向量缓存同事务刷新</div>
+
+<!-- 跨机标注 -->
+<div class="lbl" style="left:604px; top:196px; color:#1d7fae; font-weight:700; text-align:center; width:260px;">卡点1 确认时固化引用快照<br>资产发新版不影响在跑 run（#24/#25 实测）</div>
+
+<div class="legend">
+  <div class="it"><span class="sw" style="background:#e9f5fc;border-color:#7cb9dc;"></span>人工卡点等待态</div>
+  <div class="it"><span class="sw" style="background:#fff;border-color:#2f6fe4;"></span>机器执行态</div>
+  <div class="it"><span class="sw" style="background:#2f6fe4;border-color:#2f6fe4;"></span>入口 / 终态（成功）</div>
+  <div class="it"><span class="sw" style="background:#fffbea;border-color:#e9a83c;"></span>失败关闭（可续）</div>
+  <div class="it"><span class="sw" style="background:#f5f6f9;border-color:#c9d0dc;"></span>终态（驳回 / 下架）</div>
+</div>
+
+</div>
+</body>
+</html>

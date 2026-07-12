@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>智能报告流水线 · 逻辑架构</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#fff; font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif; }
+  .canvas { position:relative; width:1240px; height:1044px; }
+  .box { position:absolute; background:#fff; border:2.5px solid #2f6fe4; border-radius:14px; padding:13px 20px; }
+  .box h3 { margin:0 0 7px; font-size:20px; color:#1d5fd6; font-weight:700; letter-spacing:.5px; white-space:nowrap; }
+  .box h3 small { font-weight:600; font-size:13.5px; color:#5a6b85; margin-left:8px; }
+  .mono { font-family:"SF Mono",Menlo,monospace; font-size:13.5px; color:#233046; line-height:1.6; white-space:nowrap; }
+  .mono.s { font-size:12.5px; }
+  .note { font-size:12.5px; color:#8a97ab; margin-top:5px; line-height:1.5; white-space:nowrap; }
+  .hitl { background:#e9f5fc; border-color:#7cb9dc; }
+  .mitl { background:#fffbea; border-color:#e9a83c; } .mitl h3 { color:#c05f10; }
+  .data { background:#f5f6f9; border-color:#c9d0dc; } .data h3 { color:#3d4a5e; }
+  .entry { position:absolute; background:#2f6fe4; color:#fff; border-radius:14px; font-size:22px; font-weight:700; display:flex; align-items:center; justify-content:center; letter-spacing:1px; }
+  .side { position:absolute; font-size:13px; font-weight:700; color:#1d7fae; line-height:1.6; }
+  .sideo { color:#c05f10; }
+  .lbl { position:absolute; font-size:12.5px; color:#8a97ab; white-space:nowrap; }
+  svg.arrows { position:absolute; inset:0; pointer-events:none; }
+  .legend { position:absolute; left:150px; top:1008px; display:flex; gap:34px; align-items:center; }
+  .legend .it { display:flex; gap:8px; align-items:center; font-size:14px; color:#3d4a5e; }
+  .legend .sw { width:26px; height:16px; border-radius:5px; border:2px solid; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+<svg class="arrows" width="1240" height="1044">
+  <defs>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#7a8aa0"/></marker>
+    <marker id="at" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#1d7fae"/></marker>
+    <marker id="atr" markerWidth="9" markerHeight="9" refX="1" refY="4.5" orient="auto"><path d="M8,0 L0,4.5 L8,9 z" fill="#1d7fae"/></marker>
+    <marker id="ao" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#d06a10"/></marker>
+  </defs>
+  <!-- 主干 -->
+  <path d="M520 71 V102" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M520 215 V246" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M520 375 V406" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M320 527 V562" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M700 527 V562" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M320 735 V770" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M700 735 V770" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M520 863 V894" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <!-- ②③④ 零 LLM 旁路 -->
+  <path d="M150 336 C 76 336 76 650 146 650" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <!-- 编排 ↔ 资产 -->
+  <path d="M896 306 H924" stroke="#1d7fae" stroke-width="2.5" fill="none" marker-start="url(#atr)" marker-end="url(#at)"/>
+  <!-- 资产 → 生成层：候选圈定 -->
+  <path d="M1075 407 V466 H896" stroke="#9aa7ba" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#ag)"/>
+  <!-- 审计 → 生成层：回灌 -->
+  <path d="M760 564 V530" stroke="#d06a10" stroke-width="2.5" stroke-dasharray="6 5" fill="none" marker-end="url(#ao)"/>
+  <!-- 观测只读库 -->
+  <path d="M1075 736 V944 H896" stroke="#9aa7ba" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#ag)"/>
+  <!-- 双卡点：人回到用户 -->
+  <path d="M148 282 C 55 275 100 55 338 43" stroke="#1d7fae" stroke-width="2.5" stroke-dasharray="7 6" fill="none" marker-end="url(#at)"/>
+</svg>
+
+<div class="entry" style="left:345px; top:16px; width:350px; height:54px;">用户 · 一句中文报告需求</div>
+
+<div class="box" style="left:150px; top:106px; width:740px; height:108px;">
+  <h3>交互层</h3>
+  <div class="mono">report.html · template-admin · metric-wizard · event-admin · dashboard</div>
+  <div class="mono s">REST /api/report/{runs · templates · metrics · calibers · eval · stats · lineage · export}</div>
+</div>
+
+<div class="box hitl" style="left:150px; top:250px; width:740px; height:124px;">
+  <h3>编排层 · 人在回路 ◆</h3>
+  <div class="mono">ReportPipeline — ①大纲 → 🔒卡点1 → ②spec → ③取数 → ④造事实 → ⑤撰写 → ⑥审计 → ✍️卡点2</div>
+  <div class="note">状态三表 report_run / report_step / report_fact 留痕 · attempt 只追加 · 断点续跑<br>失败关闭 BLOCKED[POLICY|EXCEPTION] · 打回 / 驳回留痕</div>
+</div>
+
+<div class="box" style="left:930px; top:250px; width:290px; height:160px;">
+  <h3>资产层 <small>库为唯一事实源</small></h3>
+  <div class="mono s">ReportAssetService 注册表<br>report_template / report_metric<br>多版本 · 行不可变 · report_event</div>
+  <div class="note">发布事务热生效<br>run 固化模板版本 + 指标快照</div>
+</div>
+
+<div class="box mitl" style="left:150px; top:410px; width:740px; height:116px;">
+  <h3>生成层 · 机器在回路 ↻ <small>LLM 仅三处受限调用</small></h3>
+  <div class="mono">OutlineStep 候选内单选 · WriteStep 只写 {{fact_key}} 禁写数字 · 归因候选事件内挑选</div>
+  <div class="note">制作期另有 AI 起草模板 / 口径反翻译（不进运行主链）</div>
+</div>
+
+<div class="box" style="left:150px; top:566px; width:340px; height:168px;">
+  <h3>确定性取数 · 造事实 <small>零 LLM</small></h3>
+  <div class="mono s">PeriodResolver（LLM 不产日期）<br>填模板 → MqlValidator 白名单<br>→ MqlSqlCompiler jOOQ 只读执行<br>环比/同比/占比/序列点皆程序造 fact</div>
+  <div class="note">同输入必同 SQL · 双哈希可复现</div>
+</div>
+
+<div class="box" style="left:530px; top:566px; width:340px; height:168px;">
+  <h3>审计门禁 <small>发布唯一裁判</small></h3>
+  <div class="mono s">NumberAuditor 双检：禁数扫描 →<br>回读核对 100%（容差半个末位）<br>ChartAuditor 逐点 · Causality 因果<br>ChineseNumeralDetector 中文数词</div>
+  <div class="note">死代码兜底 · 不依赖任何 prompt</div>
+</div>
+
+<div class="box" style="left:930px; top:566px; width:290px; height:168px;">
+  <h3>观测层 <small>绝对只读</small></h3>
+  <div class="mono s">/lineage 血缘单文档<br>（11 类节点 · 8 类边 · 断链 400）<br>/stats 运行看板 · token 计量</div>
+  <div class="note">观测宕掉，报告照常出</div>
+</div>
+
+<div class="box" style="left:150px; top:774px; width:740px; height:88px;">
+  <h3>基础设施 <small>复用查询引擎底座 · 零改动继承</small></h3>
+  <div class="mono">LlmClient · EmbeddingClient · SchemaService · MqlValidator · MqlSqlCompiler</div>
+</div>
+
+<div class="box data" style="left:150px; top:898px; width:740px; height:92px;">
+  <h3>数据</h3>
+  <div class="mono s">MySQL reportbi — 23 张业务表 + 状态三表 + 资产 / 事件表<br>schema.exclude-tables 元数据隔离，不进 NL2SQL 白名单</div>
+</div>
+
+<!-- 侧注 -->
+<div class="side" style="left:22px; top:132px; width:120px; text-align:right;">卡点1 锁口径 ◆<br>卡点2 复核签发 ◆</div>
+<div class="side" style="left:10px; top:470px; width:118px; text-align:right; color:#5a6b85;">②③④ 零 LLM<br>确定性直达</div>
+<div class="side sideo" style="left:772px; top:538px; width:150px;">违规回灌重写 ≤2 轮 ↻</div>
+<div class="lbl" style="left:532px; top:384px;">①⑤ · 归因挑选（LLM 环节）</div>
+<div class="lbl" style="left:894px; top:262px; width:32px; color:#1d7fae; font-weight:700; text-align:center; line-height:1.3; white-space:normal;">匹配 固化</div>
+<div class="lbl" style="left:902px; top:476px;">程序圈定候选 · LLM 只选不填</div>
+<div class="lbl" style="left:1086px; top:826px;">只读库中留痕</div>
+
+<div class="legend">
+  <div class="it"><span class="sw" style="background:#e9f5fc;border-color:#7cb9dc;"></span>人在回路（双卡点）</div>
+  <div class="it"><span class="sw" style="background:#fffbea;border-color:#e9a83c;"></span>机器在回路（LLM 受限）</div>
+  <div class="it"><span class="sw" style="background:#fff;border-color:#2f6fe4;"></span>确定性代码</div>
+  <div class="it"><span class="sw" style="background:#f5f6f9;border-color:#c9d0dc;"></span>数据 / 产出</div>
+</div>
+
+</div>
+</body>
+</html>

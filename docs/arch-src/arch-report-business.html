@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>智能报告流水线 · 业务架构</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#fff; font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif; }
+  .canvas { position:relative; width:1240px; height:880px; }
+  .box { position:absolute; background:#fff; border:2.5px solid #2f6fe4; border-radius:14px; padding:13px 22px; }
+  .box h3 { margin:0 0 7px; font-size:20px; color:#1d5fd6; font-weight:700; letter-spacing:.5px; }
+  .box h3 small { font-weight:600; font-size:13.5px; color:#5a6b85; margin-left:8px; }
+  .body { font-size:15px; color:#233046; line-height:1.65; }
+  .body.s { font-size:14px; }
+  .note { font-size:12.5px; color:#8a97ab; margin-top:5px; line-height:1.5; }
+  .hitl { background:#e9f5fc; border-color:#7cb9dc; }
+  .data { background:#f5f6f9; border-color:#c9d0dc; } .data h3 { color:#3d4a5e; }
+  .entry { position:absolute; background:#2f6fe4; color:#fff; border-radius:14px; font-size:17px; font-weight:700; display:flex; align-items:center; justify-content:center; letter-spacing:.5px; }
+  .ai { color:#c05f10; font-weight:700; }
+  .prog { color:#1d5fd6; font-weight:700; }
+  .man { color:#1d7fae; font-weight:700; }
+  .side { position:absolute; font-size:13px; font-weight:700; color:#1d7fae; line-height:1.6; }
+  svg.arrows { position:absolute; inset:0; pointer-events:none; }
+  .legend { position:absolute; left:130px; top:836px; display:flex; gap:34px; align-items:center; }
+  .legend .it { display:flex; gap:8px; align-items:center; font-size:14px; color:#3d4a5e; }
+  .legend .sw { width:26px; height:16px; border-radius:5px; border:2px solid; }
+  .legend .tx { font-weight:700; font-size:15px; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+<svg class="arrows" width="1240" height="880">
+  <defs>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#7a8aa0"/></marker>
+    <marker id="at" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#1d7fae"/></marker>
+  </defs>
+  <path d="M280 67 V96" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M620 67 V96" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M960 67 V96" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M620 185 V214" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M620 366 V396" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M620 506 V536" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M620 660 V690" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <!-- 打回 / 驳回 -->
+  <path d="M128 440 C 62 440 62 292 124 292" stroke="#1d7fae" stroke-width="2.5" stroke-dasharray="7 6" fill="none" marker-end="url(#at)"/>
+  <!-- 资产供给主流程 -->
+  <path d="M1112 596 C 1188 596 1188 292 1116 292" stroke="#9aa7ba" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#ag)"/>
+</svg>
+
+<div class="entry" style="left:130px; top:16px; width:300px; height:50px;">业务岗 · 发起需求 / 锁口径</div>
+<div class="entry" style="left:470px; top:16px; width:300px; height:50px;">签发岗 · 复核证据 / 签发担责</div>
+<div class="entry" style="left:810px; top:16px; width:300px; height:50px;">资产岗 · 模板 / 指标 / 事件维护</div>
+
+<div class="box" style="left:130px; top:100px; width:980px; height:85px;">
+  <h3>业务场景 <small>多模板自动匹配 · 周期粒度把关 · 匹配不到不猜</small></h3>
+  <div class="body">司库资金周报 · 资金快报 · 资金月报（环比+同比） · 资金季报 · AI 起草的新场景（投资监控周报…）</div>
+</div>
+
+<div class="box hitl" style="left:130px; top:218px; width:980px; height:148px;">
+  <h3>业务主流程 · 人在回路 ◆ <small>六步 · 两道卡点</small></h3>
+  <div class="body">需求受理 → <span class="man">🔒 锁口径（人 · 卡点1）</span> → <span class="prog">结构化取数（程序）</span> → <span class="prog">事实凭证（程序）</span> → <span class="ai">报告撰写（AI 只照事实填空）</span></div>
+  <div class="body">→ <span class="prog">数字核对（程序 · 一致率必须 100%）</span> → <span class="man">✍️ 签发（人 · 卡点2）</span> → 导出归档（PDF / Word）</div>
+  <div class="note">中途任何拿不准 → 停下转人工（失败关闭），绝不猜测补全</div>
+</div>
+
+<div class="box" style="left:130px; top:400px; width:980px; height:106px;">
+  <h3>业务管控 <small>责任与证据</small></h3>
+  <div class="body s">双卡点人工确认：事前锁口径 · 事后签发担责　｜　数字一致率 100% 硬门禁，差一个发不出去</div>
+  <div class="body s">每个数字可点开凭证（SQL + 指纹）　｜　打回 / 驳回全程留痕，可追溯（审计包 + 血缘档案）</div>
+</div>
+
+<div class="box" style="left:130px; top:540px; width:980px; height:120px;">
+  <h3>业务资产 <small>业务人员自助维护 · 零代码</small></h3>
+  <div class="body s">报告模板库（多版本 · 发布即生效） · 指标口径库（人工核验的取数模板） · 事件知识库（归因候选） · 黄金评测集（105 条手写基准）</div>
+  <div class="body s">自助闭环：一句话 AI 起草 → 缺口指标向导现场制作 → 发布 → 出报告（零文件改动 · 零重启）</div>
+</div>
+
+<div class="box data" style="left:130px; top:694px; width:980px; height:106px;">
+  <h3>业务产出</h3>
+  <div class="body s">已签发报告（每个数字带凭证引用） · 审计包（逐数核对明细） · 血缘档案（需求到审批全链） · PDF / Word（图表必附数据表） · 运行看板（健康度与成本）</div>
+</div>
+
+<div class="side" style="left:14px; top:452px; width:130px; text-align:left;">打回重生成 ↺<br>驳回 REJECTED</div>
+<div class="side" style="left:1190px; top:410px; width:40px; color:#5a6b85; writing-mode:vertical-lr; letter-spacing:2px; height:120px;">资产供给主流程</div>
+
+<div class="legend">
+  <div class="it"><span class="sw" style="background:#e9f5fc;border-color:#7cb9dc;"></span>人工卡点</div>
+  <div class="it"><span class="tx ai">橙字</span>AI 受限参与</div>
+  <div class="it"><span class="tx prog">蓝字</span>程序确定性</div>
+  <div class="it"><span class="sw" style="background:#f5f6f9;border-color:#c9d0dc;"></span>业务产出</div>
+</div>
+
+</div>
+</body>
+</html>

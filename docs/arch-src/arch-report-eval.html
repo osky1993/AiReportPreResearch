@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>智能报告流水线 · 评测体系三层验证</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif; }
+  .canvas { position:relative; width:1280px; height:780px; }
+  .box { position:absolute; background:#fff; border:2.5px solid #2f6fe4; border-radius:14px; padding:13px 20px; }
+  .box h3 { margin:0 0 7px; font-size:19px; color:#1d5fd6; font-weight:700; white-space:nowrap; }
+  .box h3 small { font-weight:600; font-size:13px; color:#5a6b85; margin-left:8px; }
+  .mono { font-family:"SF Mono",Menlo,monospace; font-size:12.5px; color:#233046; line-height:1.6; white-space:nowrap; }
+  .badge { margin-top:7px; font-size:12px; color:#1d7fae; font-weight:700; border-top:1px dashed #cfe0ee; padding-top:5px; white-space:nowrap; }
+  .data { background:#f5f6f9; border-color:#c9d0dc; } .data h3 { color:#3d4a5e; }
+  .headline { position:absolute; font-size:20px; font-weight:800; color:#1d5fd6; letter-spacing:.5px; white-space:nowrap; }
+  .num { position:absolute; width:46px; height:46px; border-radius:50%; background:#2f6fe4; color:#fff; font-size:20px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+  .bar { position:absolute; background:#f5f6f9; border:2px solid #c9d0dc; border-radius:10px; padding:11px 20px; font-size:13.5px; color:#3d4a5e; white-space:nowrap; }
+  .lbl { position:absolute; font-size:12.5px; color:#8a97ab; font-weight:700; white-space:nowrap; }
+  svg.arrows { position:absolute; inset:0; pointer-events:none; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+<div class="headline" style="left:80px; top:28px;">怎么防止既当运动员又当裁判？—— 三层互相独立的验证</div>
+
+<svg class="arrows" width="1280" height="780">
+  <defs>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#7a8aa0"/></marker>
+  </defs>
+  <path d="M596 168 C 530 168 510 260 466 292" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M596 366 H 470" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M596 566 C 530 566 510 474 466 440" stroke="#7a8aa0" stroke-width="2.5" fill="none" marker-end="url(#ag)"/>
+</svg>
+
+<!-- 被评测对象 -->
+<div class="box" style="left:80px; top:262px; width:386px; height:210px;">
+  <h3>被评测对象 <small>报告流水线</small></h3>
+  <div class="mono">六步 + 双卡点 + 审计门禁<br><br>「报告数字一致率」恒为 100% ——<br>不足 100% 本来就 BLOCKED 出不了报告<br>评测度量的是 BLOCKED 率与失败归因</div>
+</div>
+
+<!-- 三层 -->
+<div class="num" style="left:576px; top:92px;">1</div>
+<div class="box" style="left:640px; top:80px; width:600px; height:176px;">
+  <h3>审计器自证 <small>随行证据 · 人人可查</small></h3>
+  <div class="mono">每次运行审计包随库落痕：逐数核对明细 / 一致率 / 重写轮次 / 图表逐点<br>历次端到端实录一致率全部 100%（单次最多 45 个数字）<br>真实触发过：W25 初稿违规回灌重写 · run#22 外币格式错杀（fail-closed）</div>
+  <div class="badge">独立性来源：证据随报告落库，卡点2 页面全量展示，不靠事后补测</div>
+</div>
+
+<div class="num" style="left:576px; top:290px;">2</div>
+<div class="box" style="left:640px; top:278px; width:600px; height:176px;">
+  <h3>外部交叉核对 <small>评测基线 · 体外基准</small></h3>
+  <div class="mono">黄金需求集：15 MATCH + 6 BLOCKED + 7 FACTS<br>105 条期望值全部手写 SQL 直查得出（referenceSql 逐条落档）<br>当前基线：取数等价 105/105 · 匹配 15/15 · 失败关闭 6/6 —— POST /eval 随时重跑</div>
+  <div class="badge">独立性来源：期望值不得由被评测系统自产自证</div>
+</div>
+
+<div class="num" style="left:576px; top:490px;">3</div>
+<div class="box" style="left:640px; top:478px; width:600px; height:176px;">
+  <h3>对抗性单测 <small>把审计器当靶子</small></h3>
+  <div class="mono">403 个纯逻辑用例：故意把 6,570 万篡改成 6,571 万验证必须拦截<br>未知凭证引用 / 单位错配 / 外币回读 / 中文数词变体 / 图表逐点 / 因果措辞<br>注入对抗固化为回归项：run #18 / #26 / #27 / #35</div>
+  <div class="badge">独立性来源：测试打的是审计器本身 —— 防「裁判失明」</div>
+</div>
+
+<div class="lbl" style="left:500px; top:210px;">自证</div>
+<div class="lbl" style="left:508px; top:342px;">体外基准</div>
+<div class="lbl" style="left:496px; top:508px;">打靶</div>
+
+<!-- 回归纪律 -->
+<div class="bar" style="left:80px; top:692px; width:1120px;">回归纪律：任何合入前 <b>mvn test 全绿 + 两层评测不回退</b> · 资产扩容后重跑 —— 规划中（G06-B）：把确定性层挂成资产 publish 的<b>自动影子回归门禁</b></div>
+
+</div>
+</body>
+</html>
