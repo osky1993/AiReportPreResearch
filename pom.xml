@@ -12,10 +12,10 @@
     </parent>
 
     <groupId>com.treasury</groupId>
-    <artifactId>nl2mql2sql</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <name>nl2mql2sql</name>
-    <description>NL -> MQL(IR) -> SQL demo over MySQL</description>
+    <artifactId>ai-query-report-demo</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <name>AiQueryReportDemo</name>
+    <description>智能问数与报告生成标准示例工程：NL→MQL→SQL 确定性查询底座（白名单校验 + jOOQ 编译），叠加报告生成六步可信流水线（锁口径 → 零-LLM 确定性取数 → 程序造事实 → LLM 照事实写 → 程序核数字 → 人工签发）</description>
 
     <properties>
         <java.version>17</java.version>
