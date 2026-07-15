@@ -212,6 +212,30 @@ export function listMetrics(): Promise<MetricSummary[]> {
   return http('/metrics')
 }
 
+/**
+ * 导出已签发报告（仅 PUBLISHED）。gk 模板无图表，chartImages 传空；
+ * 文件名从 Content-Disposition 的 filename*=UTF-8'' 解出（中文名）。
+ */
+export async function exportRun(
+  runId: number,
+  format: 'pdf' | 'docx',
+): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`/api/report/runs/${runId}/export?format=${format}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chartImages: [] }),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(body.error || `导出失败（HTTP ${res.status}）`)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') ?? ''
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  const filename = m ? decodeURIComponent(m[1]!) : `report-${runId}.${format}`
+  return { blob, filename }
+}
+
 // ---- 二次解析辅助（失败降级为 null，由视图容错呈现原文） ----
 
 export function parseOutline(run: ReportRun): Outline | null {

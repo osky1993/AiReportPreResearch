@@ -3,10 +3,15 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   approveOutline,
+  approvePublish,
+  confirmClaim,
+  exportRun,
   getRun,
   listMetrics,
+  parseAudit,
   parseOutline,
   regenerateOutline,
+  rejectPublish,
   resumeRun,
   takePrimedRunDetail,
   type Outline,
@@ -14,6 +19,9 @@ import {
 } from '@/api/report'
 import { PHASES, fmtTime, statusMeta } from '@/utils/reportMeta'
 import OutlineGate from '@/components/report/OutlineGate.vue'
+import ReportBody from '@/components/report/ReportBody.vue'
+import FactsEvidence from '@/components/report/FactsEvidence.vue'
+import ClaimsPanel from '@/components/report/ClaimsPanel.vue'
 
 const route = useRoute()
 const detail = ref<RunDetail | null>(null)
@@ -26,6 +34,28 @@ let pollTimer: ReturnType<typeof setTimeout> | null = null
 
 const run = computed(() => detail.value?.run ?? null)
 const outline = computed<Outline | null>(() => (run.value ? parseOutline(run.value) : null))
+const audit = computed(() => (run.value ? parseAudit(run.value) : null))
+
+/** 数字一致率（无数字按 100% 处理，与后端除零口径一致）。 */
+const consistencyRate = computed(() => {
+  const a = audit.value
+  if (!a) return null
+  return a.totalNumbers ? ((100 * a.matchedNumbers) / a.totalNumbers).toFixed(0) : '100'
+})
+
+const isFinalStage = computed(() =>
+  ['AWAITING_PUBLISH_APPROVAL', 'PUBLISHED', 'REJECTED'].includes(run.value?.status ?? ''),
+)
+
+const approver2 = ref('')
+const rejectReason = ref('')
+const exportErr = ref('')
+const exporting = ref('')
+const factsRef = ref<InstanceType<typeof FactsEvidence> | null>(null)
+
+function onFactClick(factKey: string) {
+  factsRef.value?.highlight(factKey)
+}
 
 /** RUNNING 但 run 行长时间未更新（服务端 resume 的 stale 判定为 2 分钟）→ 提示可续跑 */
 const staleRunning = computed(() => {
@@ -141,6 +171,35 @@ const onApprove = (approver: string, o: Outline) =>
 const onRegenerate = (revised: string) =>
   doAction(() => regenerateOutline(run.value!.runId, revised))
 const onResume = () => doAction(() => resumeRun(run.value!.runId))
+const onPublish = () =>
+  doAction(() => approvePublish(run.value!.runId, approver2.value.trim() || '业务用户'))
+const onReject = () =>
+  doAction(() =>
+    rejectPublish(run.value!.runId, approver2.value.trim() || '业务用户', rejectReason.value.trim()),
+  )
+const onConfirmClaim = (claimId: number) =>
+  doAction(() => confirmClaim(run.value!.runId, claimId, approver2.value.trim() || '业务用户'))
+
+async function doExport(format: 'pdf' | 'docx') {
+  if (exporting.value || !run.value) return
+  exporting.value = format
+  exportErr.value = ''
+  try {
+    const { blob, filename } = await exportRun(run.value.runId, format)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    exportErr.value = e instanceof Error ? e.message : '导出失败'
+  } finally {
+    exporting.value = ''
+  }
+}
 
 onMounted(async () => {
   load()
@@ -202,8 +261,8 @@ onBeforeUnmount(stopPoll)
             {{ fmtTime(run.outlineApprovedAt) }}
           </div>
           <div v-if="run.publishApprovedAt">
-            <span class="k">签发</span>{{ run.publishApprovedBy }} ·
-            {{ fmtTime(run.publishApprovedAt) }}
+            <span class="k">{{ run.status === 'REJECTED' ? '驳回' : '签发' }}</span
+            >{{ run.publishApprovedBy }} · {{ fmtTime(run.publishApprovedAt) }}
           </div>
         </div>
         <div class="pipe">
@@ -265,18 +324,78 @@ onBeforeUnmount(stopPoll)
         </div>
       </section>
 
-      <!-- 终稿区（阶段2 完整实现签发界面；当前提供预览） -->
-      <section
-        v-if="
-          ['AWAITING_PUBLISH_APPROVAL', 'PUBLISHED', 'REJECTED'].includes(run.status) &&
-          run.reportMd
-        "
-        class="card"
-      >
-        <h2>报告草稿预览</h2>
-        <p class="hint">签发审批界面（含审计包与证据钻取）将在下一阶段提供。</p>
-        <pre class="md-preview">{{ run.reportMd }}</pre>
-      </section>
+      <!-- 终稿区：待签发 / 已签发 / 已驳回 -->
+      <template v-if="isFinalStage && run.reportMd">
+        <section class="card">
+          <h2>
+            {{ run.status === 'PUBLISHED' ? '报告（已签发）' : '报告终稿' }}
+            <span class="head-hint">正文数字均可点击 [fact_xxx] 查看取数证据</span>
+          </h2>
+
+          <!-- 审计结论行 -->
+          <div v-if="audit" class="audit-line" :class="{ bad: !audit.passed }">
+            <span
+              >⑥ 证据审计：<b>{{ audit.passed ? '通过' : '未通过' }}</b></span
+            >
+            <span
+              >核对数字 <b>{{ audit.totalNumbers }}</b> 个</span
+            >
+            <span
+              >一致 <b>{{ audit.matchedNumbers }}</b> 个（一致率
+              <b>{{ consistencyRate }}%</b>）</span
+            >
+            <span
+              >AI 重写 <b>{{ audit.rewriteRounds }}</b> 轮</span
+            >
+            <span v-if="audit.chartChecks?.length"
+              >图表核对
+              <b
+                >{{ audit.chartChecks.filter((c) => c.ok).length }}/{{
+                  audit.chartChecks.length
+                }}</b
+              >
+              张</span
+            >
+          </div>
+
+          <ReportBody :md="run.reportMd" @fact-click="onFactClick" />
+
+          <!-- 卡点2 操作 / 签发留痕 / 驳回原因 -->
+          <div v-if="run.status === 'AWAITING_PUBLISH_APPROVAL'" class="publish-bar">
+            <input v-model="approver2" class="name-input" placeholder="签发人（默认：业务用户）" />
+            <button class="btn-primary" :disabled="busy" @click="onPublish">
+              ✍️ 批准签发
+            </button>
+            <input v-model="rejectReason" class="revise-input" placeholder="驳回原因" />
+            <button class="btn-danger" :disabled="busy" @click="onReject">驳回</button>
+          </div>
+          <div v-else-if="run.status === 'PUBLISHED'" class="published-bar">
+            ✅ {{ run.publishApprovedBy }} 于 {{ fmtTime(run.publishApprovedAt) }} 签发
+            <button class="btn-ghost" :disabled="!!exporting" @click="doExport('pdf')">
+              {{ exporting === 'pdf' ? '导出中…' : '📄 导出 PDF' }}
+            </button>
+            <button class="btn-ghost" :disabled="!!exporting" @click="doExport('docx')">
+              {{ exporting === 'docx' ? '导出中…' : '📝 导出 Word' }}
+            </button>
+            <span v-if="exportErr" class="err">{{ exportErr }}</span>
+          </div>
+          <div v-else class="rejected-bar">已驳回：{{ run.blockedReason || '（未填原因）' }}</div>
+        </section>
+
+        <section v-if="detail && detail.claims.length" class="card">
+          <ClaimsPanel
+            :claims="detail.claims"
+            :can-confirm="run.status === 'AWAITING_PUBLISH_APPROVAL' || run.status === 'PUBLISHED'"
+            :busy="busy"
+            @confirm="onConfirmClaim"
+            @fact-click="onFactClick"
+          />
+        </section>
+
+        <section v-if="detail && detail.facts.length" class="card">
+          <FactsEvidence ref="factsRef" :facts="detail.facts" />
+        </section>
+      </template>
 
       <!-- 步骤留痕 -->
       <section v-if="sortedSteps.length" class="card">
@@ -584,16 +703,73 @@ onBeforeUnmount(stopPoll)
   cursor: not-allowed;
 }
 
-.md-preview {
+.head-hint {
+  margin-left: 10px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--tb-text-3);
+}
+
+.audit-line {
   margin-top: 12px;
-  padding: 14px 16px;
+  padding: 9px 14px;
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--tb-green);
+  background: var(--tb-green-bg);
+  border-radius: 8px;
+}
+
+.audit-line.bad {
+  color: var(--tb-red);
+  background: var(--tb-red-bg);
+}
+
+.publish-bar {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--tb-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.name-input {
+  width: 190px;
+  padding: 6px 12px;
+  border: 1px solid var(--tb-border);
+  border-radius: 7px;
+  font-family: var(--tb-font);
+  font-size: 13px;
+  outline: none;
+}
+
+.name-input:focus {
+  border-color: var(--tb-blue-500);
+}
+
+.published-bar {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--tb-border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+  color: var(--tb-green);
+}
+
+.rejected-bar {
+  margin-top: 16px;
+  padding: 10px 14px;
   background: var(--tb-bg);
   border-radius: 8px;
-  font-family: var(--tb-font);
   font-size: 13.5px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
+  color: var(--tb-text-2);
 }
 
 .steps-summary {
