@@ -34,6 +34,11 @@ const router = createRouter({
       component: () => import('../views/TemplateAuthorView.vue'),
     },
     {
+      path: '/assets/metrics/new',
+      name: 'metric-wizard',
+      component: () => import('../views/MetricWizardView.vue'),
+    },
+    {
       path: '/assets/:kind',
       name: 'assets',
       component: () => import('../views/AssetsView.vue'),

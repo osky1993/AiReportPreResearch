@@ -469,6 +469,9 @@ watch([kind, id], load)
 
         <template v-if="caliber.status === 'ACTIVE'">
           <div v-if="!caliberPending" class="confirm-actions" style="margin-top: 14px">
+            <RouterLink :to="`/assets/metrics/new?caliber=${caliber.id}`" class="btn-ghost">
+              ⬆️ 升格为指标（直入参数化）
+            </RouterLink>
             <button class="btn-ghost op-dep" :disabled="actBusy" @click="caliberPending = true">
               下架该口径
             </button>

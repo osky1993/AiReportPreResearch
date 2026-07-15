@@ -224,6 +224,81 @@ export function getMetricReferences(
   return http(`/metrics/${encodeURIComponent(id)}/references`)
 }
 
+// ---- 指标制作向导（试查 → 反翻译 → 参数化 → 保存） ----
+
+export interface TryResult {
+  mql: Record<string, unknown> | null
+  sql: string | null
+  rows: Array<Record<string, unknown>> | null
+  columns: string[] | null
+  success: boolean
+  errors: string[] | null
+  warnings: string[] | null
+  clarifyReason: string | null
+}
+
+/** 试查：走底座自由生成链路（资产制作期工具，失败也返回 200 + success=false）。 */
+export function tryMetric(question: string): Promise<TryResult> {
+  return post('/metrics/try', { question })
+}
+
+/** 口径反翻译：把 MQL 译回业务话术供人工核对。 */
+export function explainMql(
+  mql: Record<string, unknown>,
+): Promise<{ explanation: string; caveats: string[] }> {
+  return post('/metrics/explain', { mql })
+}
+
+export interface ParamSuggestion {
+  path: string
+  field: string
+  op: string
+  value: string
+  placeholder: string
+  reason: string
+}
+
+/** 参数化扫描：列出可替换为 {{period_start}}/{{period_end}} 的日期字面量建议。 */
+export function parameterizeScan(
+  mql: Record<string, unknown>,
+): Promise<{ suggestions: ParamSuggestion[]; notes: string[] }> {
+  return post('/metrics/parameterize', { mql })
+}
+
+/** 参数化应用：按勾选的建议 path 替换占位符（服务端重算校验，防篡改任意节点）。 */
+export function parameterizeApply(
+  mql: Record<string, unknown>,
+  apply: string[],
+): Promise<{
+  mqlTemplate: Record<string, unknown>
+  applied: string[]
+  remaining: ParamSuggestion[]
+}> {
+  return post('/metrics/parameterize', { mql, apply })
+}
+
+/** 指标定义体（保存用；派生/维度/异常规则等高级形态暂不在向导内编辑）。 */
+export interface MetricSaveBody {
+  metricId: string
+  name: string
+  unit: string
+  timeBound: boolean
+  comparable: boolean
+  valueColumn: string
+  nullPolicy: string
+  qualityChecks: string[]
+  mqlTemplate: Record<string, unknown>
+}
+
+/** 保存指标（服务端跑五类校验链：STRUCTURE/PLACEHOLDER/MQL_VALIDATION/TRIAL_EXECUTION/RESULT_SHAPE）。 */
+export function createMetric(
+  metric: MetricSaveBody,
+  tryQuestion: string,
+  createdBy: string,
+): Promise<SaveResult> {
+  return post('/metrics', { metric, tryQuestion, createdBy })
+}
+
 // ---- 问数沉淀口径（caliber） ----
 
 export interface CaliberAsset {

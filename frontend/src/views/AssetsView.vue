@@ -84,6 +84,9 @@ watch(kind, load)
       <RouterLink v-if="kind === 'templates'" to="/assets/templates/new" class="new-btn">
         ＋ 制作新模板
       </RouterLink>
+      <RouterLink v-if="kind === 'metrics'" to="/assets/metrics/new" class="new-btn">
+        ＋ 制作新指标
+      </RouterLink>
     </nav>
 
     <section class="card">
