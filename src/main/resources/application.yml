@@ -6,7 +6,7 @@ spring:
   config:
     import: "optional:application-local.yml"
   datasource:
-    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:23306}/${DB_NAME:reportbi}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:23306}/${DB_NAME:reportbigk}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -26,8 +26,9 @@ llm:
 
 # 要分析的业务库（schema 自动反射自该库）
 schema:
-  database: reportbi
+  database: reportbigk
   # 元数据表排除：这些表不进入 NL2SQL 的表白名单与 prompt schema（口径资产表 + 报告流水线状态表 + 报告资产表 + 事件/归因表）
+  # （原第四张业务表 treasury_balance_monthly 经确认无用已于 2026-07-15 从库中删除，无需再排除）
   exclude-tables: ${SCHEMA_EXCLUDE_TABLES:caliber_asset,report_run,report_step,report_fact,report_template,report_metric,report_event,report_claim}
   linking:
     mode: ${SCHEMA_LINKING_MODE:vector}   # full=全量注入 | vector=向量召回TopK

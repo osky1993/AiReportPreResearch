@@ -115,6 +115,23 @@ class NumberAuditorTest {
     }
 
     @Test
+    void yiYuanUnitRendersAndVerifies() {
+        // gk 国库域：金额以亿元存储直显（两位小数、无量级换算）——替换与回读全链一致
+        Map<String, FactRecord> gk = Map.of("fact_101", fact("fact_101", "817.44", "亿元"));
+        String rendered = NumberAuditor.substitute("月末全辖库存余额{{fact_101}}。", gk);
+        assertTrue(rendered.contains("817.44 亿元[fact_101]"), rendered);
+
+        AuditResult audit = NumberAuditor.verifyRendered(rendered, gk, 0);
+        assertTrue(audit.passed(), String.valueOf(audit.violations()));
+        assertEquals(1, audit.matchedNumbers());
+
+        // 篡改与量词重复两个构型：篡改必拦；引用后重复「亿元」量词被去重
+        assertFalse(NumberAuditor.verifyRendered("余额818.44 亿元[fact_101]。", gk, 0).passed());
+        assertEquals("余额817.44 亿元[fact_101]。",
+                NumberAuditor.dedupeUnitAfterRef("余额817.44 亿元[fact_101]亿元。"));
+    }
+
+    @Test
     void tamperedNumberIsCaught() {
         // 故意注入不一致：6,570 篡改为 6,571 —— 审计必须拦截（唯一发布硬门禁）
         String tampered = "余额合计6,571.00 万元[fact_001]，交易4 笔[fact_002]。";

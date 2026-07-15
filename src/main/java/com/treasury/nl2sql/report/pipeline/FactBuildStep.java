@@ -156,8 +156,9 @@ public class FactBuildStep {
         return new FactBuildResult(facts, notes);
     }
 
-    /** 章节 fact 数上限（T0 拍板 20，含 BASE+DERIVED+维度行+占比）：触顶失败关闭，守 ⑤ 的占位符纪律。 */
-    static final int CHAPTER_FACT_LIMIT = 20;
+    /** 章节 fact 数上限（含 BASE+DERIVED+维度行+占比）：触顶失败关闭，守 ⑤ 的占位符纪律。
+     *  T0 拍板 20；gk 首期放大至 30——苏州分县维度全列 10 县域需 2N+1=21（业务确认必须全列，不截断）。 */
+    static final int CHAPTER_FACT_LIMIT = 30;
     /** 图表序列独立配额（P4 契约2 裁定：序列 fact 不进 ⑤ prompt，故不占章 20 上限，独立管数据量）。 */
     static final int CHAPTER_CHART_SERIES_LIMIT = 24;
 
@@ -375,6 +376,10 @@ public class FactBuildStep {
                 return money.format(value.divide(BigDecimal.valueOf(10000), 2, RoundingMode.HALF_UP)) + " 万元";
             }
             return money.format(value.setScale(2, RoundingMode.HALF_UP)) + " 元";
+        }
+        if ("亿元".equals(unit)) {
+            // gk 国库域：金额以亿元存储（业务确认），两位小数展示，不做量级换算
+            return money.format(value.setScale(2, RoundingMode.HALF_UP)) + " 亿元";
         }
         if ("percent".equals(unit)) {
             BigDecimal p = value.setScale(1, RoundingMode.HALF_UP);

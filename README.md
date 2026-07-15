@@ -4,7 +4,7 @@
 **报告生成 6 步流水线编排层**，做出「锁口径(人) → 结构化取数(引擎) → 程序造事实 →
 LLM 只照着事实写 → 程序核数字 → 人签发」的最小可信闭环。
 
-- 演示场景：**司库资金周报** + **资金快报**（多模板按需求自动匹配；reportbi 库，种子数据覆盖 2026-05-12 ~ 06-30，推荐报告期 2026-W26）
+- 演示场景（**gk 分支**）：**国库库存月报**（reportbigk 库，gk 国库三表**真实数据**：库存日记账 2024-01 起逐日、收入明细 202401~202607、82 个国库机构；金额单位亿元；推荐报告期 **2026 年 6 月**。master 分支为司库周报/快报 demo 场景）
 - 演示页：启动后打开 **http://localhost:8080/report.html**（原查询引擎演示页仍在 `/`）
 - 设计文档（`plan/`）：`ideaV2-核心路径.md`（主线）、`ideaV2.md`（全量）、`ideaV2-业务版说明.md`（业务版）；阶段计划：`roadmap.md` + `phase01~06.md`
 - 归档材料（`docs/`）：技术说明 PDF 各版本 + 架构图 PNG（图源 `docs/arch-src/`）
@@ -53,20 +53,21 @@ LLM 正文里所有数值只能写 `{{fact_key}}` 占位符（例外：日期、
 
 前置与 `nl2mql2sqlDemo` 完全一致：JDK 17+（建议 21）、MySQL（默认 `127.0.0.1:23306`）、
 LLM 与 embedding 密钥在 `src/main/resources/application-local.yml`（已 gitignore）。
-本项目连 **reportbi** 库（见 `application.yml` 的 `DB_NAME:reportbi`）。
+本分支连 **reportbigk** 库（见 `application.yml` 的 `DB_NAME:reportbigk`）。
 
 ```bash
-# 0) 建业务库（首次/新环境；建库 reportbi 并灌入 23 张业务表与演示种子数据。
-#    ⚠️ 可重复执行=DROP 重建，会清空业务表与 caliber_asset 口径沉淀，已有环境慎重）
+# 0) 建业务库表（首次/新环境；建库 reportbigk + gk 国库三表 + caliber_asset。
+#    全 CREATE IF NOT EXISTS、无 DROP，可安全重复执行；业务数据为对方提供的真实数据，
+#    需另行人工导入，不在脚本内）
 mysql -h127.0.0.1 -P23306 -uroot -p < db/00-init.sql
 
 # 1) 建流水线状态表（可重复执行；DROP 重建=清空全部运行记录）
-mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/01-report-tables.sql
+mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/01-report-tables.sql
 
 # 1b) 建资产表（可重复执行；CREATE IF NOT EXISTS，禁止 DROP 重建——版本行不可变）
-mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/02-asset-tables.sql
+mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/02-asset-tables.sql
 
-# 2) 启动（空库自动种入 classpath 种子：2 个模板 + 16 个指标，PUBLISHED v1；
+# 2) 启动（空库自动种入 classpath 种子：1 个模板「国库库存月报」+ 8 个库存指标，PUBLISHED v1；
 #    随后全量自检：模板引用完整性 + keywords 非空 + 指标 MQL 模板过校验器）
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 mvn -q spring-boot:run          # 看到「报告资产注册表就绪」即就绪；再次启动不重复种入
@@ -80,17 +81,23 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
 三个演示页：`report.html`（报告流水线）、`template-admin.html`（模板管理 + AI 起草）、
 `metric-wizard.html`（指标制作向导）。按 A→B→C 顺序演示，或单挑一组。
 
+> **gk 分支适配说明**：下文 B/C 两节中的示例话术与「run #N 实录」出自 master 司库 demo 域
+> （周报/快报、账户/币种等），是机制与安全边界的**验收历史记录**——机制在 gk 分支全部适用，
+> 演示时把话术对应替换为国库域即可（各页面的预置示例 chips 已全部换成 gk 问法，照点即用）。
+> A 节主脚本已按 gk 域改写。
+
 ### A　基础流水线（打开 http://localhost:8080/report.html）
 
-1. **发起**：输入「生成 2026 年第 26 周的司库资金周报，和上周对比」→ ① 同步生成大纲（5~20 秒）。
-2. **卡点1**：确认页展示章节及其指标（可勾掉不要的指标）、报告期 2026-W26 / 对比期 W25、
-   模板版本徽章（创建时固化，续跑不追新版）；映射不上的需求表述红字提示（软失败，不阻断）。
-   点「确认口径」→ ②~⑥ 异步执行（页面 1.5s 轮询；⑤ 为 LLM 调用约 30~90 秒）。
+1. **发起**：输入「生成 2026 年 6 月的国库库存月报」→ ① 同步生成大纲（5~20 秒）。
+2. **卡点1**：确认页展示章节及其指标（可勾掉不要的指标）、报告期 2026-M06 / 环比基期 M05 /
+   同比基期 2025-M06、模板版本徽章（创建时固化，续跑不追新版）；映射不上的需求表述红字提示
+   （软失败，不阻断）。点「确认口径」→ ②~⑥ 异步执行（页面 1.5s 轮询；⑤ 为 LLM 调用约 30~90 秒）。
 3. **卡点2**：审计条显示「核对数字 N 个 / 一致率 100% / 重写 X 轮」；报告正文里每个数字点击
    `[fact_xxx]` 跳到证据表，展开可见该数字的 **SQL、sql_hash、result_hash、MetricQuerySpec**；
-   核对无误后「审批发布」。
-4. **多模板匹配**：输入「出一份 2026 年第 26 周的资金快报」→ 命中「资金快报」模板（2 章）
-   出报告（快报指标多为期间指标，话术须带周标签，否则报告期解析失败关闭）。
+   第三章「分县库存分布」为维度拆解表格（十个县域逐行 fact + 占比，市级库本级不在其列——
+   其所属县为业务占位 'NNNNNNNNNN'）；核对无误后「审批发布」。
+4. **别名与口语化匹配**：输入「生成 2026 年 6 月的库款月报，和上月及去年同期对比」→ 经
+   keywords 别名「库款月报」命中同一模板（gk 首期一类模板；话术须带月份，否则报告期解析失败关闭）。
 5. **导出归档**：已签发报告的签发行提供「导出 PDF / 导出 Word」——正文/事实/图表一律取
    库中 PUBLISHED 终稿（服务端不信任客户端文字），图表离屏按终稿 option 确定性出图上送，
    且**每张图必附数据表**（数值只取 fact 的 display_value，与 ⑥ 审计同键同源）——导出文档
@@ -188,7 +195,7 @@ curl 版（无界面）：
 
 ```bash
 curl -s localhost:8080/api/report/runs -H 'Content-Type: application/json' \
-  -d '{"requestText":"生成 2026 年第 26 周的司库资金周报，和上周对比"}' | jq '.run.status'
+  -d '{"requestText":"生成 2026 年 6 月的国库库存月报"}' | jq '.run.status'
 curl -s localhost:8080/api/report/runs/1/outline/approve -H 'Content-Type: application/json' \
   -d '{"approver":"demo"}' | jq '.run.status'
 watch -n2 'curl -s localhost:8080/api/report/runs/1 | jq ".run.status, .run.phase"'
@@ -198,7 +205,11 @@ curl -s localhost:8080/api/report/runs/1/publish/approve -H 'Content-Type: appli
 
 ### 评测基线（Phase02 建立，回归门禁的一部分）
 
-黄金需求集 `resources/report/eval/golden-set.json`（15 MATCH + 6 BLOCKED + 7 FACTS，
+> **gk 分支注记**：`golden-set.json` 的 master 司库域用例（15 MATCH + 6 BLOCKED + 7 FACTS/105 值）
+> 已随业务域替换**清空**，gk 库存月报用例待指标口径与对方成品报告核对后重建（FACTS 期望值仍须
+> 手写 SQL 直查 reportbigk 真实数据得出）。下表为 master 域历史基线，作机制与门禁标准的记录保留。
+
+黄金需求集 `resources/report/eval/golden-set.json`（master 域曾为 15 MATCH + 6 BLOCKED + 7 FACTS，
 FACTS 的 105 条期望值全部**手写 SQL 直查得出**、referenceSql 逐条落档——期望值不得由被评测系统自产自证；
 维度行按 `dimensions` 一行一键、图表序列点按 `periodLabel` 一期一键定位）。分层评测，只读不写状态表：
 
@@ -427,21 +438,23 @@ mysql> exit
 > 注意端口：服务器上自装的 MySQL 默认端口是 **3306**，而工程配置的默认值是 23306（开发机习惯），
 > 所以 7.5.2 的启动脚本里必须写 `DB_PORT=3306`。测试库放本机即可，无需对外开放 3306。
 
-#### 7.4.3 建库、灌种子数据
+#### 7.4.3 建库、导入业务数据
 
-把源码里的 `db/` 目录上传到服务器（下一步 7.5.1 一并上传），然后**按编号顺序**执行三个脚本：
+把源码里的 `db/` 目录上传到服务器（下一步 7.5.1 一并上传），然后**按编号顺序**执行三个脚本，
+再人工导入 gk 三表的真实业务数据（数据文件由业务方提供，不在源码内）：
 
 ```bash
-# mysql -uroot -p < db/00-init.sql              # 建 reportbi 库 + 23 张业务表 + 演示种子数据
-# mysql -uroot -p reportbi < db/01-report-tables.sql   # 流水线运行状态表
-# mysql -uroot -p reportbi < db/02-asset-tables.sql    # 模板/指标等资产表
+# mysql -uroot -p < db/00-init.sql              # 建 reportbigk 库 + gk 国库三表 + caliber_asset（无种子数据）
+# mysql -uroot -p reportbigk < db/01-report-tables.sql   # 流水线运行状态表
+# mysql -uroot -p reportbigk < db/02-asset-tables.sql    # 模板/指标等资产表
+# （随后导入业务数据 dump，如：mysql -uroot -p reportbigk < gk-data.sql）
 
-# 验证——应列出 30 张左右的表：
-# mysql -uroot -p -e 'SHOW TABLES' reportbi
+# 验证——应列出 12 张表，且三张 treasury_* 表有数据：
+# mysql -uroot -p -e 'SHOW TABLES' reportbigk
 ```
 
-> ⚠️ `00-init.sql` 和 `01-report-tables.sql` 是 DROP 重建脚本：首次部署随便跑；但在**已经用过一段时间**的
-> 环境上重跑会清空业务数据/运行记录，重跑前想清楚。`02-asset-tables.sql` 是 `CREATE IF NOT EXISTS`，
+> ⚠️ `00-init.sql` 全部 `CREATE IF NOT EXISTS`、无 DROP，可安全重复执行；`01-report-tables.sql`
+> 是 DROP 重建脚本，重跑会清空全部运行记录。`02-asset-tables.sql` 是 `CREATE IF NOT EXISTS`，
 > 可安全重复执行，**永远不要**手工 DROP 资产表（版本行不可变是设计约束）。
 
 #### 7.4.4 中文字体（只影响「导出 PDF」功能，可先跳过）
@@ -474,7 +487,7 @@ cd /opt/ai-report
 # ---- 数据库（对应 7.4.2/7.4.3）----
 export DB_HOST=127.0.0.1
 export DB_PORT=3306              # 自装 MySQL 默认 3306；工程默认值是 23306，必须显式覆盖
-export DB_NAME=reportbi
+export DB_NAME=reportbigk
 export DB_USER=root
 export DB_PASSWORD='你的密码'
 
@@ -525,7 +538,7 @@ echo "已启动，PID $(cat app.pid)，日志 logs/app.log"
 ```
 
 然后在自己电脑浏览器打开 `http://服务器IP:8080/report.html`，输入
-「生成 2026 年第 26 周的司库资金周报，和上周对比」走一遍双卡点流程（详细演示脚本见第三章）——
+「生成 2026 年 6 月的国库库存月报」走一遍双卡点流程（详细演示脚本见第三章）——
 能走到卡点2 看到「一致率 100%」并签发，部署即验收通过。
 
 #### 7.5.5 停止 / 重启 / 升级

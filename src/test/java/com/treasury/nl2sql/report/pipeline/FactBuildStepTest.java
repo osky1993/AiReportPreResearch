@@ -272,10 +272,10 @@ class FactBuildStepTest {
 
     @Test
     void chapterFactLimitFailsClosed() {
-        // 两个维度指标 ×（6 行+合计+6 占比）= 26 > 20 → 章节上限失败关闭
+        // 两个维度指标 ×（8 行+合计+8 占比）= 34 > 30 → 章节上限失败关闭
         Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"), "m2", dimMetric("m2"));
-        Object[][] rows = new Object[6][];
-        for (int i = 0; i < 6; i++) rows[i] = new Object[]{"c" + i, new BigDecimal("1")};
+        Object[][] rows = new Object[8][];
+        for (int i = 0; i < 8; i++) rows[i] = new Object[]{"c" + i, new BigDecimal("1")};
         PolicyException e = assertThrows(PolicyException.class, () ->
                 step.run(outline(null, "m1", "m2"), List.of(
                         dimResult(spec("qs1", "m1", "CURRENT", "2026-W26"), rows),

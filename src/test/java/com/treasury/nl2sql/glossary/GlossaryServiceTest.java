@@ -43,11 +43,11 @@ class GlossaryServiceTest {
         GlossaryService g = new GlossaryService(om, schema, new LocalHashingEmbeddingClient(), true, 3);
         g.load();
 
-        List<GlossaryService.Selected> sel = g.select("在途资金还有多少");
+        List<GlossaryService.Selected> sel = g.select("国库库存月末余额还有多少");
 
         assertEquals(3, sel.size());
-        assertTrue(sel.stream().anyMatch(s -> s.term().equals("在途资金")),
-                "Top-3 应含「在途资金」，实际: " + sel);
+        assertTrue(sel.stream().anyMatch(s -> s.term().equals("国库库存")),
+                "Top-3 应含「国库库存」，实际: " + sel);
     }
 
     /** 术语数 ≤ top-n 时全量短路：零 embed 调用，输出与旧全量行为一致。 */

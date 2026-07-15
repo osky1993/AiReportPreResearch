@@ -156,18 +156,18 @@ function step1(){
     }
   }
   return `<div class="card"><h2>① 试查：用自然语言问出这个指标的数</h2>
-    <div class="muted">期间指标请写明具体日期范围（如 2026-06-22 到 06-28），第 3 步会把日期替换为报告期占位符。</div>
-    <textarea id="q" placeholder="例：2026年6月22日到6月28日投资类支出折人民币总金额（不含失败交易）">${esc(WIZ.question)}</textarea>
-    <div class="chip-cat">期间指标示例（带日期范围 → 第 ③ 步参数化为 {{period_start/end}}）</div>
+    <div class="muted">期间指标请写明具体日期（范围或单日，如 2026-06-01 到 06-30、或月末 2026-06-30），第 3 步会把日期替换为报告期占位符。库存余额是日终时点数，须落到某一天（月末），不要跨日求和。</div>
+    <textarea id="q" placeholder="例：2026年6月1日到6月30日全辖国库的借方发生额合计">${esc(WIZ.question)}</textarea>
+    <div class="chip-cat">期间指标示例（带日期 → 第 ③ 步参数化为 {{period_start/end}}）</div>
     <div class="chips">
-      <span class="chip" onclick="fillTrial(this)">2026年6月22日到6月28日投资类支出折人民币总金额（不含失败交易，按最新汇率折算）</span>
-      <span class="chip" onclick="fillTrial(this)">2026年6月22日到6月28日投资类支出的美元原币总金额（不含失败交易）</span>
-      <span class="chip" onclick="fillTrial(this)">2026年6月22日到6月28日税款缴纳的交易笔数（不含失败交易）</span>
+      <span class="chip" onclick="fillTrial(this)">2026年6月1日到6月30日全辖国库的借方发生额合计</span>
+      <span class="chip" onclick="fillTrial(this)">2026年6月30日全辖国库的库存余额合计</span>
+      <span class="chip" onclick="fillTrial(this)">2026年6月30日区县级国库的库存余额合计</span>
     </div>
     <div class="chip-cat">存量指标示例（当前快照，无日期条件 → 第 ③ 步无需参数化）</div>
     <div class="chips">
-      <span class="chip" onclick="fillTrial(this)">当前人民币定期存款账户的余额合计</span>
-      <span class="chip" onclick="fillTrial(this)">当前处于待审批状态的付款单数量</span>
+      <span class="chip" onclick="fillTrial(this)">基础信息表中乡镇级国库的数量</span>
+      <span class="chip" onclick="fillTrial(this)">基础信息表中共有多少个国库机构</span>
     </div>
     <div class="row"><button id="tryBtn" onclick="doTry()">试查（走查询引擎，约 5~20 秒）</button></div>
     <div class="err" id="opErr"></div>

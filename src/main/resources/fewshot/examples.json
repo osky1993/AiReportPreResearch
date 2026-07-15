@@ -1,294 +1,46 @@
 [
   {
-    "question": "每个美元账户在2026年6月的收入合计，从高到低取前5",
+    "question": "2026年6月30日各国库的库存余额，从高到低前10名",
     "mql": {
-      "table": "cash_transaction",
+      "table": "treasury_balance_journal",
+      "columns": ["treasury_short_name", "balance"],
       "filter": [
-        {"field": "currency", "op": "=", "value": "USD"},
-        {"field": "direction", "op": "=", "value": "IN"},
-        {"field": "txn_date", "op": ">=", "value": "2026-06-01"},
-        {"field": "txn_date", "op": "<=", "value": "2026-06-30"}
+        { "field": "stat_date", "op": "=", "value": "2026-06-30" }
       ],
-      "groupBy": ["account_id"],
-      "metrics": [{"op": "sum", "field": "amount", "alias": "total_in"}],
-      "orderBy": [{"field": "total_in", "direction": "desc"}],
-      "limit": 5
-    }
-  },
-  {
-    "question": "按账户名称统计2026年6月的支出总额，并从大到小排列",
-    "mql": {
-      "table": "cash_transaction",
-      "joins": [{"table": "account", "type": "inner",
-                 "on": [{"left": "cash_transaction.account_id", "right": "account.account_id"}]}],
-      "filter": [
-        {"field": "cash_transaction.direction", "op": "=", "value": "OUT"},
-        {"field": "cash_transaction.txn_date", "op": ">=", "value": "2026-06-01"},
-        {"field": "cash_transaction.txn_date", "op": "<=", "value": "2026-06-30"}
+      "orderBy": [
+        { "field": "balance", "direction": "desc" }
       ],
-      "groupBy": ["account.account_name"],
-      "metrics": [{"op": "sum", "field": "cash_transaction.amount", "alias": "total_out"}],
-      "orderBy": [{"field": "total_out", "direction": "desc"}]
+      "limit": 10
     }
   },
   {
-    "question": "列出余额排名前三的账户及其余额",
+    "question": "2026年6月末各所属县的库存余额合计",
     "mql": {
-      "table": "account",
-      "columns": ["account_name", "balance"],
-      "orderBy": [{"field": "balance", "direction": "desc"}],
-      "limit": 3
-    }
-  },
-  {
-    "question": "按币种统计账户数量",
-    "mql": {
-      "table": "account",
-      "groupBy": ["currency"],
-      "metrics": [{"op": "count", "alias": "cnt"}]
-    }
-  },
-  {
-    "question": "处于冻结状态的账户共有多少个",
-    "mql": {
-      "table": "account",
-      "filter": [{"field": "status", "op": "=", "value": "FROZEN"}],
-      "metrics": [{"op": "count", "alias": "cnt"}]
-    }
-  },
-  {
-    "question": "哪些币种的账户总余额超过两千万，列出币种和总余额",
-    "mql": {
-      "table": "account",
-      "groupBy": ["currency"],
-      "metrics": [{"op": "sum", "field": "balance", "alias": "total_balance"}],
-      "having": [{"field": "total_balance", "op": ">", "value": 20000000}]
-    }
-  },
-  {
-    "question": "招商银行开的账户在6月的收入流水，要交易日期、对手方和金额",
-    "mql": {
-      "table": "cash_transaction",
-      "joins": [{"table": "account", "type": "inner",
-                 "on": [{"left": "cash_transaction.account_id", "right": "account.account_id"}]}],
-      "columns": ["cash_transaction.txn_date", "cash_transaction.counterparty", "cash_transaction.amount"],
+      "table": "treasury_balance_journal",
       "filter": [
-        {"field": "account.bank_name", "op": "like", "value": "%招商银行%"},
-        {"field": "cash_transaction.direction", "op": "=", "value": "IN"},
-        {"field": "cash_transaction.txn_date", "op": ">=", "value": "2026-06-01"},
-        {"field": "cash_transaction.txn_date", "op": "<=", "value": "2026-06-30"}
+        { "field": "stat_date", "op": "=", "value": "2026-06-30" }
+      ],
+      "groupBy": ["county_treasury_name"],
+      "metrics": [
+        { "op": "sum", "field": "balance", "alias": "total_balance" }
+      ],
+      "orderBy": [
+        { "field": "total_balance", "direction": "desc" }
       ]
     }
   },
   {
-    "question": "美元和欧元账户的账户名称、币种与余额",
+    "question": "2026年6月一般公共预算收入的本期金额和年累计金额",
     "mql": {
-      "table": "account",
-      "columns": ["account_name", "currency", "balance"],
-      "filter": [{"field": "currency", "op": "in", "value": ["USD", "EUR"]}]
-    }
-  },
-  {
-    "question": "每个币种的平均账户余额是多少",
-    "mql": {
-      "table": "account",
-      "groupBy": ["currency"],
-      "metrics": [{"op": "avg", "field": "balance", "alias": "avg_balance"}]
-    }
-  },
-  {
-    "question": "查询销售类收入的全部流水，列出交易日期、对手方和金额",
-    "mql": {
-      "table": "cash_transaction",
-      "columns": ["txn_date", "counterparty", "amount"],
+      "table": "treasury_income_detail",
       "filter": [
-        {"field": "direction", "op": "=", "value": "IN"},
-        {"field": "category", "op": "=", "value": "SALES"}
+        { "field": "stat_date", "op": "=", "value": "202606" },
+        { "field": "subject_code", "op": "=", "value": "T010101" }
+      ],
+      "metrics": [
+        { "op": "sum", "field": "current_period_amount", "alias": "cur_amount" },
+        { "op": "sum", "field": "year_to_date_amount", "alias": "ytd_amount" }
       ]
-    }
-  },
-  {
-    "question": "找出余额为0、或者已经销户的账户，列出名称和状态",
-    "mql": {
-      "table": "account",
-      "columns": ["account_name", "status"],
-      "filter": [
-        {"or": [
-          {"field": "balance", "op": "=", "value": 0},
-          {"field": "status", "op": "=", "value": "CLOSED"}
-        ]}
-      ]
-    }
-  },
-  {
-    "question": "统计流水里涉及多少个不同的对手方",
-    "mql": {
-      "table": "cash_transaction",
-      "metrics": [{"op": "count", "field": "counterparty", "distinct": true, "alias": "cnt"}]
-    }
-  },
-  {
-    "question": "把交易按金额打标签：50万及以上算大额，其余算小额，统计两类各有多少笔",
-    "mql": {
-      "table": "cash_transaction",
-      "caseColumns": [
-        {"alias": "size_tag",
-         "cases": [
-           {"when": [{"field": "amount", "op": ">=", "value": 500000}], "then": "大额"}
-         ],
-         "else": "小额"}
-      ],
-      "groupBy": ["size_tag"],
-      "metrics": [{"op": "count", "alias": "cnt"}]
-    }
-  },
-  {
-    "question": "金额超过全部流水平均值的交易，给出日期、对手方和金额",
-    "mql": {
-      "table": "cash_transaction",
-      "columns": ["txn_date", "counterparty", "amount"],
-      "filter": [
-        {"field": "amount", "op": ">",
-         "subquery": {"table": "cash_transaction", "metrics": [{"op": "avg", "field": "amount", "alias": "avg_amt"}]}}
-      ]
-    }
-  },
-  {
-    "question": "哪些账户发生过工资类支出？给出这些账户的名称和币种",
-    "mql": {
-      "table": "account",
-      "columns": ["account_name", "currency"],
-      "filter": [
-        {"field": "account_id", "op": "in",
-         "subquery": {
-           "table": "cash_transaction",
-           "columns": ["account_id"],
-           "filter": [{"field": "category", "op": "=", "value": "PAYROLL"}]
-         }}
-      ]
-    }
-  },
-  {
-    "question": "每个交易类别里金额最大的一笔，给出类别、日期、金额及组内名次，按类别排",
-    "mql": {
-      "table": "cash_transaction",
-      "columns": ["category", "txn_date", "amount"],
-      "windows": [
-        {"op": "row_number", "partitionBy": ["category"],
-         "orderBy": [{"field": "amount", "direction": "desc"}], "alias": "rn"}
-      ],
-      "qualify": [{"field": "rn", "op": "<=", "value": 1}],
-      "orderBy": [{"field": "category", "direction": "asc"}]
-    }
-  },
-  {
-    "question": "从来没发生过任何流水的账户叫什么名字",
-    "mql": {
-      "table": "account",
-      "joins": [{"table": "cash_transaction", "type": "left",
-                 "on": [{"left": "account.account_id", "right": "cash_transaction.account_id"}]}],
-      "columns": ["account.account_name"],
-      "filter": [{"field": "cash_transaction.txn_id", "op": "is null"}]
-    }
-  },
-  {
-    "question": "既不是激活也不是冻结状态的账户，把名称和状态列出来",
-    "mql": {
-      "table": "account",
-      "columns": ["account_name", "status"],
-      "filter": [{"field": "status", "op": "not in", "value": ["ACTIVE", "FROZEN"]}]
-    }
-  },
-  {
-    "question": "对手方一栏空着的流水有哪些，给出日期和金额",
-    "mql": {
-      "table": "cash_transaction",
-      "columns": ["txn_date", "amount"],
-      "filter": [{"field": "counterparty", "op": "is null"}]
-    }
-  },
-  {
-    "question": "2026年上半年销售回款逐月各收了多少人民币，按月份先后给出",
-    "mql": {
-      "table": "cash_transaction",
-      "timeColumns": [{"func": "month", "field": "txn_date", "alias": "ym"}],
-      "filter": [
-        {"field": "direction", "op": "=", "value": "IN"},
-        {"field": "category", "op": "=", "value": "SALES"},
-        {"field": "currency", "op": "=", "value": "CNY"},
-        {"field": "txn_date", "op": ">=", "value": "2026-01-01"},
-        {"field": "txn_date", "op": "<=", "value": "2026-06-30"}
-      ],
-      "groupBy": ["ym"],
-      "metrics": [{"op": "sum", "field": "amount", "alias": "total_in"}],
-      "orderBy": [{"field": "ym", "direction": "asc"}]
-    }
-  },
-  {
-    "question": "2026年6月各业务类别的支出统一换算成人民币后各是多少",
-    "mql": {
-      "table": "cash_transaction",
-      "joins": [{"table": "currency_rate", "type": "inner",
-                 "on": [{"left": "cash_transaction.currency", "right": "currency_rate.currency"}]}],
-      "filter": [
-        {"field": "cash_transaction.direction", "op": "=", "value": "OUT"},
-        {"field": "cash_transaction.txn_date", "op": ">=", "value": "2026-06-01"},
-        {"field": "cash_transaction.txn_date", "op": "<=", "value": "2026-06-30"},
-        {"field": "currency_rate.rate_date", "op": "=",
-         "subquery": {"table": "currency_rate",
-                      "metrics": [{"op": "max", "field": "rate_date", "alias": "latest"}]}}
-      ],
-      "groupBy": ["cash_transaction.category"],
-      "metrics": [{"op": "sum",
-                   "fieldExpr": {"left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny"},
-                   "alias": "total_cny"}]
-    }
-  },
-  {
-    "question": "逐月看2026年人民币的支出：每月合计的旁边带上前一个月的合计",
-    "mql": {
-      "table": "cash_transaction",
-      "timeColumns": [{"func": "month", "field": "txn_date", "alias": "ym"}],
-      "filter": [
-        {"field": "direction", "op": "=", "value": "OUT"},
-        {"field": "currency", "op": "=", "value": "CNY"},
-        {"field": "txn_date", "op": ">=", "value": "2026-01-01"},
-        {"field": "txn_date", "op": "<=", "value": "2026-12-31"}
-      ],
-      "groupBy": ["ym"],
-      "metrics": [{"op": "sum", "field": "amount", "alias": "total_out"}],
-      "windows": [{"op": "lag", "field": "total_out", "orderBy": [{"field": "ym", "direction": "asc"}], "alias": "prev_out"}],
-      "orderBy": [{"field": "ym", "direction": "asc"}]
-    }
-  },
-  {
-    "question": "把每个账户都列出来，并给出它2026年6月销售类进账的合计，没有的显示为空",
-    "mql": {
-      "table": "account",
-      "joins": [{"table": "cash_transaction", "type": "left",
-                 "on": [
-                   {"left": "account.account_id", "right": "cash_transaction.account_id"},
-                   {"left": "cash_transaction.category", "op": "=", "value": "SALES"},
-                   {"left": "cash_transaction.direction", "op": "=", "value": "IN"},
-                   {"left": "cash_transaction.txn_date", "op": ">=", "value": "2026-06-01"},
-                   {"left": "cash_transaction.txn_date", "op": "<=", "value": "2026-06-30"}
-                 ]}],
-      "groupBy": ["account.account_name"],
-      "metrics": [{"op": "sum", "field": "cash_transaction.amount", "alias": "sales_in"}]
-    }
-  },
-  {
-    "question": "收入方向和支出方向的对手方各自拉出来拼成一张总表（保留重复）",
-    "mql": {
-      "table": "cash_transaction",
-      "columns": ["counterparty"],
-      "filter": [{"field": "direction", "op": "=", "value": "IN"}],
-      "union": [
-        {"table": "cash_transaction",
-         "columns": ["counterparty"],
-         "filter": [{"field": "direction", "op": "=", "value": "OUT"}]}
-      ],
-      "unionAll": true
     }
   }
 ]
