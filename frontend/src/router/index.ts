@@ -29,6 +29,11 @@ const router = createRouter({
       redirect: '/assets/templates',
     },
     {
+      path: '/assets/templates/new',
+      name: 'template-author',
+      component: () => import('../views/TemplateAuthorView.vue'),
+    },
+    {
       path: '/assets/:kind',
       name: 'assets',
       component: () => import('../views/AssetsView.vue'),

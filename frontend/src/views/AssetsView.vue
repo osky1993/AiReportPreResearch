@@ -81,6 +81,9 @@ watch(kind, load)
       >
         {{ t.label }}
       </RouterLink>
+      <RouterLink v-if="kind === 'templates'" to="/assets/templates/new" class="new-btn">
+        ＋ 制作新模板
+      </RouterLink>
     </nav>
 
     <section class="card">
@@ -221,6 +224,22 @@ watch(kind, load)
   color: var(--tb-blue-700);
   font-weight: 600;
   border-bottom-color: var(--tb-blue-600);
+}
+
+.new-btn {
+  margin-left: auto;
+  align-self: center;
+  margin-bottom: 6px;
+  padding: 5px 16px;
+  border: 1px solid var(--tb-blue-500);
+  border-radius: 999px;
+  color: var(--tb-blue-600);
+  font-size: 13px;
+  background: var(--tb-surface);
+}
+
+.new-btn:hover {
+  background: var(--tb-blue-50);
 }
 
 .card {

@@ -65,11 +65,12 @@ export interface TemplateBody {
   name: string
   keywords?: string[]
   periodTypes?: string[]
+  /** 注意：模板定义的章节指标字段是 metrics（运行期 Outline 才叫 metricIds） */
   chapters?: Array<{
     chapterId: string
     title: string
-    metricIds?: string[]
-    comparison?: boolean
+    metrics?: string[]
+    comparison?: string
     comparisons?: string[]
     guidance?: string
     stylePrompt?: string
@@ -118,6 +119,53 @@ export function publishTemplate(id: string, version: number): Promise<StatusResu
 
 export function deprecateTemplate(id: string, version: number): Promise<StatusResult> {
   return post(`/templates/${encodeURIComponent(id)}/deprecate`, { version })
+}
+
+/** AI 起草结果：草案 + 未映射表述 + 说明（只从既有指标选，不落库）。 */
+export interface DraftResult {
+  draft: TemplateBody
+  unresolved: string[]
+  notes: string[]
+}
+
+export function draftTemplate(description: string, createdBy: string): Promise<DraftResult> {
+  return post('/templates/draft', { description, createdBy })
+}
+
+/** 干跑校验（不落库）：返回 {valid} 或 {valid:false, errors:[{location,message}]}。 */
+export function validateTemplate(
+  template: TemplateBody,
+): Promise<{ valid: boolean; errors?: ValidationDetail[] }> {
+  return post('/templates/validate', { template })
+}
+
+export interface SaveResult {
+  templateId?: string
+  metricId?: string
+  version: number
+  status: AssetStatus
+}
+
+/** 新建模板（v1 DRAFT）。 */
+export function createTemplate(
+  template: TemplateBody,
+  createdBy: string,
+  remark: string,
+): Promise<SaveResult> {
+  return post('/templates', { template, createdBy, remark })
+}
+
+/** 已有模板存为新版本 DRAFT。 */
+export function saveTemplateVersion(
+  id: string,
+  template: TemplateBody,
+  createdBy: string,
+  remark: string,
+): Promise<SaveResult> {
+  return http(`/templates/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ template, createdBy, remark }),
+  })
 }
 
 // ---- 指标口径 ----

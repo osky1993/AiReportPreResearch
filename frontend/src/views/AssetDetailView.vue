@@ -306,12 +306,14 @@ watch([kind, id], load)
             <span v-for="cmp in c.comparisons ?? []" :key="cmp" class="tag">{{
               cmpLabel(cmp)
             }}</span>
-            <span v-if="c.comparison && !c.comparisons?.length" class="tag">环比（较上月）</span>
+            <span v-if="c.comparison && !c.comparisons?.length" class="tag">{{
+              cmpLabel(String(c.comparison))
+            }}</span>
           </div>
           <p v-if="c.guidance" class="guidance">{{ c.guidance }}</p>
           <p v-if="c.stylePrompt" class="style-note">✍️ 文风：{{ c.stylePrompt }}</p>
-          <p v-if="c.metricIds?.length" class="metric-ids">
-            指标：<code v-for="m in c.metricIds" :key="m">{{ m }}</code>
+          <p v-if="c.metrics?.length" class="metric-ids">
+            指标：<code v-for="m in c.metrics" :key="m">{{ m }}</code>
           </p>
         </div>
         <details class="raw">
