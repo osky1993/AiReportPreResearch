@@ -24,6 +24,20 @@ const router = createRouter({
       name: 'report-run',
       component: () => import('../views/ReportRunView.vue'),
     },
+    {
+      path: '/assets',
+      redirect: '/assets/templates',
+    },
+    {
+      path: '/assets/:kind',
+      name: 'assets',
+      component: () => import('../views/AssetsView.vue'),
+    },
+    {
+      path: '/assets/:kind/:id',
+      name: 'asset-detail',
+      component: () => import('../views/AssetDetailView.vue'),
+    },
   ],
 })
 

@@ -51,6 +51,36 @@ public class CaliberRepository {
                         rs.getString("status")));
     }
 
+    /** 全部资产（含 DEPRECATED，供治理页列表）。 */
+    public List<CaliberAsset> findAll() {
+        return jdbc.query(
+                "SELECT id, question, mql_json, created_by, created_at, status " +
+                "FROM caliber_asset ORDER BY id",
+                (rs, i) -> new CaliberAsset(
+                        rs.getLong("id"),
+                        rs.getString("question"),
+                        rs.getString("mql_json"),
+                        rs.getString("created_by"),
+                        toLdt(rs.getTimestamp("created_at")),
+                        rs.getString("status")));
+    }
+
+    /** 按 id 取单条（含 DEPRECATED，供治理页详情），不存在返回 null。 */
+    public CaliberAsset findById(long id) {
+        List<CaliberAsset> hits = jdbc.query(
+                "SELECT id, question, mql_json, created_by, created_at, status " +
+                "FROM caliber_asset WHERE id = ?",
+                (rs, i) -> new CaliberAsset(
+                        rs.getLong("id"),
+                        rs.getString("question"),
+                        rs.getString("mql_json"),
+                        rs.getString("created_by"),
+                        toLdt(rs.getTimestamp("created_at")),
+                        rs.getString("status")),
+                id);
+        return hits.isEmpty() ? null : hits.get(0);
+    }
+
     /** 作废一条资产（schema 漂移或人工驳回命中口径时使用）。 */
     public void deprecate(long id) {
         jdbc.update("UPDATE caliber_asset SET status = 'DEPRECATED' WHERE id = ?", id);

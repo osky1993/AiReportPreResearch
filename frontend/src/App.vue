@@ -12,6 +12,7 @@ import { RouterLink, RouterView } from 'vue-router'
       <RouterLink to="/">首页</RouterLink>
       <RouterLink to="/ask">智能问数</RouterLink>
       <RouterLink to="/report">智能报告</RouterLink>
+      <RouterLink to="/assets">资产治理</RouterLink>
     </nav>
   </header>
 

@@ -17,11 +17,11 @@ const scenarios = [
     icon: '📄',
   },
   {
-    key: 'caliber',
-    title: '口径资产',
-    desc: '业务确认过的取数口径沉淀为资产，越问越准。指标口径、报告模板统一多版本管理，历史版本可追溯。',
-    to: '',
-    ready: false,
+    key: 'assets',
+    title: '资产治理',
+    desc: '报告模板、指标口径与问数沉淀口径统一管理：多版本行不可变、历史可追溯，业务确认过的口径越问越准。',
+    to: '/assets',
+    ready: true,
     icon: '📚',
   },
 ]
