@@ -2,14 +2,22 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
+  AssetApiError,
+  deprecateCaliber,
+  deprecateMetric,
+  deprecateTemplate,
   getCaliber,
   getMetric,
+  getMetricReferences,
   getTemplate,
   getTemplateVersion,
+  publishMetric,
+  publishTemplate,
   type CaliberAsset,
   type MetricDetail,
   type TemplateBody,
   type TemplateDetail,
+  type ValidationDetail,
   type VersionInfo,
 } from '@/api/assets'
 
@@ -66,6 +74,93 @@ const caliberMqlPretty = computed(() => {
   }
 })
 
+// ---- 治理操作（发布/下架，行内确认条） ----
+
+interface PendingAction {
+  action: 'publish' | 'deprecate'
+  version: number
+  text: string
+  warning: string
+}
+
+const pending = ref<PendingAction | null>(null)
+const actBusy = ref(false)
+const actErr = ref('')
+const actErrDetails = ref<ValidationDetail[]>([])
+const actOk = ref('')
+const operator = ref('')
+
+function clearActionState() {
+  pending.value = null
+  actErr.value = ''
+  actErrDetails.value = []
+  actOk.value = ''
+}
+
+async function askAction(action: 'publish' | 'deprecate', v: VersionInfo) {
+  actErr.value = ''
+  actErrDetails.value = []
+  actOk.value = ''
+  let warning = ''
+  if (action === 'deprecate' && kind.value === 'metrics' && v.status === 'PUBLISHED') {
+    try {
+      const refs = await getMetricReferences(id.value)
+      if (refs.referencedBy.length) {
+        warning = `⚠️ 该指标正被已发布模板引用：${refs.referencedBy.join('、')}。若下架后该指标无其他发布版本，服务端自检将拒绝此操作并回滚。`
+      }
+    } catch {
+      /* 引用检查失败不阻断，交由服务端把关 */
+    }
+  }
+  const text =
+    action === 'publish'
+      ? `确认发布 v${v.version}？发布后旧的发布版本将自动下架，资产热加载立即生效。`
+      : `确认下架 v${v.version}？下架后该版本不再参与报告生成（历史 run 已固化版本不受影响）。`
+  pending.value = { action, version: v.version, text, warning }
+}
+
+async function runAction() {
+  if (!pending.value || actBusy.value) return
+  const { action, version } = pending.value
+  actBusy.value = true
+  try {
+    if (kind.value === 'templates') {
+      if (action === 'publish') await publishTemplate(id.value, version)
+      else await deprecateTemplate(id.value, version)
+    } else {
+      if (action === 'publish') await publishMetric(id.value, version)
+      else await deprecateMetric(id.value, version)
+    }
+    pending.value = null
+    actOk.value = `v${version} ${action === 'publish' ? '已发布' : '已下架'}`
+    await load()
+    actOk.value = `v${version} ${action === 'publish' ? '已发布' : '已下架'}`
+  } catch (e) {
+    actErr.value = e instanceof Error ? e.message : '操作失败'
+    actErrDetails.value = e instanceof AssetApiError ? e.details : []
+  } finally {
+    actBusy.value = false
+  }
+}
+
+const caliberPending = ref(false)
+
+async function runCaliberDeprecate() {
+  if (!caliber.value || actBusy.value) return
+  actBusy.value = true
+  actErr.value = ''
+  try {
+    await deprecateCaliber(caliber.value.id, operator.value.trim() || '业务用户')
+    caliberPending.value = false
+    await load()
+    actOk.value = '该口径已下架，智能问数不再召回'
+  } catch (e) {
+    actErr.value = e instanceof Error ? e.message : '操作失败'
+  } finally {
+    actBusy.value = false
+  }
+}
+
 async function showTemplateVersion(v: VersionInfo) {
   if (!tpl.value) return
   try {
@@ -80,6 +175,8 @@ async function showTemplateVersion(v: VersionInfo) {
 async function load() {
   loading.value = true
   err.value = ''
+  pending.value = null
+  caliberPending.value = false
   tpl.value = null
   metric.value = null
   caliber.value = null
@@ -147,12 +244,47 @@ watch([kind, id], load)
               <td>{{ v.createdBy ?? '—' }}</td>
               <td>{{ fmtTime(v.createdAt) }}</td>
               <td class="remark">{{ v.remark ?? '' }}</td>
-              <td>
+              <td class="ops">
                 <button class="btn-ghost" @click="showTemplateVersion(v)">查看定义</button>
+                <button
+                  v-if="v.status === 'DRAFT'"
+                  class="btn-ghost op-pub"
+                  :disabled="actBusy"
+                  @click="askAction('publish', v)"
+                >
+                  发布
+                </button>
+                <button
+                  v-if="v.status !== 'DEPRECATED'"
+                  class="btn-ghost op-dep"
+                  :disabled="actBusy"
+                  @click="askAction('deprecate', v)"
+                >
+                  下架
+                </button>
               </td>
             </tr>
           </tbody>
         </table>
+
+        <div v-if="pending" class="confirm-bar">
+          <p>{{ pending.text }}</p>
+          <p v-if="pending.warning" class="warn">{{ pending.warning }}</p>
+          <div class="confirm-actions">
+            <button class="btn-primary" :disabled="actBusy" @click="runAction">
+              {{ actBusy ? '处理中…' : '确认执行' }}
+            </button>
+            <button class="btn-ghost" :disabled="actBusy" @click="clearActionState">取消</button>
+          </div>
+        </div>
+        <p v-if="actOk" class="ok">✓ {{ actOk }}</p>
+        <p v-if="actErr" class="err">{{ actErr }}</p>
+        <ul v-if="actErrDetails.length" class="err-details">
+          <li v-for="(d, i) in actErrDetails" :key="i">
+            <code>{{ d.location }}</code
+            >：{{ d.message }}
+          </li>
+        </ul>
       </section>
 
       <section v-if="tplBody" class="card">
@@ -207,6 +339,7 @@ watch([kind, id], load)
               <th>创建人</th>
               <th>时间</th>
               <th>备注</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -220,9 +353,46 @@ watch([kind, id], load)
               <td>{{ v.createdBy ?? '—' }}</td>
               <td>{{ fmtTime(v.createdAt) }}</td>
               <td class="remark">{{ v.remark ?? '' }}</td>
+              <td class="ops">
+                <button
+                  v-if="v.status === 'DRAFT'"
+                  class="btn-ghost op-pub"
+                  :disabled="actBusy"
+                  @click="askAction('publish', v)"
+                >
+                  发布
+                </button>
+                <button
+                  v-if="v.status !== 'DEPRECATED'"
+                  class="btn-ghost op-dep"
+                  :disabled="actBusy"
+                  @click="askAction('deprecate', v)"
+                >
+                  下架
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
+
+        <div v-if="pending" class="confirm-bar">
+          <p>{{ pending.text }}</p>
+          <p v-if="pending.warning" class="warn">{{ pending.warning }}</p>
+          <div class="confirm-actions">
+            <button class="btn-primary" :disabled="actBusy" @click="runAction">
+              {{ actBusy ? '处理中…' : '确认执行' }}
+            </button>
+            <button class="btn-ghost" :disabled="actBusy" @click="clearActionState">取消</button>
+          </div>
+        </div>
+        <p v-if="actOk" class="ok">✓ {{ actOk }}</p>
+        <p v-if="actErr" class="err">{{ actErr }}</p>
+        <ul v-if="actErrDetails.length" class="err-details">
+          <li v-for="(d, i) in actErrDetails" :key="i">
+            <code>{{ d.location }}</code
+            >：{{ d.message }}
+          </li>
+        </ul>
       </section>
 
       <section v-if="metricBody" class="card">
@@ -294,6 +464,28 @@ watch([kind, id], load)
           <summary>已核验的结构化查询（MQL）</summary>
           <pre>{{ caliberMqlPretty }}</pre>
         </details>
+
+        <template v-if="caliber.status === 'ACTIVE'">
+          <div v-if="!caliberPending" class="confirm-actions" style="margin-top: 14px">
+            <button class="btn-ghost op-dep" :disabled="actBusy" @click="caliberPending = true">
+              下架该口径
+            </button>
+          </div>
+          <div v-else class="confirm-bar">
+            <p>确认下架口径 #{{ caliber.id }}？下架后智能问数不再召回复用此口径（同类问题将回到 AI 生成路径）。</p>
+            <div class="confirm-actions">
+              <input v-model="operator" class="op-input" placeholder="操作人（默认：业务用户）" />
+              <button class="btn-primary" :disabled="actBusy" @click="runCaliberDeprecate">
+                {{ actBusy ? '处理中…' : '确认下架' }}
+              </button>
+              <button class="btn-ghost" :disabled="actBusy" @click="caliberPending = false">
+                取消
+              </button>
+            </div>
+          </div>
+        </template>
+        <p v-if="actOk" class="ok">✓ {{ actOk }}</p>
+        <p v-if="actErr" class="err">{{ actErr }}</p>
       </section>
     </template>
   </main>
@@ -536,8 +728,110 @@ tbody tr:last-child td {
 }
 
 .err {
+  margin-top: 10px;
   color: var(--tb-red);
   font-size: 13.5px;
+}
+
+.ok {
+  margin-top: 10px;
+  color: var(--tb-green);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.err-details {
+  margin-top: 6px;
+  padding-left: 20px;
+  color: var(--tb-red);
+  font-size: 12.5px;
+}
+
+.ops {
+  white-space: nowrap;
+}
+
+.ops .btn-ghost {
+  margin-right: 6px;
+}
+
+.op-pub {
+  border-color: var(--tb-green);
+  color: var(--tb-green);
+}
+
+.op-pub:hover:not(:disabled) {
+  background: var(--tb-green-bg);
+  border-color: var(--tb-green);
+  color: var(--tb-green);
+}
+
+.op-dep {
+  border-color: var(--tb-red);
+  color: var(--tb-red);
+}
+
+.op-dep:hover:not(:disabled) {
+  background: var(--tb-red-bg);
+  border-color: var(--tb-red);
+  color: var(--tb-red);
+}
+
+.confirm-bar {
+  margin-top: 14px;
+  padding: 12px 16px;
+  background: var(--tb-blue-50);
+  border: 1px solid var(--tb-blue-100);
+  border-radius: 8px;
+  font-size: 13.5px;
+}
+
+.confirm-bar .warn {
+  margin-top: 6px;
+  color: var(--tb-amber);
+  font-size: 13px;
+}
+
+.confirm-actions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.op-input {
+  width: 190px;
+  padding: 5px 12px;
+  border: 1px solid var(--tb-border);
+  border-radius: 7px;
+  font-family: var(--tb-font);
+  font-size: 13px;
+  outline: none;
+}
+
+.op-input:focus {
+  border-color: var(--tb-blue-500);
+}
+
+.btn-primary {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 7px;
+  background: var(--tb-blue-600);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--tb-blue-700);
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 code {

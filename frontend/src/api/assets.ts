@@ -100,6 +100,26 @@ export function getTemplateVersion(
   return http(`/templates/${encodeURIComponent(id)}/versions/${version}`)
 }
 
+/** 发布/下架结果（后端 SaveResult 同构）。 */
+export interface StatusResult {
+  version: number
+  status: AssetStatus
+  [k: string]: unknown
+}
+
+function post<T>(path: string, body: unknown): Promise<T> {
+  return http<T>(path, { method: 'POST', body: JSON.stringify(body) })
+}
+
+/** 发布模板指定版本（事务内旧发布版自动下架 + 资产热加载，自检失败即回滚）。 */
+export function publishTemplate(id: string, version: number): Promise<StatusResult> {
+  return post(`/templates/${encodeURIComponent(id)}/publish`, { version })
+}
+
+export function deprecateTemplate(id: string, version: number): Promise<StatusResult> {
+  return post(`/templates/${encodeURIComponent(id)}/deprecate`, { version })
+}
+
 // ---- 指标口径 ----
 
 export interface MetricSummary {
@@ -141,6 +161,21 @@ export function getMetric(id: string): Promise<MetricDetail> {
   return http(`/metrics/${encodeURIComponent(id)}`)
 }
 
+export function publishMetric(id: string, version: number): Promise<StatusResult> {
+  return post(`/metrics/${encodeURIComponent(id)}/publish`, { version })
+}
+
+export function deprecateMetric(id: string, version: number): Promise<StatusResult> {
+  return post(`/metrics/${encodeURIComponent(id)}/deprecate`, { version })
+}
+
+/** 指标被哪些 PUBLISHED 模板引用（下架前保护检查）。 */
+export function getMetricReferences(
+  id: string,
+): Promise<{ metricId: string; referencedBy: string[] }> {
+  return http(`/metrics/${encodeURIComponent(id)}/references`)
+}
+
 // ---- 问数沉淀口径（caliber） ----
 
 export interface CaliberAsset {
@@ -158,4 +193,12 @@ export function listCalibers(): Promise<CaliberAsset[]> {
 
 export function getCaliber(id: number | string): Promise<CaliberAsset> {
   return http(`/calibers/${id}`)
+}
+
+/** 下架口径（服务端联动移出智能问数召回索引）。 */
+export function deprecateCaliber(
+  id: number,
+  operator: string,
+): Promise<{ id: number; status: string }> {
+  return post(`/calibers/${id}/deprecate`, { operator })
 }
