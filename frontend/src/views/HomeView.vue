@@ -12,8 +12,8 @@ const scenarios = [
     key: 'report',
     title: '智能报告',
     desc: '国库库存月报一键生成：锁定口径后程序确定性取数，AI 只负责成文，数字一致率 100% 双检把关，人工审批后签发。',
-    to: '',
-    ready: false,
+    to: '/report',
+    ready: true,
     icon: '📄',
   },
   {

@@ -14,6 +14,16 @@ const router = createRouter({
       name: 'ask',
       component: () => import('../views/AskView.vue'),
     },
+    {
+      path: '/report',
+      name: 'report',
+      component: () => import('../views/ReportListView.vue'),
+    },
+    {
+      path: '/report/runs/:id',
+      name: 'report-run',
+      component: () => import('../views/ReportRunView.vue'),
+    },
   ],
 })
 
