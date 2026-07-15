@@ -1,85 +1,78 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-import HelloWorld from './components/HelloWorld.vue'
 </script>
 
 <template>
-  <header>
-    <img alt="Vue logo" class="logo" src="@/assets/logo.svg" width="125" height="125" />
-
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
-
-      <nav>
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/about">About</RouterLink>
-      </nav>
-    </div>
+  <header class="topbar">
+    <RouterLink to="/" class="brand">
+      <span class="brand-mark">库</span>
+      <span class="brand-name">国库智能数据服务</span>
+    </RouterLink>
+    <nav class="nav">
+      <RouterLink to="/">首页</RouterLink>
+      <RouterLink to="/ask">智能问数</RouterLink>
+    </nav>
   </header>
 
   <RouterView />
 </template>
 
 <style scoped>
-header {
-  line-height: 1.5;
-  max-height: 100vh;
+.topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  height: 56px;
+  padding: 0 28px;
+  background: var(--tb-blue-900);
+  color: #fff;
 }
 
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
 }
 
-nav {
-  width: 100%;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 2rem;
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--tb-blue-500), var(--tb-blue-700));
+  font-weight: 700;
+  font-size: 15px;
 }
 
-nav a.router-link-exact-active {
-  color: var(--color-text);
+.brand-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
 }
 
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
+.nav {
+  display: flex;
+  gap: 6px;
 }
 
-nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
+.nav a {
+  padding: 5px 14px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 14px;
 }
 
-nav a:first-of-type {
-  border: 0;
+.nav a:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
 }
 
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
-
-  .logo {
-    margin: 0 2rem 0 0;
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  nav {
-    text-align: left;
-    margin-left: -1rem;
-    font-size: 1rem;
-
-    padding: 1rem 0;
-    margin-top: 1rem;
-  }
+.nav a.router-link-active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  font-weight: 500;
 }
 </style>
