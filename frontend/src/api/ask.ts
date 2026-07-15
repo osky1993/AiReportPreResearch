@@ -39,9 +39,12 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
-/** 提问：先召回已核验口径（命中直取 / 候选澄清 / 未命中生成）。 */
-export function ask(question: string): Promise<AssistedResponse> {
-  return post('/api/ask', { question })
+/**
+ * 提问：先召回已核验口径（命中直取 / 候选澄清 / 未命中生成）。
+ * bypassCaliber=true 时跳过口径召回，直接由模型按原问题生成（澄清后「不复用口径」分支）。
+ */
+export function ask(question: string, bypassCaliber = false): Promise<AssistedResponse> {
+  return post('/api/ask', { question, bypassCaliber })
 }
 
 /** 候选口径澄清后确认复用：按 assetId 直取执行。 */

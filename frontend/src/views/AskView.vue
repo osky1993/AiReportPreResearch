@@ -65,6 +65,13 @@ function reuseCaliber(item: ChatItem) {
   runRequest(item.question, () => reuse(item.resp!.assetId!, item.question!))
 }
 
+/** 澄清后选择不复用候选口径：跳过口径召回，让模型按原问题直接生成。 */
+function generateDirectly(item: ChatItem) {
+  if (!item.question || busy.value) return
+  item.clarifyResolved = true
+  runRequest(item.question, () => ask(item.question!, true))
+}
+
 function stateBadge(resp: AssistedResponse): { label: string; cls: string } {
   switch (resp.state) {
     case 'HIT':
@@ -148,14 +155,14 @@ function pct(v: number): string {
                   >相近的已核验口径：「{{ item.resp.matchedQuestion }}」（相似度
                   {{ pct(item.resp.confidence) }}）</span
                 >
-                <button
-                  v-if="!item.clarifyResolved"
-                  class="btn-primary"
-                  :disabled="busy"
-                  @click="reuseCaliber(item)"
-                >
-                  按该口径查询
-                </button>
+                <span v-if="!item.clarifyResolved" class="clarify-actions">
+                  <button class="btn-primary" :disabled="busy" @click="reuseCaliber(item)">
+                    按该口径查询
+                  </button>
+                  <button class="btn-secondary" :disabled="busy" @click="generateDirectly(item)">
+                    不复用，AI 按原问题生成
+                  </button>
+                </span>
               </div>
             </div>
 
@@ -581,9 +588,34 @@ textarea:focus {
   flex: none;
 }
 
-.clarify-candidate .btn-primary {
+.clarify-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.clarify-candidate .btn-primary,
+.btn-secondary {
   padding: 5px 14px;
   font-size: 13px;
   border-radius: 7px;
+}
+
+.btn-secondary {
+  border: 1px solid var(--tb-blue-500);
+  background: var(--tb-surface);
+  color: var(--tb-blue-600);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--tb-blue-50);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
