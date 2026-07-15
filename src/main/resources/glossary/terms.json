@@ -18,6 +18,12 @@
     "tables": ["treasury_basic_info", "treasury_balance_journal"]
   },
   {
+    "term": "国库名称",
+    "aliases": ["国库简称", "库名", "支库名称"],
+    "definition": "treasury_balance_journal 与 treasury_basic_info 的 treasury_short_name 存的是**含「国家金库」前缀的全称**（如「国家金库常熟市支库」「国家金库苏州市中心支库」）——按名称等值过滤必须用全称，不要截短；不确定全称时用 like '%常熟%' 模糊匹配。注意 treasury_income_detail 的同名字段存的是**行政区短名**（如「昆山市」「姑苏区」），两表取值风格不同，跨表勿直接用名称关联（用 treasury_code）。",
+    "tables": ["treasury_balance_journal", "treasury_basic_info", "treasury_income_detail"]
+  },
+  {
     "term": "国库层级",
     "aliases": ["库级", "国库级别", "市级库", "区县级库", "乡镇级库"],
     "definition": "treasury_basic_info.treasury_level（int）：DDL 注释枚举为 1=总库、2=分库、3=市中心支库、4=区县支库；数据中另存在大量 5（按乡镇支库理解，注释未列、待对方确认）。本库数据分布：3 一个（苏州市中心支库）、4 十个、5 七十一个。按层级筛库需 JOIN treasury_basic_info（ON treasury_code），库存日记账表内没有层级字段。",

@@ -30,12 +30,23 @@
     }
   },
   {
-    "question": "2026年6月一般公共预算收入的本期金额和年累计金额",
+    "question": "帮我看下国家金库张家港市支库在2026年5月8日这天的库款是多少，带上库名",
+    "mql": {
+      "table": "treasury_balance_journal",
+      "columns": ["treasury_short_name", "balance"],
+      "filter": [
+        { "field": "stat_date", "op": "=", "value": "2026-05-08" },
+        { "field": "treasury_short_name", "op": "=", "value": "国家金库张家港市支库" }
+      ]
+    }
+  },
+  {
+    "question": "看下2026年3月政府性基金预算收入当月入了多少、年累计到多少",
     "mql": {
       "table": "treasury_income_detail",
       "filter": [
-        { "field": "stat_date", "op": "=", "value": "202606" },
-        { "field": "subject_code", "op": "=", "value": "T010101" }
+        { "field": "stat_date", "op": "=", "value": "202603" },
+        { "field": "subject_code", "op": "=", "value": "T010201" }
       ],
       "metrics": [
         { "op": "sum", "field": "current_period_amount", "alias": "cur_amount" },

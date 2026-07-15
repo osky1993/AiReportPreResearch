@@ -36,7 +36,7 @@ class GlossaryServiceTest {
         assertTrue(bad.get(0).contains("幽灵口径"), bad.toString());
     }
 
-    /** 真实 terms.json（11 条）+ 本地哈希向量：相关术语应进 Top-N。 */
+    /** 真实 terms.json（12 条）+ 本地哈希向量：相关术语应进 Top-N。 */
     @Test
     void select_picksRelevantTerm() {
         when(schema.hasTable(any())).thenReturn(true);
@@ -62,7 +62,7 @@ class GlossaryServiceTest {
         String block = g.formatBlock("任意问题");
 
         assertEquals(0, embeds.get(), "短路场景不应有任何 embed 调用");
-        assertEquals(11, g.all().size());
+        assertEquals(12, g.all().size());
         for (Term t : g.all()) {
             assertTrue(block.contains("- " + t.term()), "全量注入应含「" + t.term() + "」");
         }
@@ -90,6 +90,6 @@ class GlossaryServiceTest {
 
         List<GlossaryService.Selected> sel = g.select("在途资金还有多少", null);
 
-        assertEquals(11, sel.size(), "降级应全量注入");
+        assertEquals(12, sel.size(), "降级应全量注入");
     }
 }
