@@ -51,3 +51,22 @@ export function ask(question: string, bypassCaliber = false): Promise<AssistedRe
 export function reuse(assetId: number, question: string): Promise<AssistedResponse> {
   return post('/api/reuse', { assetId, question })
 }
+
+/** 核验闸门返回（后端 AssistedQueryService.VerifyResult）。 */
+export interface VerifyResult {
+  precipitated: boolean
+  assetId: number | null
+  message: string
+}
+
+/**
+ * 核验闸门：采纳（accept=true，沉淀为口径资产，服务端重校验 MQL）或驳回（丢弃）。
+ */
+export function verify(
+  question: string,
+  mql: Record<string, unknown>,
+  accept: boolean,
+  createdBy: string,
+): Promise<VerifyResult> {
+  return post('/api/verify', { question, mql, accept, createdBy })
+}

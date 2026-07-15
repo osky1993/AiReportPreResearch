@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, useTemplateRef } from 'vue'
-import { ask, reuse, type AssistedResponse } from '@/api/ask'
+import { ask, reuse, verify, type AssistedResponse } from '@/api/ask'
 
 interface ChatItem {
   id: number
@@ -15,6 +15,12 @@ interface ChatItem {
   error?: string
   /** CLARIFY 候选已被复用，隐藏操作按钮 */
   clarifyResolved?: boolean
+  /** 核验人姓名（GENERATED 卡片核验区输入） */
+  verifier?: string
+  verifyPending?: boolean
+  /** 核验结论文案；非空即隐藏核验按钮 */
+  verifyMsg?: string
+  verifyOk?: boolean
 }
 
 const EXAMPLES = [
@@ -70,6 +76,23 @@ function generateDirectly(item: ChatItem) {
   if (!item.question || busy.value) return
   item.clarifyResolved = true
   runRequest(item.question, () => ask(item.question!, true))
+}
+
+/** 核验闸门：采纳沉淀为口径资产 / 驳回丢弃。 */
+async function doVerify(item: ChatItem, accept: boolean) {
+  const mql = item.resp?.trace?.mql
+  if (!mql || !item.question || item.verifyPending) return
+  item.verifyPending = true
+  try {
+    const r = await verify(item.question, mql, accept, (item.verifier ?? '').trim() || '业务用户')
+    item.verifyOk = r.precipitated
+    item.verifyMsg = r.message
+  } catch (e) {
+    item.verifyOk = false
+    item.verifyMsg = e instanceof Error ? e.message : '核验请求失败，请稍后重试'
+  } finally {
+    item.verifyPending = false
+  }
 }
 
 function stateBadge(resp: AssistedResponse): { label: string; cls: string } {
@@ -200,6 +223,40 @@ function pct(v: number): string {
             <ul v-if="item.resp.trace?.warnings?.length" class="warnings">
               <li v-for="(w, i) in item.resp.trace.warnings" :key="i">⚠ {{ w }}</li>
             </ul>
+
+            <!-- 核验闸门：AI 生成的结果可采纳沉淀为口径资产，或驳回丢弃 -->
+            <div
+              v-if="item.resp.state === 'GENERATED' && item.resp.trace?.success && item.resp.trace.mql"
+              class="verify"
+            >
+              <template v-if="!item.verifyMsg">
+                <span class="verify-hint">结果与口径无误？核验后沉淀为口径资产，同类问题即可直接复用：</span>
+                <span class="verify-actions">
+                  <input
+                    v-model="item.verifier"
+                    class="verify-name"
+                    placeholder="核验人（默认：业务用户）"
+                  />
+                  <button
+                    class="btn-primary"
+                    :disabled="item.verifyPending"
+                    @click="doVerify(item, true)"
+                  >
+                    {{ item.verifyPending ? '处理中…' : '核验采纳' }}
+                  </button>
+                  <button
+                    class="btn-secondary"
+                    :disabled="item.verifyPending"
+                    @click="doVerify(item, false)"
+                  >
+                    驳回
+                  </button>
+                </span>
+              </template>
+              <span v-else class="verify-result" :class="item.verifyOk ? 'ok' : 'no'">
+                {{ item.verifyOk ? '✓' : '—' }} {{ item.verifyMsg }}
+              </span>
+            </div>
 
             <!-- 取数依据钻取 -->
             <details v-if="item.resp.trace?.sql" class="evidence">
@@ -487,6 +544,64 @@ tbody tr:hover {
   list-style: none;
   color: var(--tb-amber);
   font-size: 12.5px;
+}
+
+/* ---- 核验闸门 ---- */
+.verify {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--tb-blue-50);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.verify-hint {
+  font-size: 13px;
+  color: var(--tb-text-2);
+}
+
+.verify-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.verify-name {
+  width: 180px;
+  padding: 4px 10px;
+  border: 1px solid var(--tb-border);
+  border-radius: 7px;
+  font-family: var(--tb-font);
+  font-size: 13px;
+  color: var(--tb-text);
+  outline: none;
+}
+
+.verify-name:focus {
+  border-color: var(--tb-blue-500);
+}
+
+.verify .btn-primary {
+  padding: 5px 14px;
+  font-size: 13px;
+  border-radius: 7px;
+}
+
+.verify-result {
+  font-size: 13px;
+}
+
+.verify-result.ok {
+  color: var(--tb-green);
+  font-weight: 500;
+}
+
+.verify-result.no {
+  color: var(--tb-text-2);
 }
 
 /* ---- 取数依据 ---- */
