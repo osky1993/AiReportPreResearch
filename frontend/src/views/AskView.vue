@@ -13,8 +13,8 @@ interface ChatItem {
   resp?: AssistedResponse
   /** 网络/服务级错误（非业务 FAILED） */
   error?: string
-  /** CLARIFY 候选已被复用，隐藏操作按钮 */
-  clarifyResolved?: boolean
+  /** 口径操作已处理（CLARIFY 复用候选 / HIT 判定不符改走生成），隐藏对应操作按钮 */
+  caliberResolved?: boolean
   /** 核验人姓名（GENERATED 卡片核验区输入） */
   verifier?: string
   verifyPending?: boolean
@@ -67,14 +67,14 @@ function send(text?: string) {
 
 function reuseCaliber(item: ChatItem) {
   if (!item.resp?.assetId || !item.question || busy.value) return
-  item.clarifyResolved = true
+  item.caliberResolved = true
   runRequest(item.question, () => reuse(item.resp!.assetId!, item.question!))
 }
 
-/** 澄清后选择不复用候选口径：跳过口径召回，让模型按原问题直接生成。 */
+/** 澄清后不复用候选口径，或 HIT 后人工判定命中口径不符：跳过口径召回，让模型按原问题直接生成。 */
 function generateDirectly(item: ChatItem) {
   if (!item.question || busy.value) return
-  item.clarifyResolved = true
+  item.caliberResolved = true
   runRequest(item.question, () => ask(item.question!, true))
 }
 
@@ -165,9 +165,21 @@ function pct(v: number): string {
               </span>
             </div>
 
-            <!-- 命中口径的溯源信息 -->
+            <!-- 命中口径的溯源信息 + 误命中申诉出口 -->
             <div v-if="item.resp.state === 'HIT' && item.resp.matchedQuestion" class="matched">
-              命中口径「{{ item.resp.matchedQuestion }}」（相似度 {{ pct(item.resp.confidence) }}）
+              <span
+                >命中口径「{{ item.resp.matchedQuestion }}」（相似度
+                {{ pct(item.resp.confidence) }}）</span
+              >
+              <button
+                v-if="!item.caliberResolved"
+                class="btn-secondary"
+                :disabled="busy"
+                @click="generateDirectly(item)"
+              >
+                口径不符？AI 按原问题重新生成
+              </button>
+              <span v-else class="mismatch-done">已改按原问题重新生成，结果见下方</span>
             </div>
 
             <!-- 需澄清：候选口径确认 或 补充问题 -->
@@ -178,7 +190,7 @@ function pct(v: number): string {
                   >相近的已核验口径：「{{ item.resp.matchedQuestion }}」（相似度
                   {{ pct(item.resp.confidence) }}）</span
                 >
-                <span v-if="!item.clarifyResolved" class="clarify-actions">
+                <span v-if="!item.caliberResolved" class="clarify-actions">
                   <button class="btn-primary" :disabled="busy" @click="reuseCaliber(item)">
                     按该口径查询
                   </button>
@@ -462,8 +474,17 @@ function pct(v: number): string {
 
 .matched {
   margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   font-size: 13px;
   color: var(--tb-text-2);
+}
+
+.mismatch-done {
+  font-size: 12.5px;
+  color: var(--tb-text-3);
 }
 
 .clarify {
