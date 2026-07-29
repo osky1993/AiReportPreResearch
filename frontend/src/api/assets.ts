@@ -316,6 +316,11 @@ export function listCalibers(): Promise<CaliberAsset[]> {
   return http('/calibers?status=all')
 }
 
+/** 仅 ACTIVE 口径（智能问数「取数菜单」：点选即按资产直取出数）。 */
+export function listActiveCalibers(): Promise<CaliberAsset[]> {
+  return http('/calibers')
+}
+
 export function getCaliber(id: number | string): Promise<CaliberAsset> {
   return http(`/calibers/${id}`)
 }

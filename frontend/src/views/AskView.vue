@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue'
 import {
   ask,
   explainMql,
@@ -9,6 +9,7 @@ import {
   type AssistedResponse,
   type MqlExplanation,
 } from '@/api/ask'
+import { listActiveCalibers, type CaliberAsset } from '@/api/assets'
 
 interface ChatItem {
   id: number
@@ -110,6 +111,44 @@ async function doVerify(item: ChatItem, accept: boolean) {
   }
 }
 
+// ---- 已核验口径「取数菜单」：点选即按资产直取（零 LLM、口径确定） ----
+const caliberPanelOpen = ref(false)
+const calibers = ref<CaliberAsset[] | null>(null)
+const caliberLoading = ref(false)
+const caliberError = ref('')
+const caliberFilter = ref('')
+
+const filteredCalibers = computed(() => {
+  const kw = caliberFilter.value.trim()
+  if (!calibers.value) return []
+  if (!kw) return calibers.value
+  return calibers.value.filter(
+    (c) => c.question.includes(kw) || (c.description ?? '').includes(kw),
+  )
+})
+
+async function toggleCaliberPanel() {
+  caliberPanelOpen.value = !caliberPanelOpen.value
+  if (!caliberPanelOpen.value || calibers.value || caliberLoading.value) return
+  caliberLoading.value = true
+  caliberError.value = ''
+  try {
+    calibers.value = await listActiveCalibers()
+  } catch (e) {
+    caliberError.value = e instanceof Error ? e.message : '口径列表加载失败，请稍后重试'
+  } finally {
+    caliberLoading.value = false
+  }
+}
+
+/** 点选口径：按资产 id 直取出数（与澄清卡「按该口径查询」同一条链路）。 */
+function pickCaliber(c: CaliberAsset) {
+  if (busy.value) return
+  caliberPanelOpen.value = false
+  items.value.push({ id: nextId++, role: 'user', text: c.question })
+  runRequest(c.question, () => reuse(c.id, c.question))
+}
+
 /** 口径说明按需加载：另一次 LLM 调用，不阻塞出数主链路；失败只影响说明区。 */
 async function loadExplanation(item: ChatItem) {
   const mql = item.resp?.trace?.mql
@@ -188,6 +227,9 @@ function pct(v: number): string {
             {{ q }}
           </button>
         </div>
+        <button class="caliber-hint" @click="toggleCaliberPanel()">
+          📚 也可从已核验口径中直接点选出数 →
+        </button>
       </div>
 
       <template v-for="item in items" :key="item.id">
@@ -382,8 +424,38 @@ function pct(v: number): string {
       </template>
     </div>
 
+    <!-- 已核验口径面板：业务确认过的「取数菜单」，点选直取零 LLM -->
+    <div v-if="caliberPanelOpen" class="caliber-panel">
+      <div class="caliber-panel-head">
+        <span class="caliber-panel-title">已核验口径（点选直接出数，不调大模型）</span>
+        <input v-model="caliberFilter" class="caliber-search" placeholder="按关键字过滤…" />
+        <button class="caliber-close" @click="caliberPanelOpen = false">×</button>
+      </div>
+      <div v-if="caliberLoading" class="caliber-status">加载中…</div>
+      <div v-else-if="caliberError" class="caliber-status err">{{ caliberError }}</div>
+      <div v-else-if="filteredCalibers.length === 0" class="caliber-status">
+        {{ calibers?.length ? '没有匹配的口径，换个关键字试试。' : '暂无已核验口径——AI 生成的结果经核验采纳后会沉淀到这里。' }}
+      </div>
+      <ul v-else class="caliber-list">
+        <li v-for="c in filteredCalibers" :key="c.id">
+          <button class="caliber-item" :disabled="busy" @click="pickCaliber(c)">
+            <span class="caliber-q">{{ c.question }}</span>
+            <span class="caliber-d">{{ c.description ?? '（暂无口径说明，出数后可按需生成）' }}</span>
+          </button>
+        </li>
+      </ul>
+    </div>
+
     <!-- 输入区 -->
     <div class="composer">
+      <button
+        class="btn-secondary btn-caliber"
+        :class="{ active: caliberPanelOpen }"
+        title="从已核验口径中点选出数"
+        @click="toggleCaliberPanel()"
+      >
+        📚 口径
+      </button>
       <textarea
         v-model="input"
         rows="1"
@@ -829,6 +901,139 @@ tbody tr:hover {
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* ---- 已核验口径面板（取数菜单） ---- */
+.caliber-hint {
+  margin-top: 18px;
+  border: none;
+  background: none;
+  color: var(--tb-blue-600);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.caliber-hint:hover {
+  text-decoration: underline;
+}
+
+.caliber-panel {
+  flex: none;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 12px 16px;
+  background: var(--tb-surface);
+  border: 1px solid var(--tb-border);
+  border-radius: var(--tb-radius);
+  box-shadow: var(--tb-shadow);
+  max-height: 40vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.caliber-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.caliber-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tb-blue-900);
+  flex: none;
+}
+
+.caliber-search {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 10px;
+  border: 1px solid var(--tb-border);
+  border-radius: 7px;
+  font-family: var(--tb-font);
+  font-size: 13px;
+  color: var(--tb-text);
+  outline: none;
+}
+
+.caliber-search:focus {
+  border-color: var(--tb-blue-500);
+}
+
+.caliber-close {
+  flex: none;
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--tb-text-3);
+  cursor: pointer;
+}
+
+.caliber-status {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--tb-text-2);
+}
+
+.caliber-status.err {
+  color: var(--tb-red);
+}
+
+.caliber-list {
+  margin-top: 8px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.caliber-item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.caliber-item:hover:not(:disabled) {
+  background: var(--tb-blue-50);
+}
+
+.caliber-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.caliber-q {
+  font-size: 13.5px;
+  color: var(--tb-text);
+  font-weight: 500;
+}
+
+.caliber-d {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--tb-text-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.btn-caliber {
+  flex: none;
+  padding: 9px 14px;
+  border-radius: var(--tb-radius);
+  font-size: 14px;
+}
+
+.btn-caliber.active {
+  background: var(--tb-blue-50);
 }
 
 /* ---- 输入区 ---- */
