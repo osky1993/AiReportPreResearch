@@ -25,6 +25,8 @@ export interface AssistedResponse {
   confidence: number
   assetId: number | null
   matchedQuestion: string | null
+  /** 命中口径的中文描述（核验采纳时 AI 反翻译固化；旧资产/生成失败为 null） */
+  matchedDescription: string | null
   clarifyPrompt: string | null
   trace: NlQueryResult | null
 }
@@ -86,6 +88,8 @@ export interface VerifyResult {
   precipitated: boolean
   assetId: number | null
   message: string
+  /** 随资产固化的口径描述（生成失败为 null，不影响沉淀） */
+  description: string | null
 }
 
 /**

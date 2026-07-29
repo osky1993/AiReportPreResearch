@@ -1,6 +1,7 @@
 package com.treasury.nl2sql.store;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
@@ -8,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -15,22 +17,35 @@ import java.util.List;
 @Repository
 public class CaliberRepository {
 
+    private static final String SELECT_COLS =
+            "SELECT id, question, mql_json, description, created_by, created_at, status FROM caliber_asset ";
+
+    private static final RowMapper<CaliberAsset> MAPPER = (rs, i) -> new CaliberAsset(
+            rs.getLong("id"),
+            rs.getString("question"),
+            rs.getString("mql_json"),
+            rs.getString("description"),
+            rs.getString("created_by"),
+            toLdt(rs.getTimestamp("created_at")),
+            rs.getString("status"));
+
     private final JdbcTemplate jdbc;
 
     public CaliberRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** 插入一条 ACTIVE 资产，返回自增主键 id。 */
-    public long insert(String question, String mqlJson, String createdBy) {
+    /** 插入一条 ACTIVE 资产，返回自增主键 id。description 可为 null（反翻译失败不阻断沉淀）。 */
+    public long insert(String question, String mqlJson, String description, String createdBy) {
         KeyHolder kh = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO caliber_asset (question, mql_json, created_by, status) VALUES (?, ?, ?, 'ACTIVE')",
+                    "INSERT INTO caliber_asset (question, mql_json, description, created_by, status) VALUES (?, ?, ?, ?, 'ACTIVE')",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, question);
             ps.setString(2, mqlJson);
-            ps.setString(3, createdBy);
+            if (description == null) ps.setNull(3, Types.VARCHAR); else ps.setString(3, description);
+            ps.setString(4, createdBy);
             return ps;
         }, kh);
         Number key = kh.getKey();
@@ -39,45 +54,17 @@ public class CaliberRepository {
 
     /** 全部 ACTIVE 资产（启动时建召回索引 + 回放 few-shot）。 */
     public List<CaliberAsset> findAllActive() {
-        return jdbc.query(
-                "SELECT id, question, mql_json, created_by, created_at, status " +
-                "FROM caliber_asset WHERE status = 'ACTIVE' ORDER BY id",
-                (rs, i) -> new CaliberAsset(
-                        rs.getLong("id"),
-                        rs.getString("question"),
-                        rs.getString("mql_json"),
-                        rs.getString("created_by"),
-                        toLdt(rs.getTimestamp("created_at")),
-                        rs.getString("status")));
+        return jdbc.query(SELECT_COLS + "WHERE status = 'ACTIVE' ORDER BY id", MAPPER);
     }
 
     /** 全部资产（含 DEPRECATED，供治理页列表）。 */
     public List<CaliberAsset> findAll() {
-        return jdbc.query(
-                "SELECT id, question, mql_json, created_by, created_at, status " +
-                "FROM caliber_asset ORDER BY id",
-                (rs, i) -> new CaliberAsset(
-                        rs.getLong("id"),
-                        rs.getString("question"),
-                        rs.getString("mql_json"),
-                        rs.getString("created_by"),
-                        toLdt(rs.getTimestamp("created_at")),
-                        rs.getString("status")));
+        return jdbc.query(SELECT_COLS + "ORDER BY id", MAPPER);
     }
 
     /** 按 id 取单条（含 DEPRECATED，供治理页详情），不存在返回 null。 */
     public CaliberAsset findById(long id) {
-        List<CaliberAsset> hits = jdbc.query(
-                "SELECT id, question, mql_json, created_by, created_at, status " +
-                "FROM caliber_asset WHERE id = ?",
-                (rs, i) -> new CaliberAsset(
-                        rs.getLong("id"),
-                        rs.getString("question"),
-                        rs.getString("mql_json"),
-                        rs.getString("created_by"),
-                        toLdt(rs.getTimestamp("created_at")),
-                        rs.getString("status")),
-                id);
+        List<CaliberAsset> hits = jdbc.query(SELECT_COLS + "WHERE id = ?", MAPPER, id);
         return hits.isEmpty() ? null : hits.get(0);
     }
 

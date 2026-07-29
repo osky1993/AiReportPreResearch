@@ -95,10 +95,11 @@ CREATE TABLE IF NOT EXISTS `treasury_income_detail` (
 --   · 由 schema.exclude-tables 配置排除，不进 NL2SQL 表白名单与 prompt schema。
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS caliber_asset (
-  id         BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '资产ID',
-  question   VARCHAR(512) NOT NULL COMMENT '代表问法（沉淀时的自然语言问题）',
-  mql_json   TEXT         NOT NULL COMMENT '已校验的 MQL（资产单元，JSON）',
-  created_by VARCHAR(128)          COMMENT '采纳人（demo 未接鉴权，默认 demo）',
-  created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '沉淀时间',
-  status     VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE' COMMENT '状态 ACTIVE/DEPRECATED'
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '资产ID',
+  question    VARCHAR(512) NOT NULL COMMENT '代表问法（沉淀时的自然语言问题）',
+  mql_json    TEXT         NOT NULL COMMENT '已校验的 MQL（资产单元，JSON）',
+  description VARCHAR(1000)         COMMENT '中文口径描述（核验采纳时 AI 反翻译 MQL 生成，失败为 NULL；存量资产见 db/03）',
+  created_by  VARCHAR(128)          COMMENT '采纳人（demo 未接鉴权，默认 demo）',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '沉淀时间',
+  status      VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE' COMMENT '状态 ACTIVE/DEPRECATED'
 ) COMMENT='口径资产表（人在回路沉淀）';

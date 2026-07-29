@@ -26,6 +26,8 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 21)   # 必须 JDK 17+（pom java.v
 mysql -h127.0.0.1 -P23306 -uroot -p < db/00-init.sql              # 建 reportbigk + gk 三表 + caliber_asset（全 IF NOT EXISTS 无 DROP，业务数据另行人工导入）
 mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/01-report-tables.sql  # 流水线状态表（可清零）
 mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/02-asset-tables.sql   # 资产表（CREATE IF NOT EXISTS，版本行不可变，禁 DROP）
+# 存量环境补丁（新环境勿执行，00 已含该列；重复执行报 Duplicate column 可忽略）：
+mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/03-caliber-description.sql  # caliber_asset 增补 description
 
 mvn -q spring-boot:run            # 端口 8080；看到「报告资产注册表就绪」即就绪
 mvn -q clean package
@@ -77,6 +79,7 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
 - **底座的自由生成路径（`Nl2SqlService.query()` / 首页 `/api/query`）不进报告主流水线**，定位为「资产制作期工具」：向导（`MetricWizardService`）用它试查生成 MQL 草稿，人工核验后经确定性参数化（`MqlParameterizer`）沉为指标模板。这保持了底座作为 `EvalService` 评估契约的纯净性——参见 `../nl2mql2sqlDemo/CLAUDE.md` 的「分层是硬约束」。
 - 报告层复用底座的 `MqlValidator`（安全边界）/ `MqlSqlCompiler`（确定性编译）/ `EmbeddingClient`（模板匹配召回）。
 - **口径反翻译共用一个实现**：底座 `service/MqlExplainService`（确定性前置闸→LLM 反翻译，TEMPLATE/AD_HOC 双语境 + 按 (mode, MQL) LRU 缓存）。问数页「口径说明」走 `POST /api/explain`（AD_HOC，即席条件值如实描述）；指标向导第 2 步经 `MetricWizardService.explain` 委托（TEMPLATE，占位符按报告期描述）。它是纯展示层辅助——不进取数/事实链路、不改 `NlQueryResult` 评估契约，失败关闭（400 转人工），prompt 禁止编造 MQL 之外的口径与结果数值。
+- **口径描述随核验固化**：`/api/verify` 采纳时反翻译一次并存入 `caliber_asset.description`（生成失败 fail-open：只告警不阻断沉淀，列为 NULL）。HIT/CANDIDATE 经 `AssistedResponse.matchedDescription` 零成本回显（前端直接展示固化描述、隐藏按需生成按钮；NULL 时回落按钮）。描述是展示层元数据，不参与召回/校验/执行。
 
 ### 资产模型（库为唯一事实源）
 

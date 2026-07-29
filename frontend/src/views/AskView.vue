@@ -21,6 +21,8 @@ interface ChatItem {
   /** 核验结论文案；非空即隐藏核验按钮 */
   verifyMsg?: string
   verifyOk?: boolean
+  /** 采纳时随资产固化的口径描述（服务端生成，可空） */
+  verifyDesc?: string
   /** 口径说明（AI 反翻译 MQL）：加载态 / 结果 / 失败文案 */
   explainPending?: boolean
   explanation?: MqlExplanation
@@ -91,6 +93,7 @@ async function doVerify(item: ChatItem, accept: boolean) {
     const r = await verify(item.question, mql, accept, (item.verifier ?? '').trim() || '业务用户')
     item.verifyOk = r.precipitated
     item.verifyMsg = r.message
+    item.verifyDesc = r.description ?? undefined
   } catch (e) {
     item.verifyOk = false
     item.verifyMsg = e instanceof Error ? e.message : '核验请求失败，请稍后重试'
@@ -209,6 +212,9 @@ function pct(v: number): string {
                   >相近的已核验口径：「{{ item.resp.matchedQuestion }}」（相似度
                   {{ pct(item.resp.confidence) }}）</span
                 >
+                <span v-if="item.resp.matchedDescription" class="candidate-desc">
+                  该口径的取数说明：{{ item.resp.matchedDescription }}
+                </span>
                 <span v-if="!item.caliberResolved" class="clarify-actions">
                   <button class="btn-primary" :disabled="busy" @click="reuseCaliber(item)">
                     按该口径查询
@@ -255,10 +261,17 @@ function pct(v: number): string {
               <li v-for="(w, i) in item.resp.trace.warnings" :key="i">⚠ {{ w }}</li>
             </ul>
 
-            <!-- 口径说明：AI 反翻译 MQL 为业务可读描述（按需加载，展示层辅助） -->
+            <!-- 口径说明：命中口径直接展示核验时固化的描述；否则按需 AI 反翻译（展示层辅助） -->
             <div v-if="item.resp.trace?.success && item.resp.trace.mql" class="explain">
+              <div v-if="item.resp.matchedDescription" class="explain-body">
+                <div class="explain-title">取数口径说明（已随核验固化）</div>
+                <p class="explain-text">{{ item.resp.matchedDescription }}</p>
+                <p class="explain-note">
+                  本说明在该口径人工核验采纳时生成并随资产固化；数字以上方查询结果为准。
+                </p>
+              </div>
               <button
-                v-if="!item.explanation && !item.explainPending && !item.explainError"
+                v-else-if="!item.explanation && !item.explainPending && !item.explainError"
                 class="btn-secondary"
                 @click="loadExplanation(item)"
               >
@@ -313,9 +326,14 @@ function pct(v: number): string {
                   </button>
                 </span>
               </template>
-              <span v-else class="verify-result" :class="item.verifyOk ? 'ok' : 'no'">
-                {{ item.verifyOk ? '✓' : '—' }} {{ item.verifyMsg }}
-              </span>
+              <div v-else class="verify-done">
+                <span class="verify-result" :class="item.verifyOk ? 'ok' : 'no'">
+                  {{ item.verifyOk ? '✓' : '—' }} {{ item.verifyMsg }}
+                </span>
+                <span v-if="item.verifyOk && item.verifyDesc" class="verify-desc">
+                  已固化口径说明：{{ item.verifyDesc }}
+                </span>
+              </div>
             </div>
 
             <!-- 取数依据钻取 -->
@@ -553,6 +571,13 @@ function pct(v: number): string {
   color: var(--tb-text-2);
 }
 
+.candidate-desc {
+  flex-basis: 100%;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--tb-text);
+}
+
 .fail {
   margin-top: 10px;
   color: var(--tb-red);
@@ -714,8 +739,20 @@ tbody tr:hover {
   border-radius: 7px;
 }
 
+.verify-done {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .verify-result {
   font-size: 13px;
+}
+
+.verify-desc {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--tb-text-2);
 }
 
 .verify-result.ok {

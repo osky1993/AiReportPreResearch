@@ -10,6 +10,7 @@ public record CaliberAsset(
         long id,
         String question,
         String mqlJson,
+        String description,    // 中文口径描述（核验采纳时 AI 反翻译生成；旧资产/生成失败为 null）
         String createdBy,
         LocalDateTime createdAt,
         String status          // ACTIVE | DEPRECATED

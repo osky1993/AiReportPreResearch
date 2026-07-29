@@ -59,12 +59,13 @@ public class CaliberStore {
 
     public enum Band { HIT, CANDIDATE, MISS }
 
-    /** 一次召回结果：分档 + 命中资产的最小信息（未命中时 assetId/mqlJson 为 null）。 */
-    public record Recall(Band band, Long assetId, String matchedQuestion, String mqlJson, double score) {
-        public static Recall miss(double score) { return new Recall(Band.MISS, null, null, null, score); }
+    /** 一次召回结果：分档 + 命中资产的最小信息（未命中时 assetId/mqlJson/description 为 null）。 */
+    public record Recall(Band band, Long assetId, String matchedQuestion, String mqlJson,
+                         String description, double score) {
+        public static Recall miss(double score) { return new Recall(Band.MISS, null, null, null, null, score); }
     }
 
-    private record Indexed(long assetId, String question, String mqlJson, float[] vector) {}
+    private record Indexed(long assetId, String question, String mqlJson, String description, float[] vector) {}
 
     public boolean isEnabled() { return enabled; }
 
@@ -86,7 +87,7 @@ public class CaliberStore {
         List<float[]> vectors = embedding.embedBatch(assets.stream().map(CaliberAsset::question).toList());
         for (int i = 0; i < assets.size(); i++) {
             CaliberAsset a = assets.get(i);
-            index.add(new Indexed(a.id(), a.question(), a.mqlJson(), vectors.get(i)));
+            index.add(new Indexed(a.id(), a.question(), a.mqlJson(), a.description(), vectors.get(i)));
             fewShot.add(a.question(), a.mqlJson());   // 回放软增益
         }
         log.info("口径资产库已加载: {} 条 ACTIVE 资产（tau-hit={}, tau-miss={}）", index.size(), tauHit, tauMiss);
@@ -127,14 +128,14 @@ public class CaliberStore {
                 : bestScore >= tauMiss ? Band.CANDIDATE
                 : Band.MISS;
         if (band == Band.MISS) return Recall.miss(bestScore);
-        return new Recall(band, best.assetId(), best.question(), best.mqlJson(), bestScore);
+        return new Recall(band, best.assetId(), best.question(), best.mqlJson(), best.description(), bestScore);
     }
 
     /** 按 id 取资产（供 CANDIDATE「复用候选」直取）；不存在返回 null。 */
     public Recall byId(long assetId) {
         for (Indexed it : index) {
             if (it.assetId() == assetId) {
-                return new Recall(Band.HIT, it.assetId(), it.question(), it.mqlJson(), 1.0);
+                return new Recall(Band.HIT, it.assetId(), it.question(), it.mqlJson(), it.description(), 1.0);
             }
         }
         return null;
@@ -142,10 +143,11 @@ public class CaliberStore {
 
     /**
      * 沉淀一条被核验采纳的口径：重校验 → 落库 → 入召回索引 → 回流 few-shot。
+     * @param description 中文口径描述（AI 反翻译生成，可为 null——生成失败不阻断沉淀）
      * @return 新资产 id
      * @throws IllegalArgumentException MQL 非法（防止把坏资产写进库）
      */
-    public long precipitate(String question, String mqlJson, String createdBy) {
+    public long precipitate(String question, String mqlJson, String description, String createdBy) {
         Mql mql;
         try {
             mql = mapper.readValue(mqlJson, Mql.class);
@@ -156,10 +158,11 @@ public class CaliberStore {
         if (!errs.isEmpty()) {
             throw new IllegalArgumentException("MQL 校验未通过: " + String.join("; ", errs));
         }
-        long id = repo.insert(question, mqlJson, createdBy == null ? "demo" : createdBy);
-        index.add(new Indexed(id, question, mqlJson, embedding.embed(question)));
+        long id = repo.insert(question, mqlJson, description, createdBy == null ? "demo" : createdBy);
+        index.add(new Indexed(id, question, mqlJson, description, embedding.embed(question)));
         fewShot.add(question, mqlJson);
-        log.info("口径已沉淀: id={} 问题=「{}」当前 {} 条资产", id, question, index.size());
+        log.info("口径已沉淀: id={} 问题=「{}」描述{} 当前 {} 条资产",
+                id, question, description == null ? "缺失" : "已固化", index.size());
         return id;
     }
 

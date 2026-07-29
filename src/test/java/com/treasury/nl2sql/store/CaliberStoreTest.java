@@ -35,18 +35,19 @@ class CaliberStoreTest {
 
     @Test
     void hit_onIdenticalQuestion() {
-        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户，列出账户名称和余额", "{}", "demo", null, "ACTIVE");
+        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户，列出账户名称和余额", "{}", "按余额降序取前3个账户", "demo", null, "ACTIVE");
         CaliberStore store = build(List.of(a));
         CaliberStore.Recall r = store.recall("余额最高的3个账户，列出账户名称和余额");
         assertEquals(CaliberStore.Band.HIT, r.band());
         assertEquals(7L, r.assetId());
         assertEquals("{}", r.mqlJson());
+        assertEquals("按余额降序取前3个账户", r.description(), "固化的口径描述应随召回透传");
         assertTrue(r.score() >= 0.92);
     }
 
     @Test
     void miss_onUnrelatedQuestion() {
-        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户，列出账户名称和余额", "{}", "demo", null, "ACTIVE");
+        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户，列出账户名称和余额", "{}", "按余额降序取前3个账户", "demo", null, "ACTIVE");
         CaliberStore store = build(List.of(a));
         CaliberStore.Recall r = store.recall("abcdefg hijklmn opqrst uvwxyz");
         assertEquals(CaliberStore.Band.MISS, r.band());
@@ -61,15 +62,16 @@ class CaliberStoreTest {
 
     @Test
     void byId_returnsHitForKnownAsset_nullForUnknown() {
-        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户", "{}", "demo", null, "ACTIVE");
+        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户", "{}", null, "demo", null, "ACTIVE");
         CaliberStore store = build(List.of(a));
         assertEquals(CaliberStore.Band.HIT, store.byId(7).band());
+        assertNull(store.byId(7).description(), "无描述的旧资产 description 应为 null");
         assertNull(store.byId(999));
     }
 
     @Test
     void recall_withNullQv_isMiss() {
-        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户", "{}", "demo", null, "ACTIVE");
+        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户", "{}", null, "demo", null, "ACTIVE");
         CaliberStore store = build(List.of(a));
         CaliberStore.Recall r = store.recall("余额最高的3个账户", null);
         assertEquals(CaliberStore.Band.MISS, r.band(), "qv=null（embed 失败）应按 MISS 走生成");
@@ -78,7 +80,7 @@ class CaliberStoreTest {
 
     @Test
     void recall_withProvidedQv_skipsEmbed() {
-        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户", "{}", "demo", null, "ACTIVE");
+        CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户", "{}", null, "demo", null, "ACTIVE");
         String q = "余额最高的3个账户";
         float[] qv = emb.embed(q);
         // 构造一个 load 之后就拒绝 embed 的 store：传入 qv 的 recall 不应触碰 embedding

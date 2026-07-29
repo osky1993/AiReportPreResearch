@@ -268,7 +268,11 @@ function renderAssisted(resp) {
           + `<span class="meta">来源 ${resp.source} · 相似度 ${resp.confidence.toFixed(3)} · 资产 #${resp.assetId} · 未调用大模型</span></div>`;
     html += `<div class="info">复用口径原问法：<b>${escapeHtml(resp.matchedQuestion)}</b><br>当前问题：<b>${escapeHtml(LAST_Q)}</b>`
           + `<div class="meta" style="margin-top:4px;text-transform:none;">若两者口径/参数不一致（如日期、阈值），请点下方「口径不符」改用模型重新生成。</div></div>`;
-    html += renderTrace(resp.trace);
+    if (resp.matchedDescription) {
+      html += `<div class="info" style="margin-top:8px;"><b>取数口径说明（已随核验固化）</b><br>${escapeHtml(resp.matchedDescription)}`
+            + `<div class="meta" style="margin-top:4px;text-transform:none;">本说明在该口径人工核验采纳时生成并随资产固化；数字以查询结果为准。</div></div>`;
+    }
+    html += renderTrace(resp.trace, !resp.matchedDescription);
     html += `<div class="row" style="margin-top:12px;"><button class="gray" onclick="regenerate()">口径不符 → 模型重新生成</button></div>`;
   } else if (resp.state === 'GENERATED') {
     html += `<div class="row"><span class="badge gen">🟡 新生成 · 待核验</span>`
@@ -282,6 +286,9 @@ function renderAssisted(resp) {
     if (resp.assetId) html += `<span class="meta">候选资产 #${resp.assetId} · 相似度 ${resp.confidence.toFixed(3)}</span>`;
     html += `</div>`;
     html += `<div class="warn">${escapeHtml(resp.clarifyPrompt)}</div>`;
+    if (resp.matchedDescription) {
+      html += `<div class="info" style="margin-top:8px;"><b>该候选口径的取数说明</b>（核验时固化，供判断是否相符）<br>${escapeHtml(resp.matchedDescription)}</div>`;
+    }
     html += `<div class="row" style="margin-top:10px;">`;
     if (resp.assetId) html += `<button onclick="reuseCandidate(${resp.assetId})">复用该候选口径</button>`;
     html += `<button class="gray" onclick="focusQuestion()">补充${resp.assetId?'差异':''}后重新提问</button>`;
@@ -298,14 +305,15 @@ function renderAssisted(resp) {
 }
 
 // 渲染一个 NlQueryResult trace 的 SQL/结果/MQL（HIT 与 GENERATED 共用）
-function renderTrace(d) {
+// showExplainBtn=false：已展示固化的口径描述，无需再给按需反翻译入口
+function renderTrace(d, showExplainBtn = true) {
   if (!d) return '';
   let html = '';
   if (d.warnings && d.warnings.length) html += d.warnings.map(w => `<div class="warn">⚠️ ${escapeHtml(w)}</div>`).join('');
   if (d.sql) html += `<div class="label">编译出的 SQL</div><pre class="sql">${escapeHtml(d.sql)}</pre>`;
   if (d.rows) html += `<div class="label">查询结果（${d.rows.length} 行）</div>${renderTable(d.rows)}`;
   html += `<details><summary>查看 MQL 中间表示（结构化 JSON）</summary><pre>${escapeHtml(JSON.stringify(d.mql, null, 2))}</pre></details>`;
-  if (d.mql) html += `<div class="row" style="margin-top:10px;"><button class="ghost" id="explainBtn" onclick="explainTrace()">📖 生成口径说明（AI 反翻译 MQL）</button></div><div id="explainBox"></div>`;
+  if (d.mql && showExplainBtn) html += `<div class="row" style="margin-top:10px;"><button class="ghost" id="explainBtn" onclick="explainTrace()">📖 生成口径说明（AI 反翻译 MQL）</button></div><div id="explainBox"></div>`;
   return html;
 }
 
@@ -344,7 +352,8 @@ async function verify(accept) {
     });
     $('result').insertAdjacentHTML('beforeend',
       `<div class="${d.precipitated ? 'info' : 'err'}" style="margin-top:12px;">${escapeHtml(d.message)}`
-      + `${d.precipitated ? ' —— 再次提同类问题即可命中直取。' : ''}</div>`);
+      + `${d.precipitated ? ' —— 再次提同类问题即可命中直取。' : ''}`
+      + `${d.precipitated && d.description ? `<div class="meta" style="margin-top:6px;text-transform:none;">已固化口径说明：${escapeHtml(d.description)}</div>` : ''}</div>`);
   } catch (e) {
     $('result').insertAdjacentHTML('beforeend', `<div class="err" style="margin-top:12px;">核验请求失败：${escapeHtml(e.message)}</div>`);
   }

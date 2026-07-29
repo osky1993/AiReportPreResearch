@@ -456,6 +456,10 @@ watch([kind, id], load)
         </h1>
         <div class="kv">
           <div><span class="k">业务问法</span>{{ caliber.question }}</div>
+          <div>
+            <span class="k">口径说明</span
+            >{{ caliber.description ?? '—（沉淀于该能力上线前，可在问数页按需生成）' }}
+          </div>
           <div><span class="k">沉淀人</span>{{ caliber.createdBy ?? '—' }}</div>
           <div><span class="k">沉淀时间</span>{{ fmtTime(caliber.createdAt) }}</div>
         </div>
