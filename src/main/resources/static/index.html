@@ -305,7 +305,30 @@ function renderTrace(d) {
   if (d.sql) html += `<div class="label">编译出的 SQL</div><pre class="sql">${escapeHtml(d.sql)}</pre>`;
   if (d.rows) html += `<div class="label">查询结果（${d.rows.length} 行）</div>${renderTable(d.rows)}`;
   html += `<details><summary>查看 MQL 中间表示（结构化 JSON）</summary><pre>${escapeHtml(JSON.stringify(d.mql, null, 2))}</pre></details>`;
+  if (d.mql) html += `<div class="row" style="margin-top:10px;"><button class="ghost" id="explainBtn" onclick="explainTrace()">📖 生成口径说明（AI 反翻译 MQL）</button></div><div id="explainBox"></div>`;
   return html;
+}
+
+// 口径说明：把当前 trace 的 MQL 反翻译为业务可读中文描述（POST /api/explain，展示层辅助、失败关闭）
+async function explainTrace() {
+  if (!LAST_TRACE || !LAST_TRACE.mql) return;
+  const btn = $('explainBtn'), box = $('explainBox');
+  btn.disabled = true; box.innerHTML = '<span class="spin"></span>';
+  try {
+    const d = await fetchJson('/api/explain', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ mql: LAST_TRACE.mql })
+    });
+    if (d.error) throw new Error(d.error);   // fetchJson 对 400 JSON 不抛错，业务性拒绝在此接住
+    let h = `<div class="info" style="margin-top:8px;"><b>取数口径说明</b><br>${escapeHtml(d.explanation)}`;
+    if (d.caveats && d.caveats.length) h += `<div class="warn" style="margin-top:6px;">${d.caveats.map(c => '待确认：' + escapeHtml(c)).join('<br>')}</div>`;
+    h += `<div class="meta" style="margin-top:6px;text-transform:none;">本说明由 AI 根据 MQL 结构生成，供理解口径参考；数字以查询结果为准。</div></div>`;
+    box.innerHTML = h;
+    btn.style.display = 'none';
+  } catch (e) {
+    box.innerHTML = `<div class="err" style="margin-top:8px;">口径说明生成失败：${escapeHtml(e.message)}</div>`;
+    btn.disabled = false;
+  }
 }
 
 function regenerate() { ask(LAST_Q, true); }        // 命中口径不符 → 强制重生成

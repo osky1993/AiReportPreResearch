@@ -52,6 +52,35 @@ export function reuse(assetId: number, question: string): Promise<AssistedRespon
   return post('/api/reuse', { assetId, question })
 }
 
+/** 口径说明（后端 MqlExplainService.Explanation，AI 反翻译 MQL）。 */
+export interface MqlExplanation {
+  explanation: string
+  caveats: string[] | null
+}
+
+/**
+ * 口径说明：把结果里的 MQL 反翻译为业务人员可读的中文口径描述（即席语境，展示层辅助）。
+ * 服务端业务性拒绝返回 400 {error}，这里解出人话报错。
+ */
+export async function explainMql(mql: Record<string, unknown>): Promise<MqlExplanation> {
+  const res = await fetch('/api/explain', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mql }),
+  })
+  if (!res.ok) {
+    let msg = `服务请求失败（HTTP ${res.status}）`
+    try {
+      const body = (await res.json()) as { error?: string }
+      if (body.error) msg = body.error
+    } catch {
+      /* 非 JSON 错误体，保留默认文案 */
+    }
+    throw new Error(msg)
+  }
+  return res.json() as Promise<MqlExplanation>
+}
+
 /** 核验闸门返回（后端 AssistedQueryService.VerifyResult）。 */
 export interface VerifyResult {
   precipitated: boolean

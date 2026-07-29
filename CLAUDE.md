@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | 层 | 包 | 定位 |
 |---|---|---|
-| 底座查询引擎 | `com.treasury.nl2sql.{ir,compile,validate,llm,embedding,schema,service,glossary,fewshot,eval,guard,store,api}` | 原 demo 原样继承，**代码/端点零改动** |
+| 底座查询引擎 | `com.treasury.nl2sql.{ir,compile,validate,llm,embedding,schema,service,glossary,fewshot,eval,guard,store,api}` | 原 demo 原样继承，存量代码/端点不改（增量仅 `service/MqlExplainService` + `POST /api/explain` 口径反翻译，见衔接契约） |
 | 报告流水线 | `com.treasury.nl2sql.report.{domain,asset,pipeline,store,api}` | 本项目新增 |
 
 > **底座层的权威文档是 `../nl2mql2sqlDemo/CLAUDE.md`**——它详述 IR 模型（`ir/Mql.java`）、`MqlValidator` 安全边界、`Nl2SqlService.query()` 链路、口径沉淀等。改底座前先读它。本文件只详述**报告流水线层**与两层的衔接契约。项目自带文档：`README.md`（能力全景 + 演示脚本）、`plan/`（设计与阶段计划：`ideaV2*.md` 主线设计、`roadmap.md` 总路线、`phase01~06.md` 各阶段分解与验收记录）、`docs/`（技术说明 PDF 各版本与架构图归档）。
@@ -76,6 +76,7 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
 
 - **底座的自由生成路径（`Nl2SqlService.query()` / 首页 `/api/query`）不进报告主流水线**，定位为「资产制作期工具」：向导（`MetricWizardService`）用它试查生成 MQL 草稿，人工核验后经确定性参数化（`MqlParameterizer`）沉为指标模板。这保持了底座作为 `EvalService` 评估契约的纯净性——参见 `../nl2mql2sqlDemo/CLAUDE.md` 的「分层是硬约束」。
 - 报告层复用底座的 `MqlValidator`（安全边界）/ `MqlSqlCompiler`（确定性编译）/ `EmbeddingClient`（模板匹配召回）。
+- **口径反翻译共用一个实现**：底座 `service/MqlExplainService`（确定性前置闸→LLM 反翻译，TEMPLATE/AD_HOC 双语境 + 按 (mode, MQL) LRU 缓存）。问数页「口径说明」走 `POST /api/explain`（AD_HOC，即席条件值如实描述）；指标向导第 2 步经 `MetricWizardService.explain` 委托（TEMPLATE，占位符按报告期描述）。它是纯展示层辅助——不进取数/事实链路、不改 `NlQueryResult` 评估契约，失败关闭（400 转人工），prompt 禁止编造 MQL 之外的口径与结果数值。
 
 ### 资产模型（库为唯一事实源）
 

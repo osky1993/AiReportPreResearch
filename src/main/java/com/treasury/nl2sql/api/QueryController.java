@@ -11,12 +11,15 @@ import com.treasury.nl2sql.schema.SchemaLinker;
 import com.treasury.nl2sql.schema.SchemaService;
 import com.treasury.nl2sql.service.AssistedQueryService;
 import com.treasury.nl2sql.service.AssistedResponse;
+import com.treasury.nl2sql.service.MqlExplainService;
 import com.treasury.nl2sql.service.Nl2SqlService;
 import com.treasury.nl2sql.service.NlQueryResult;
 import com.treasury.nl2sql.store.CaliberStore;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -32,12 +35,14 @@ public class QueryController {
     private final SchemaService schemaService;
     private final AssistedQueryService assisted;
     private final CaliberStore caliberStore;
+    private final MqlExplainService explainService;
     private final ObjectMapper mapper;
 
     public QueryController(Nl2SqlService service, EvalService evalService, EvalJobService evalJobs,
                            SchemaLinker schemaLinker, FewShotSelector fewShot, GlossaryService glossary,
                            LinkingEvalService linkingEval, SchemaService schemaService,
-                           AssistedQueryService assisted, CaliberStore caliberStore, ObjectMapper mapper) {
+                           AssistedQueryService assisted, CaliberStore caliberStore,
+                           MqlExplainService explainService, ObjectMapper mapper) {
         this.service = service;
         this.evalService = evalService;
         this.evalJobs = evalJobs;
@@ -48,6 +53,7 @@ public class QueryController {
         this.schemaService = schemaService;
         this.assisted = assisted;
         this.caliberStore = caliberStore;
+        this.explainService = explainService;
         this.mapper = mapper;
     }
 
@@ -151,6 +157,23 @@ public class QueryController {
     @GetMapping("/caliber/recall")
     public CaliberStore.Recall caliberRecall(@RequestParam String question) {
         return caliberStore.recall(question);
+    }
+
+    public record ExplainRequest(JsonNode mql) {}
+
+    /**
+     * 口径说明：把结果里的 MQL 反翻译成业务人员可读的中文口径描述（即席语境）。
+     * 纯展示层辅助——不进取数链路、不改 {@link NlQueryResult} 评估契约；服务端重校验回传 MQL，失败关闭。
+     */
+    @PostMapping("/explain")
+    public MqlExplainService.Explanation explain(@RequestBody ExplainRequest req) {
+        return explainService.explain(req.mql(), MqlExplainService.Mode.AD_HOC);
+    }
+
+    /** 反翻译前置闸/解析失败等业务性拒绝 → 400 {"error": 原因}（非 500）。 */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> badRequest(IllegalArgumentException e) {
+        return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
     }
 
     @GetMapping("/health")

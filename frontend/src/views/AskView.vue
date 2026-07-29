@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, useTemplateRef } from 'vue'
-import { ask, reuse, verify, type AssistedResponse } from '@/api/ask'
+import { ask, explainMql, reuse, verify, type AssistedResponse, type MqlExplanation } from '@/api/ask'
 
 interface ChatItem {
   id: number
@@ -21,6 +21,10 @@ interface ChatItem {
   /** 核验结论文案；非空即隐藏核验按钮 */
   verifyMsg?: string
   verifyOk?: boolean
+  /** 口径说明（AI 反翻译 MQL）：加载态 / 结果 / 失败文案 */
+  explainPending?: boolean
+  explanation?: MqlExplanation
+  explainError?: string
 }
 
 const EXAMPLES = [
@@ -92,6 +96,21 @@ async function doVerify(item: ChatItem, accept: boolean) {
     item.verifyMsg = e instanceof Error ? e.message : '核验请求失败，请稍后重试'
   } finally {
     item.verifyPending = false
+  }
+}
+
+/** 口径说明按需加载：另一次 LLM 调用，不阻塞出数主链路；失败只影响说明区。 */
+async function loadExplanation(item: ChatItem) {
+  const mql = item.resp?.trace?.mql
+  if (!mql || item.explainPending || item.explanation) return
+  item.explainPending = true
+  item.explainError = undefined
+  try {
+    item.explanation = await explainMql(mql)
+  } catch (e) {
+    item.explainError = e instanceof Error ? e.message : '口径说明生成失败，请稍后重试'
+  } finally {
+    item.explainPending = false
   }
 }
 
@@ -235,6 +254,35 @@ function pct(v: number): string {
             <ul v-if="item.resp.trace?.warnings?.length" class="warnings">
               <li v-for="(w, i) in item.resp.trace.warnings" :key="i">⚠ {{ w }}</li>
             </ul>
+
+            <!-- 口径说明：AI 反翻译 MQL 为业务可读描述（按需加载，展示层辅助） -->
+            <div v-if="item.resp.trace?.success && item.resp.trace.mql" class="explain">
+              <button
+                v-if="!item.explanation && !item.explainPending && !item.explainError"
+                class="btn-secondary"
+                @click="loadExplanation(item)"
+              >
+                📖 生成口径说明
+              </button>
+              <span v-if="item.explainPending" class="explain-loading">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                正在解读取数口径…
+              </span>
+              <div v-if="item.explainError" class="explain-error">
+                口径说明生成失败：{{ item.explainError }}
+                <button class="btn-secondary" @click="loadExplanation(item)">重试</button>
+              </div>
+              <div v-if="item.explanation" class="explain-body">
+                <div class="explain-title">取数口径说明</div>
+                <p class="explain-text">{{ item.explanation.explanation }}</p>
+                <ul v-if="item.explanation.caveats?.length" class="explain-caveats">
+                  <li v-for="(c, i) in item.explanation.caveats" :key="i">待确认：{{ c }}</li>
+                </ul>
+                <p class="explain-note">
+                  本说明由 AI 根据取数结构生成，供理解口径参考；数字以上方查询结果为准。
+                </p>
+              </div>
+            </div>
 
             <!-- 核验闸门：AI 生成的结果可采纳沉淀为口径资产，或驳回丢弃 -->
             <div
@@ -565,6 +613,60 @@ tbody tr:hover {
   list-style: none;
   color: var(--tb-amber);
   font-size: 12.5px;
+}
+
+/* ---- 口径说明 ---- */
+.explain {
+  margin-top: 12px;
+}
+
+.explain-loading {
+  font-size: 13px;
+  color: var(--tb-text-2);
+}
+
+.explain-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--tb-red);
+}
+
+.explain-body {
+  padding: 12px 16px;
+  background: var(--tb-bg);
+  border: 1px solid var(--tb-border);
+  border-left: 3px solid var(--tb-blue-500);
+  border-radius: 8px;
+}
+
+.explain-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--tb-blue-900);
+}
+
+.explain-text {
+  margin-top: 6px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--tb-text);
+}
+
+.explain-caveats {
+  margin-top: 8px;
+  padding-left: 4px;
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--tb-amber);
+}
+
+.explain-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--tb-text-3);
 }
 
 /* ---- 核验闸门 ---- */
