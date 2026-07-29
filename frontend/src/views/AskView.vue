@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { nextTick, ref, useTemplateRef } from 'vue'
-import { ask, explainMql, reuse, verify, type AssistedResponse, type MqlExplanation } from '@/api/ask'
+import { nextTick, onMounted, ref, useTemplateRef } from 'vue'
+import {
+  ask,
+  explainMql,
+  getSchemaColumnMap,
+  reuse,
+  verify,
+  type AssistedResponse,
+  type MqlExplanation,
+} from '@/api/ask'
 
 interface ChatItem {
   id: number
@@ -134,6 +142,27 @@ function columns(rows: Array<Record<string, unknown>>): string[] {
   return rows.length ? Object.keys(rows[0]!) : []
 }
 
+/** 列名→列注释（schema 反射），挂载时异步预取；取不到时表头回落原列名。 */
+const columnComments = ref<Map<string, string>>(new Map())
+onMounted(async () => {
+  columnComments.value = await getSchemaColumnMap()
+})
+
+/** 中文表头：金额列「…，亿元」转尾注；说明性长尾（：/（ 之后）截断；无注释保留技术列名（如 LLM 别名）。 */
+function headerLabel(col: string): string {
+  const comment = columnComments.value.get(col)
+  if (!comment) return col
+  if (comment.endsWith('，亿元')) return `${comment.slice(0, -3)}（亿元）`
+  const label = comment.split('：')[0]!.split('（')[0]!.trim()
+  return label || col
+}
+
+/** 表头悬停提示：技术列名 + 完整注释。 */
+function headerTitle(col: string): string {
+  const comment = columnComments.value.get(col)
+  return comment ? `${col}：${comment}` : col
+}
+
 function fmt(v: unknown): string {
   if (v == null) return '—'
   if (typeof v === 'number') return v.toLocaleString('zh-CN', { maximumFractionDigits: 4 })
@@ -243,7 +272,9 @@ function pct(v: number): string {
                 <table>
                   <thead>
                     <tr>
-                      <th v-for="c in columns(item.resp.trace.rows)" :key="c">{{ c }}</th>
+                      <th v-for="c in columns(item.resp.trace.rows)" :key="c" :title="headerTitle(c)">
+                        {{ headerLabel(c) }}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>

@@ -54,6 +54,35 @@ export function reuse(assetId: number, question: string): Promise<AssistedRespon
   return post('/api/reuse', { assetId, question })
 }
 
+/**
+ * 列名→列注释 映射（源自 GET /api/schema 反射快照），供结果表渲染中文表头。
+ * 模块级缓存一次会话只取一次；失败返回空 Map（表头回落原列名，不阻断）。
+ * 同名列注释冲突取首见（快照表序 journal 在前，treasury_short_name 取「国库简称」）。
+ */
+let schemaColumnMapPromise: Promise<Map<string, string>> | null = null
+
+export function getSchemaColumnMap(): Promise<Map<string, string>> {
+  schemaColumnMapPromise ??= (async () => {
+    const map = new Map<string, string>()
+    try {
+      const res = await fetch('/api/schema')
+      if (!res.ok) return map
+      const snapshot = (await res.json()) as {
+        tables: Array<{ name: string; columns: Array<{ name: string; comment: string | null }> }>
+      }
+      for (const table of snapshot.tables) {
+        for (const col of table.columns) {
+          if (col.comment && !map.has(col.name)) map.set(col.name, col.comment)
+        }
+      }
+    } catch {
+      /* 静默：表头回落原列名 */
+    }
+    return map
+  })()
+  return schemaColumnMapPromise
+}
+
 /** 口径说明（后端 MqlExplainService.Explanation，AI 反翻译 MQL）。 */
 export interface MqlExplanation {
   explanation: string
