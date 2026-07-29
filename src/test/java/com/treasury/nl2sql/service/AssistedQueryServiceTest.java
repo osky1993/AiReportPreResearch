@@ -82,6 +82,25 @@ class AssistedQueryServiceTest {
     }
 
     @Test
+    void askHitWithParamDrift_downgradesToClarify_withoutExecution() {
+        when(store.isEnabled()).thenReturn(true);
+        when(embedding.embed(anyString())).thenReturn(new float[]{1f});
+        when(store.recall(anyString(), any())).thenReturn(new CaliberStore.Recall(
+                CaliberStore.Band.HIT, 7L, "2026年6月30日库存余额最高的5个县级国库",
+                MQL, "口径描述", 0.93));
+
+        AssistedResponse resp = service.ask("2026年7月31日库存余额最高的5个县级国库", false);
+
+        assertEquals(QueryState.CLARIFY, resp.state());
+        assertEquals(7L, resp.assetId());
+        assertEquals("口径描述", resp.matchedDescription());
+        assertTrue(resp.clarifyPrompt().contains("参数疑似不同"), "澄清话术应指明参数漂移");
+        assertTrue(resp.clarifyPrompt().contains("30") && resp.clarifyPrompt().contains("31"));
+        assertNull(resp.trace(), "降档澄清不得执行取数");
+        verify(compiler, never()).compile(any());
+    }
+
+    @Test
     void verifyReject_noExplainNoPrecipitate() {
         AssistedQueryService.VerifyResult r = service.verify("问题", MQL, false, "张三");
 

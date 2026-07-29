@@ -80,6 +80,7 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
 - 报告层复用底座的 `MqlValidator`（安全边界）/ `MqlSqlCompiler`（确定性编译）/ `EmbeddingClient`（模板匹配召回）。
 - **口径反翻译共用一个实现**：底座 `service/MqlExplainService`（确定性前置闸→LLM 反翻译，TEMPLATE/AD_HOC 双语境 + 按 (mode, MQL) LRU 缓存）。问数页「口径说明」走 `POST /api/explain`（AD_HOC，即席条件值如实描述）；指标向导第 2 步经 `MetricWizardService.explain` 委托（TEMPLATE，占位符按报告期描述）。它是纯展示层辅助——不进取数/事实链路、不改 `NlQueryResult` 评估契约，失败关闭（400 转人工），prompt 禁止编造 MQL 之外的口径与结果数值。
 - **口径描述随核验固化**：`/api/verify` 采纳时反翻译一次并存入 `caliber_asset.description`（生成失败 fail-open：只告警不阻断沉淀，列为 NULL）。HIT/CANDIDATE 经 `AssistedResponse.matchedDescription` 零成本回显（前端直接展示固化描述、隐藏按需生成按钮；NULL 时回落按钮）。描述是展示层元数据，不参与召回/校验/执行。
+- **HIT 参数漂移防线**：`ask()` 命中直取前经 `ParamDriftDetector` 比对当前问题与资产问法的阿拉伯数字多重集（换日期/阈值/top-N 的近义改写会越过 tau-hit），不一致即降档为 CANDIDATE 澄清、绝不带旧参数直接出数；`reuse()`（人已在澄清卡显式确认）不检测。
 
 ### 资产模型（库为唯一事实源）
 

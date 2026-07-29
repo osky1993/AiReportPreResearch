@@ -69,6 +69,14 @@ public class AssistedQueryService {
         CaliberStore.Recall r = store.recall(question, qv);
         switch (r.band()) {
             case HIT -> {
+                // 参数漂移防线：语义命中但数值参数不一致（如换了日期/阈值）→ 不直取，降档澄清交人确认
+                ParamDriftDetector.Drift drift = ParamDriftDetector.diff(r.matchedQuestion(), question);
+                if (drift.drifted()) {
+                    log.info("命中口径但参数疑似漂移，降档澄清: id={} 资产侧独有={} 问题侧独有={}",
+                            r.assetId(), drift.assetOnly(), drift.questionOnly());
+                    return AssistedResponse.clarifyCandidate(r.assetId(), r.matchedQuestion(), r.description(),
+                            r.score(), driftPrompt(r, drift));
+                }
                 AssistedResponse reused = reuseAsset(r, question);
                 return reused != null ? reused : generate(question, qv);   // 漂移/异常降级到生成
             }
@@ -83,6 +91,24 @@ public class AssistedQueryService {
                 return generate(question, qv);
             }
         }
+    }
+
+    /** 参数漂移澄清话术：把两侧独有数值摆出来，讲清「复用=按口径原参数出数」。 */
+    private static String driftPrompt(CaliberStore.Recall r, ParamDriftDetector.Drift drift) {
+        StringBuilder sb = new StringBuilder("命中已核验口径「").append(r.matchedQuestion())
+                .append("」(相似度 ").append(String.format("%.3f", r.score())).append(")，但参数疑似不同：");
+        if (!drift.assetOnly().isEmpty()) {
+            sb.append("口径问法中的数值 ").append(String.join("、", drift.assetOnly()));
+            sb.append(drift.questionOnly().isEmpty() ? " 未出现在您的问题中" : "");
+        }
+        if (!drift.questionOnly().isEmpty()) {
+            if (!drift.assetOnly().isEmpty()) sb.append(" 与您问题中的 ");
+            else sb.append("您问题中的数值 ");
+            sb.append(String.join("、", drift.questionOnly()));
+            sb.append(drift.assetOnly().isEmpty() ? " 未出现在口径问法中" : " 不一致");
+        }
+        sb.append("。复用该口径将按口径原参数出数；需按新参数取数请选择重新生成，或补充差异后重新提问。");
+        return sb.toString();
     }
 
     /** 问题向量化；失败返回 null（召回按 MISS、生成链路自行降级），不阻断请求。 */
