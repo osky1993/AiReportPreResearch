@@ -19,6 +19,8 @@ interface ChatItem {
   /** assistant 消息对应的原始提问（供复用口径时回传） */
   question?: string
   loading?: boolean
+  /** loading 期间的阶段文案（时间轴推进） */
+  loadingStage?: string
   resp?: AssistedResponse
   /** 网络/服务级错误（非业务 FAILED） */
   error?: string
@@ -56,6 +58,47 @@ const busy = ref(false)
 const listRef = useTemplateRef<HTMLElement>('listRef')
 let nextId = 1
 
+// ---- 生成等待分阶段提示：按时间轴推进文案（HIT 秒回时几乎不展示） ----
+const LOADING_STAGES: Array<{ at: number; label: string }> = [
+  { at: 0, label: '正在理解问题、匹配已核验口径…' },
+  { at: 2, label: 'AI 正在生成结构化查询…' },
+  { at: 9, label: '正在做安全校验与编译 SQL…' },
+  { at: 14, label: '正在执行取数，即将完成…' },
+]
+
+// ---- 最近提问历史（localStorage，去重、最多 10 条） ----
+const HISTORY_KEY = 'ask-history'
+const HISTORY_MAX = 10
+
+function loadHistory(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+const history = ref<string[]>(loadHistory())
+
+function saveHistory() {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.value))
+  } catch {
+    /* 存储不可用时静默（隐身模式等） */
+  }
+}
+
+function pushHistory(question: string) {
+  history.value = [question, ...history.value.filter((q) => q !== question)].slice(0, HISTORY_MAX)
+  saveHistory()
+}
+
+function removeHistory(question: string) {
+  history.value = history.value.filter((q) => q !== question)
+  saveHistory()
+}
+
 function scrollToBottom() {
   nextTick(() => {
     listRef.value?.scrollTo({ top: listRef.value.scrollHeight, behavior: 'smooth' })
@@ -63,15 +106,32 @@ function scrollToBottom() {
 }
 
 async function runRequest(question: string, call: () => Promise<AssistedResponse>) {
-  const pending: ChatItem = { id: nextId++, role: 'assistant', question, loading: true }
+  const pending: ChatItem = {
+    id: nextId++,
+    role: 'assistant',
+    question,
+    loading: true,
+    loadingStage: LOADING_STAGES[0]!.label,
+  }
   items.value.push(pending)
   busy.value = true
   scrollToBottom()
+  const startedAt = Date.now()
+  const stageTimer = setInterval(() => {
+    const elapsed = (Date.now() - startedAt) / 1000
+    for (let i = LOADING_STAGES.length - 1; i >= 0; i--) {
+      if (elapsed >= LOADING_STAGES[i]!.at) {
+        pending.loadingStage = LOADING_STAGES[i]!.label
+        break
+      }
+    }
+  }, 1000)
   try {
     pending.resp = await call()
   } catch (e) {
     pending.error = e instanceof Error ? e.message : '请求失败，请稍后重试'
   } finally {
+    clearInterval(stageTimer)
     pending.loading = false
     busy.value = false
     scrollToBottom()
@@ -82,6 +142,7 @@ function send(text?: string) {
   const question = (text ?? input.value).trim()
   if (!question || busy.value) return
   input.value = ''
+  pushHistory(question)
   items.value.push({ id: nextId++, role: 'user', text: question })
   runRequest(question, () => ask(question))
 }
@@ -179,6 +240,7 @@ async function toggleCaliberPanel() {
 function pickCaliber(c: CaliberAsset) {
   if (busy.value) return
   caliberPanelOpen.value = false
+  pushHistory(c.question)
   items.value.push({ id: nextId++, role: 'user', text: c.question })
   runRequest(c.question, () => reuse(c.id, c.question))
 }
@@ -264,6 +326,14 @@ function pct(v: number): string {
         <button class="caliber-hint" @click="toggleCaliberPanel()">
           📚 也可从已核验口径中直接点选出数 →
         </button>
+        <!-- 最近提问历史（localStorage） -->
+        <div v-if="history.length" class="history">
+          <span class="history-label">最近问过</span>
+          <span v-for="q in history" :key="q" class="history-chip">
+            <button class="history-q" :disabled="busy" @click="send(q)">{{ q }}</button>
+            <button class="history-del" title="删除该记录" @click="removeHistory(q)">×</button>
+          </span>
+        </div>
       </div>
 
       <template v-for="item in items" :key="item.id">
@@ -274,7 +344,7 @@ function pct(v: number): string {
         <div v-else class="msg-answer">
           <div v-if="item.loading" class="answer-loading">
             <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-            正在为您取数…
+            {{ item.loadingStage || '正在为您取数…' }}
           </div>
 
           <div v-else-if="item.error" class="answer-error">{{ item.error }}</div>
@@ -989,6 +1059,64 @@ tbody tr:hover {
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* ---- 最近提问历史 ---- */
+.history {
+  margin-top: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.history-label {
+  font-size: 12.5px;
+  color: var(--tb-text-3);
+}
+
+.history-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px dashed var(--tb-border);
+  border-radius: 999px;
+  background: var(--tb-surface);
+  overflow: hidden;
+}
+
+.history-q {
+  padding: 5px 4px 5px 14px;
+  border: none;
+  background: none;
+  color: var(--tb-text-2);
+  font-size: 12.5px;
+  max-width: 340px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.history-q:hover:not(:disabled) {
+  color: var(--tb-blue-600);
+}
+
+.history-del {
+  padding: 5px 10px 5px 4px;
+  border: none;
+  background: none;
+  color: var(--tb-text-3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.history-del:hover {
+  color: var(--tb-red);
 }
 
 /* ---- 已核验口径面板（取数菜单） ---- */
