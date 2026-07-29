@@ -32,6 +32,12 @@ interface ChatItem {
   verifyOk?: boolean
   /** 采纳时随资产固化的口径描述（服务端生成，可空） */
   verifyDesc?: string
+  /** 采纳确认态：先读口径说明再沉淀 */
+  verifyConfirming?: boolean
+  confirmLoading?: boolean
+  confirmExplain?: MqlExplanation
+  /** 确认层说明生成失败（fail-open：仍可确认采纳） */
+  confirmExplainFailed?: boolean
   /** 口径说明（AI 反翻译 MQL）：加载态 / 结果 / 失败文案 */
   explainPending?: boolean
   explanation?: MqlExplanation
@@ -91,6 +97,34 @@ function generateDirectly(item: ChatItem) {
   if (!item.question || busy.value) return
   item.caliberResolved = true
   runRequest(item.question, () => ask(item.question!, true))
+}
+
+/**
+ * 采纳第一步：先生成并展示口径说明，人读完才沉淀（核验对象是中文口径而非 JSON）。
+ * 已点过「生成口径说明」则直接复用；说明生成失败 fail-open，仍可确认采纳。
+ */
+async function startVerifyAccept(item: ChatItem) {
+  const mql = item.resp?.trace?.mql
+  if (!mql || item.verifyPending) return
+  item.verifyConfirming = true
+  item.confirmExplainFailed = false
+  if (item.explanation) {
+    item.confirmExplain = item.explanation
+    return
+  }
+  if (item.confirmExplain) return
+  item.confirmLoading = true
+  try {
+    item.confirmExplain = await explainMql(mql)
+  } catch {
+    item.confirmExplainFailed = true
+  } finally {
+    item.confirmLoading = false
+  }
+}
+
+function cancelVerifyConfirm(item: ChatItem) {
+  item.verifyConfirming = false
 }
 
 /** 核验闸门：采纳沉淀为口径资产 / 驳回丢弃。 */
@@ -375,7 +409,7 @@ function pct(v: number): string {
               v-if="item.resp.state === 'GENERATED' && item.resp.trace?.success && item.resp.trace.mql"
               class="verify"
             >
-              <template v-if="!item.verifyMsg">
+              <template v-if="!item.verifyMsg && !item.verifyConfirming">
                 <span class="verify-hint">结果与口径无误？核验后沉淀为口径资产，同类问题即可直接复用：</span>
                 <span class="verify-actions">
                   <input
@@ -386,9 +420,9 @@ function pct(v: number): string {
                   <button
                     class="btn-primary"
                     :disabled="item.verifyPending"
-                    @click="doVerify(item, true)"
+                    @click="startVerifyAccept(item)"
                   >
-                    {{ item.verifyPending ? '处理中…' : '核验采纳' }}
+                    核验采纳
                   </button>
                   <button
                     class="btn-secondary"
@@ -399,6 +433,37 @@ function pct(v: number): string {
                   </button>
                 </span>
               </template>
+
+              <!-- 采纳确认层：先读中文口径说明，确认无误才沉淀 -->
+              <div v-else-if="!item.verifyMsg && item.verifyConfirming" class="verify-confirm">
+                <div class="verify-confirm-title">请核对将要沉淀的取数口径</div>
+                <p v-if="item.confirmLoading" class="verify-confirm-loading">正在生成口径说明…</p>
+                <template v-else-if="item.confirmExplain">
+                  <p class="explain-text">{{ item.confirmExplain.explanation }}</p>
+                  <ul v-if="item.confirmExplain.caveats?.length" class="explain-caveats">
+                    <li v-for="(c, i) in item.confirmExplain.caveats" :key="i">待确认：{{ c }}</li>
+                  </ul>
+                </template>
+                <p v-else-if="item.confirmExplainFailed" class="verify-confirm-warn">
+                  口径说明生成失败——仍可确认采纳（沉淀不受影响），说明可后续在问数结果中按需生成。
+                </p>
+                <span class="verify-actions">
+                  <button
+                    class="btn-primary"
+                    :disabled="item.verifyPending || item.confirmLoading"
+                    @click="doVerify(item, true)"
+                  >
+                    {{ item.verifyPending ? '处理中…' : '确认采纳并沉淀' }}
+                  </button>
+                  <button
+                    class="btn-secondary"
+                    :disabled="item.verifyPending"
+                    @click="cancelVerifyConfirm(item)"
+                  >
+                    取消
+                  </button>
+                </span>
+              </div>
               <div v-else class="verify-done">
                 <span class="verify-result" :class="item.verifyOk ? 'ok' : 'no'">
                   {{ item.verifyOk ? '✓' : '—' }} {{ item.verifyMsg }}
@@ -846,6 +911,29 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.verify-confirm {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.verify-confirm-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tb-blue-900);
+}
+
+.verify-confirm-loading {
+  font-size: 13px;
+  color: var(--tb-text-2);
+}
+
+.verify-confirm-warn {
+  font-size: 13px;
+  color: var(--tb-amber);
 }
 
 .verify-result {
