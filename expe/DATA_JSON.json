@@ -1,0 +1,330 @@
+{
+  "dataset_id": "haizhou_economy_2026q2_v1",
+  "dataset_name": "海州市2026年第二季度政务经济分析实验数据",
+  "data_nature": "synthetic",
+  "data_notice": "全部数据均为实验构造数据，不对应任何真实地区或机构。",
+  "region": {
+    "region_code": "HAIZHOU_SYNTH",
+    "region_name": "海州市",
+    "region_level": "地级市"
+  },
+  "reporting_period": {
+    "period_code": "2026Q2",
+    "period_name": "2026年第二季度",
+    "comparison_period_code": "2025Q2",
+    "comparison_period_name": "2025年第二季度"
+  },
+  "units": {
+    "amount": "亿元",
+    "growth_rate": "%",
+    "share": "%",
+    "growth_contribution": "个百分点",
+    "index": "点"
+  },
+  "core_indicators": [
+    {
+      "indicator_id": "IND_GDP",
+      "indicator_name": "地区生产总值",
+      "current_value": 3286.50,
+      "comparison_value": 3130.00,
+      "change_amount": 156.50,
+      "yoy_change_pct": 5.00,
+      "direction": "增长",
+      "unit": "亿元"
+    },
+    {
+      "indicator_id": "IND_FISCAL_REVENUE",
+      "indicator_name": "一般公共预算收入",
+      "current_value": 286.40,
+      "comparison_value": 276.80,
+      "change_amount": 9.60,
+      "yoy_change_pct": 3.47,
+      "direction": "增长",
+      "unit": "亿元"
+    },
+    {
+      "indicator_id": "IND_FISCAL_EXPENDITURE",
+      "indicator_name": "一般公共预算支出",
+      "current_value": 342.20,
+      "comparison_value": 325.90,
+      "change_amount": 16.30,
+      "yoy_change_pct": 5.00,
+      "direction": "增长",
+      "unit": "亿元"
+    },
+    {
+      "indicator_id": "IND_INDUSTRIAL_VALUE_ADDED",
+      "indicator_name": "规模以上工业增加值",
+      "current_value": 1406.50,
+      "comparison_value": 1313.30,
+      "change_amount": 93.20,
+      "yoy_change_pct": 7.10,
+      "direction": "增长",
+      "unit": "亿元"
+    },
+    {
+      "indicator_id": "IND_FIXED_ASSET_INVESTMENT",
+      "indicator_name": "固定资产投资",
+      "current_value": 978.40,
+      "comparison_value": 961.10,
+      "change_amount": 17.30,
+      "yoy_change_pct": 1.80,
+      "direction": "增长",
+      "unit": "亿元"
+    },
+    {
+      "indicator_id": "IND_MANUFACTURING_INVESTMENT",
+      "indicator_name": "制造业投资",
+      "current_value": 321.40,
+      "comparison_value": 298.70,
+      "change_amount": 22.70,
+      "yoy_change_pct": 7.60,
+      "direction": "增长",
+      "unit": "亿元"
+    },
+    {
+      "indicator_id": "IND_RETAIL_SALES",
+      "indicator_name": "社会消费品零售总额",
+      "current_value": 905.60,
+      "comparison_value": 876.40,
+      "change_amount": 29.20,
+      "yoy_change_pct": 3.33,
+      "direction": "增长",
+      "unit": "亿元"
+    },
+    {
+      "indicator_id": "IND_EXPORTS",
+      "indicator_name": "货物出口总额",
+      "current_value": 512.30,
+      "comparison_value": 528.60,
+      "change_amount": -16.30,
+      "yoy_change_pct": -3.08,
+      "direction": "下降",
+      "unit": "亿元"
+    },
+    {
+      "indicator_id": "IND_IMPORTS",
+      "indicator_name": "货物进口总额",
+      "current_value": 468.30,
+      "comparison_value": 457.32,
+      "change_amount": 10.98,
+      "yoy_change_pct": 2.40,
+      "direction": "增长",
+      "unit": "亿元"
+    },
+    {
+      "indicator_id": "IND_REAL_ESTATE_INVESTMENT",
+      "indicator_name": "房地产开发投资",
+      "current_value": 176.20,
+      "comparison_value": 192.80,
+      "change_amount": -16.60,
+      "yoy_change_pct": -8.61,
+      "direction": "下降",
+      "unit": "亿元"
+    }
+  ],
+  "fiscal_structure": {
+    "general_public_budget_revenue": 286.40,
+    "general_public_budget_expenditure": 342.20,
+    "revenue_expenditure_gap": -55.80,
+    "revenue_coverage_of_expenditure_pct": 83.69,
+    "tax_revenue": 232.10,
+    "tax_revenue_share_pct": 81.04,
+    "non_tax_revenue": 54.30,
+    "non_tax_revenue_share_pct": 18.96,
+    "unit": "亿元"
+  },
+  "industry_structure": [
+    {
+      "industry_id": "INDUSTRY_ADVANCED_MANUFACTURING",
+      "industry_name": "先进制造业",
+      "current_value_added": 692.40,
+      "comparison_value_added": 639.93,
+      "change_amount": 52.47,
+      "yoy_change_pct": 8.20,
+      "share_of_gdp_pct": 21.07,
+      "share_of_gdp_increment_pct": 33.53,
+      "growth_contribution_pp": 1.68,
+      "unit": "亿元"
+    },
+    {
+      "industry_id": "INDUSTRY_DIGITAL_ECONOMY",
+      "industry_name": "数字经济核心产业",
+      "current_value_added": 486.30,
+      "comparison_value_added": 440.00,
+      "change_amount": 46.30,
+      "yoy_change_pct": 10.52,
+      "share_of_gdp_pct": 14.80,
+      "share_of_gdp_increment_pct": 29.58,
+      "growth_contribution_pp": 1.48,
+      "unit": "亿元"
+    },
+    {
+      "industry_id": "INDUSTRY_MODERN_SERVICES",
+      "industry_name": "现代服务业",
+      "current_value_added": 431.50,
+      "comparison_value_added": 406.69,
+      "change_amount": 24.81,
+      "yoy_change_pct": 6.10,
+      "share_of_gdp_pct": 13.13,
+      "share_of_gdp_increment_pct": 15.85,
+      "growth_contribution_pp": 0.79,
+      "unit": "亿元"
+    },
+    {
+      "industry_id": "INDUSTRY_TRADE_LOGISTICS",
+      "industry_name": "商贸物流业",
+      "current_value_added": 356.20,
+      "comparison_value_added": 342.50,
+      "change_amount": 13.70,
+      "yoy_change_pct": 4.00,
+      "share_of_gdp_pct": 10.84,
+      "share_of_gdp_increment_pct": 8.75,
+      "growth_contribution_pp": 0.44,
+      "unit": "亿元"
+    },
+    {
+      "industry_id": "INDUSTRY_CONSTRUCTION",
+      "industry_name": "建筑业",
+      "current_value_added": 298.70,
+      "comparison_value_added": 292.27,
+      "change_amount": 6.43,
+      "yoy_change_pct": 2.20,
+      "share_of_gdp_pct": 9.09,
+      "share_of_gdp_increment_pct": 4.11,
+      "growth_contribution_pp": 0.21,
+      "unit": "亿元"
+    },
+    {
+      "industry_id": "INDUSTRY_MODERN_AGRICULTURE",
+      "industry_name": "现代农业",
+      "current_value_added": 146.80,
+      "comparison_value_added": 142.39,
+      "change_amount": 4.41,
+      "yoy_change_pct": 3.10,
+      "share_of_gdp_pct": 4.47,
+      "share_of_gdp_increment_pct": 2.82,
+      "growth_contribution_pp": 0.14,
+      "unit": "亿元"
+    },
+    {
+      "industry_id": "INDUSTRY_OTHER",
+      "industry_name": "其他行业",
+      "current_value_added": 874.60,
+      "comparison_value_added": 866.22,
+      "change_amount": 8.38,
+      "yoy_change_pct": 0.97,
+      "share_of_gdp_pct": 26.61,
+      "share_of_gdp_increment_pct": 5.35,
+      "growth_contribution_pp": 0.27,
+      "unit": "亿元"
+    }
+  ],
+  "regional_structure": [
+    {
+      "subregion_id": "EAST",
+      "subregion_name": "东城区",
+      "current_gdp": 1028.60,
+      "comparison_gdp": 971.80,
+      "change_amount": 56.80,
+      "yoy_change_pct": 5.84,
+      "share_of_region_gdp_pct": 31.30,
+      "unit": "亿元"
+    },
+    {
+      "subregion_id": "WEST",
+      "subregion_name": "西城区",
+      "current_gdp": 846.20,
+      "comparison_gdp": 805.90,
+      "change_amount": 40.30,
+      "yoy_change_pct": 5.00,
+      "share_of_region_gdp_pct": 25.75,
+      "unit": "亿元"
+    },
+    {
+      "subregion_id": "SOUTH",
+      "subregion_name": "南新区",
+      "current_gdp": 782.40,
+      "comparison_gdp": 735.80,
+      "change_amount": 46.60,
+      "yoy_change_pct": 6.33,
+      "share_of_region_gdp_pct": 23.81,
+      "unit": "亿元"
+    },
+    {
+      "subregion_id": "NORTH",
+      "subregion_name": "北山县",
+      "current_gdp": 629.30,
+      "comparison_gdp": 616.50,
+      "change_amount": 12.80,
+      "yoy_change_pct": 2.08,
+      "share_of_region_gdp_pct": 19.15,
+      "unit": "亿元"
+    }
+  ],
+  "risk_context": [
+    {
+      "risk_id": "RISK_REAL_ESTATE",
+      "related_indicator_id": "IND_REAL_ESTATE_INVESTMENT",
+      "risk_indicator": "房地产开发投资",
+      "current_value": 176.20,
+      "comparison_value": 192.80,
+      "yoy_change_pct": -8.61,
+      "direction": "下降",
+      "context_evidence": [
+        {
+          "evidence_name": "商品住宅去化周期",
+          "value": 18.60,
+          "unit": "个月"
+        },
+        {
+          "evidence_name": "本期新开工许可项目数",
+          "value": 12,
+          "unit": "个"
+        }
+      ],
+      "analysis_boundary": "背景数据仅支持审慎分析可能关联因素，不能据此认定确定性因果关系。"
+    },
+    {
+      "risk_id": "RISK_EXPORTS",
+      "related_indicator_id": "IND_EXPORTS",
+      "risk_indicator": "货物出口总额",
+      "current_value": 512.30,
+      "comparison_value": 528.60,
+      "yoy_change_pct": -3.08,
+      "direction": "下降",
+      "context_evidence": [
+        {
+          "evidence_name": "制造业新出口订单指数",
+          "value": 47.80,
+          "unit": "点",
+          "reference_line": 50.00
+        },
+        {
+          "evidence_name": "欧美市场订单占出口订单比重",
+          "value": 61.20,
+          "unit": "%"
+        }
+      ],
+      "analysis_boundary": "背景数据仅支持审慎分析可能关联因素，不能据此认定确定性因果关系。"
+    }
+  ],
+  "data_quality": [
+    {
+      "field_name": "城镇调查失业率上年同期值",
+      "current_value": 5.20,
+      "comparison_value": null,
+      "unit": "%",
+      "status": "上年同期值暂缺",
+      "derivable": false
+    },
+    {
+      "field_name": "民间投资总额",
+      "current_value": null,
+      "comparison_value": 418.60,
+      "unit": "亿元",
+      "status": "本期数据暂缺",
+      "derivable": false
+    }
+  ]
+}

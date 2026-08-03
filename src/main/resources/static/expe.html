@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prompt 过载与边际效用验证实验台</title>
+<style>
+:root{--accent:#2563eb;--bg:#f6f7f9;--card:#fff;--line:#e5e7eb;--text:#111827;--muted:#6b7280;
+      --ok:#059669;--warn:#d97706;--bad:#dc2626;--violet:#7c3aed;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+.wrap{max-width:1400px;margin:0 auto;padding:24px 32px}
+header{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+header h1{font-size:20px}
+header .sub{color:var(--muted);font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.card h2{font-size:14px;margin-bottom:10px}
+.muted{color:var(--muted);font-size:12px}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all}
+.row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.row label{font-size:13px;color:var(--muted)}
+input[type=number]{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;width:110px}
+input[type=file]{font-size:12px}
+button{border:0;border-radius:8px;padding:7px 16px;font:inherit;cursor:pointer;background:var(--accent);color:#fff}
+button.ghost{background:#eef2ff;color:var(--accent)}
+button.danger{background:#fee2e2;color:var(--bad)}
+button:disabled{opacity:.5;cursor:not-allowed}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;background:#f9fafb;white-space:nowrap}
+.badge{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:600;white-space:nowrap}
+.b-queue{background:#f3f4f6;color:var(--muted)}
+.b-run{background:#dbeafe;color:var(--accent)}
+.b-done{background:#d1fae5;color:var(--ok)}
+.b-cancel{background:#fef3c7;color:var(--warn)}
+.b-int{background:#fee2e2;color:var(--bad)}
+.prog{background:#f3f4f6;border-radius:999px;height:8px;min-width:120px;overflow:hidden}
+.prog>i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .4s}
+.err{color:var(--bad);font-size:12px;margin-top:8px;white-space:pre-wrap}
+.oknote{color:var(--ok);font-size:12px;margin-top:8px}
+a.dl{color:var(--accent);text-decoration:none;font-size:12px;margin-right:6px}
+a.dl:hover{text-decoration:underline}
+.calls td{font-family:ui-monospace,Menlo,monospace;font-size:11px}
+.detail{background:#f9fafb;border-radius:8px;padding:10px;margin-top:8px}
+#previewBox{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;z-index:50}
+#previewBox .inner{background:#fff;border-radius:12px;max-width:900px;width:92%;max-height:86vh;display:flex;flex-direction:column;padding:16px}
+#previewBox pre{overflow:auto;background:#f9fafb;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:12px;white-space:pre-wrap;word-break:break-word;flex:1;margin-top:10px}
+.notice{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:12px;color:#92400e;margin-bottom:14px}
+.hm-wrap{overflow-x:auto;margin-top:6px}
+.hm-grid{display:grid;gap:2px;align-items:center}
+.hm-rule{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px;padding-right:6px}
+.hm-rule .lv{display:inline-block;border-radius:3px;padding:0 4px;font-size:10px;font-weight:700;margin-right:4px}
+.lv-P0{background:#fee2e2;color:var(--bad)}
+.lv-P1{background:#ede9fe;color:var(--violet)}
+.lv-P2{background:#dbeafe;color:var(--accent)}
+.lv-P3{background:#f3f4f6;color:var(--muted)}
+.hm-cell{width:15px;height:15px;border-radius:3px;cursor:pointer}
+.v-PASS{background:#34d399}
+.v-PARTIAL{background:#fbbf24}
+.v-FAIL{background:#f87171}
+.v-ERROR{background:#d1d5db}
+.v-HUMAN{background:#e5e7eb;border:1px dashed #9ca3af}
+.aggr td{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🧪 Prompt 过载与边际效用验证实验台</h1>
+    <span class="sub">独立验证实验 · 与智能问数/智能报告互不接入 · 方案见 expe/LLM-Prompt过载与边际效用验证实验方案.md</span>
+  </header>
+
+  <div class="notice">
+    每份提示词文件生成一个独立任务；服务端在提示词末尾拼接公共数据包后送模，逐次全新会话、随机 user_id 隔离缓存、失败不重试原样计入。
+    建议将 A/B/C/D 各组文件<b>一次性同时上传</b>，任务并发执行以实现组间交错调用。
+  </div>
+
+  <div class="card">
+    <h2>公共数据包</h2>
+    <div id="dataInfo" class="muted">加载中…</div>
+  </div>
+
+  <div class="card">
+    <h2>创建实验任务</h2>
+    <div class="row">
+      <label>提示词文件（可多选，每文件一任务）</label>
+      <input type="file" id="files" multiple accept=".md,.txt,.prompt">
+    </div>
+    <div class="row">
+      <label>每组迭代次数</label><input type="number" id="iterations" value="30" min="1" max="200">
+      <label>Temperature</label><input type="number" id="temperature" value="0.7" min="0" max="2" step="0.1">
+      <label>最大输出 token（留空=供应商默认）</label><input type="number" id="maxTokens" min="1" placeholder="默认">
+      <button id="startBtn" onclick="startTasks()">启动任务</button>
+    </div>
+    <div id="formMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>任务列表 <span class="muted" id="pollHint"></span></h2>
+    <table>
+      <thead><tr>
+        <th>任务（提示词组）</th><th>参数</th><th>状态</th><th>进度</th><th>成功/失败</th>
+        <th>token（入/出 合计）</th><th>创建时间</th><th>操作</th>
+      </tr></thead>
+      <tbody id="taskRows"><tr><td colspan="8" class="muted">暂无任务</td></tr></tbody>
+    </table>
+    <div id="taskDetail"></div>
+  </div>
+
+  <div class="card">
+    <h2>AI 评估（judge：程序规则零 LLM 判定 + 语义规则跨模型评审）</h2>
+    <div class="muted" style="margin-bottom:8px">
+      选择已完成的生成任务并指定其组别（决定适用的规则层）；规则清单不上传则使用服务端默认
+      <span class="mono">expe/RULES_TEMPLATE.json</span>。judge 结果为辅助指标，P0/事实类判定建议人工抽检复核。
+    </div>
+    <table>
+      <thead><tr><th style="width:36px">选</th><th>任务</th><th>成功输出</th><th>组别</th></tr></thead>
+      <tbody id="evalTargetRows"><tr><td colspan="4" class="muted">暂无可评估的已完成任务</td></tr></tbody>
+    </table>
+    <div class="row">
+      <label>规则清单（可选，JSON）</label>
+      <input type="file" id="rulesFile" accept=".json">
+      <button id="evalBtn" onclick="startEval()">启动评估</button>
+    </div>
+    <div id="evalMsg"></div>
+    <h2 style="margin-top:16px">评估列表 <span class="muted" id="evalPollHint"></span></h2>
+    <table>
+      <thead><tr>
+        <th>评估</th><th>judge 模型</th><th>规则</th><th>对象</th><th>状态</th><th>进度</th><th>操作</th>
+      </tr></thead>
+      <tbody id="evalRows"><tr><td colspan="7" class="muted">暂无评估</td></tr></tbody>
+    </table>
+    <div id="evalDetail"></div>
+  </div>
+</div>
+
+<div id="previewBox" onclick="if(event.target===this)closePreview()">
+  <div class="inner">
+    <div style="display:flex;align-items:center;gap:10px">
+      <b id="previewTitle" style="font-size:13px"></b>
+      <button class="ghost" style="margin-left:auto" onclick="closePreview()">关闭</button>
+    </div>
+    <pre id="previewContent"></pre>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let openTaskId = null;
+let pollTimer = null;
+
+const BADGE = {QUEUED:['b-queue','排队中'], RUNNING:['b-run','执行中'], DONE:['b-done','已完成'],
+               CANCELLED:['b-cancel','已取消'], INTERRUPTED:['b-int','已中断']};
+
+async function loadData() {
+  try {
+    const d = await (await fetch('/api/expe/data')).json();
+    if (!d.exists) {
+      $('dataInfo').innerHTML = `<span class="err">⚠ 数据包不存在：${d.path}（启动任务前请先放置公共数据包）</span>`;
+      return;
+    }
+    $('dataInfo').innerHTML =
+      `路径 <span class="mono">${d.path}</span> · ${d.sizeBytes} 字节 · SHA-256 <span class="mono">${d.sha256}</span><br>` +
+      `当前模型 <b>${d.model}</b> · 端点 <span class="mono">${d.baseUrl}</span>`;
+  } catch (e) { $('dataInfo').innerHTML = `<span class="err">加载失败：${e.message}</span>`; }
+}
+
+async function startTasks() {
+  const files = $('files').files;
+  $('formMsg').innerHTML = '';
+  if (!files.length) { $('formMsg').innerHTML = '<div class="err">请先选择提示词文件</div>'; return; }
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  fd.append('iterations', $('iterations').value);
+  fd.append('temperature', $('temperature').value);
+  if ($('maxTokens').value) fd.append('maxTokens', $('maxTokens').value);
+  $('startBtn').disabled = true;
+  try {
+    const resp = await fetch('/api/expe/tasks', {method: 'POST', body: fd});
+    const body = await resp.json();
+    if (!resp.ok) throw new Error(body.error || resp.statusText);
+    $('formMsg').innerHTML = `<div class="oknote">已启动 ${body.length} 个任务</div>`;
+    $('files').value = '';
+    await refresh();
+  } catch (e) {
+    $('formMsg').innerHTML = `<div class="err">启动失败：${e.message}</div>`;
+  } finally { $('startBtn').disabled = false; }
+}
+
+function sum(calls, key) {
+  let total = 0, has = false;
+  for (const c of calls || []) if (c[key] != null) { total += c[key]; has = true; }
+  return has ? total : null;
+}
+
+function renderTasks(tasks) {
+  if (!tasks.length) {
+    $('taskRows').innerHTML = '<tr><td colspan="8" class="muted">暂无任务</td></tr>';
+    return;
+  }
+  $('taskRows').innerHTML = tasks.map(t => {
+    const [cls, txt] = BADGE[t.status] || ['b-queue', t.status];
+    const done = (t.calls || []).length;
+    const pct = t.iterations ? Math.round(done / t.iterations * 100) : 0;
+    const pin = sum(t.calls, 'promptTokens'), pout = sum(t.calls, 'completionTokens');
+    const running = t.status === 'RUNNING' || t.status === 'QUEUED';
+    return `<tr>
+      <td><b>${esc(t.label)}</b><br><span class="mono muted">${t.taskId}</span></td>
+      <td class="muted">×${t.iterations} · T=${t.temperature}${t.maxTokens ? ' · max=' + t.maxTokens : ''}</td>
+      <td><span class="badge ${cls}">${txt}</span></td>
+      <td><div class="prog"><i style="width:${pct}%"></i></div><span class="muted">${done}/${t.iterations}</span></td>
+      <td>${t.okCount} / <span style="color:${t.failedCount ? 'var(--bad)' : 'inherit'}">${t.failedCount}</span></td>
+      <td class="muted">${pin ?? '—'} / ${pout ?? '—'}</td>
+      <td class="muted">${t.createdAt}</td>
+      <td>
+        <a class="dl" href="javascript:void(0)" onclick="toggleDetail('${t.taskId}')">${openTaskId === t.taskId ? '收起' : '明细'}</a>
+        <a class="dl" href="/api/expe/tasks/${t.taskId}/results.zip">打包下载</a>
+        ${running ? `<a class="dl" style="color:var(--bad)" href="javascript:void(0)" onclick="cancelTask('${t.taskId}')">取消</a>`
+                  : `<a class="dl" style="color:var(--bad)" href="javascript:void(0)" onclick="deleteTask('${t.taskId}')">删除</a>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderDetail(t) {
+  if (!t) { $('taskDetail').innerHTML = ''; return; }
+  const rows = (t.calls || []).map(c => `<tr>
+    <td>${String(c.index).padStart(3, '0')}</td>
+    <td>${c.startedAt}</td>
+    <td>${c.durationMs != null ? (c.durationMs / 1000).toFixed(1) + 's' : '—'}</td>
+    <td>${c.promptTokens ?? '—'} / ${c.completionTokens ?? '—'}</td>
+    <td>${c.cacheHitTokens == null ? '—'
+        : c.cacheHitTokens > 0 ? `<span style="color:var(--bad)" title="命中前缀缓存，user_id 隔离未生效">⚠ ${c.cacheHitTokens}</span>`
+        : '<span style="color:var(--ok)">0</span>'}</td>
+    <td>${c.status === 'OK' ? '<span style="color:var(--ok)">OK</span>'
+        : `<span style="color:var(--bad)" title="${esc(c.error || '')}">FAILED</span>`}</td>
+    <td>${c.userId}</td>
+    <td>
+      <a class="dl" href="javascript:void(0)" onclick="preview('${t.taskId}',${c.index})">预览</a>
+      <a class="dl" href="/api/expe/tasks/${t.taskId}/results/${c.index}">下载md</a>
+    </td>
+  </tr>`).join('');
+  $('taskDetail').innerHTML = `<div class="detail">
+    <b style="font-size:13px">${esc(t.label)}</b>
+    <span class="muted"> · 提示词 SHA-256 <span class="mono">${t.promptSha256}</span> · 数据包 SHA-256 <span class="mono">${t.dataSha256}</span> · 模型 ${t.model}</span>
+    <table class="calls" style="margin-top:8px">
+      <thead><tr><th>#</th><th>开始时间</th><th>耗时</th><th>token 入/出</th><th>缓存命中</th><th>状态</th><th>user_id</th><th>结果</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="8" class="muted">尚无调用记录</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+async function toggleDetail(taskId) {
+  openTaskId = openTaskId === taskId ? null : taskId;
+  await refresh();
+}
+
+async function cancelTask(taskId) {
+  await fetch(`/api/expe/tasks/${taskId}/cancel`, {method: 'POST'});
+  await refresh();
+}
+
+async function deleteTask(taskId) {
+  if (!confirm(`确认删除任务 ${taskId}？\n将同时清理磁盘上的全部生成结果与证据文件，不可恢复。`)) return;
+  const resp = await fetch(`/api/expe/tasks/${taskId}`, {method: 'DELETE'});
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    alert(`删除失败：${body.error || resp.statusText}`);
+  }
+  if (openTaskId === taskId) openTaskId = null;
+  await refresh();
+}
+
+async function preview(taskId, index) {
+  const resp = await fetch(`/api/expe/tasks/${taskId}/results/${index}`);
+  const text = await resp.text();
+  $('previewTitle').textContent = `${taskId} · 第 ${index} 次生成`;
+  $('previewContent').textContent = text;
+  $('previewBox').style.display = 'flex';
+}
+function closePreview() { $('previewBox').style.display = 'none'; }
+
+async function refresh() {
+  try {
+    const tasks = await (await fetch('/api/expe/tasks')).json();
+    renderTasks(tasks);
+    renderDetail(openTaskId ? tasks.find(t => t.taskId === openTaskId) : null);
+    renderEvalTargets(tasks);
+    const active = tasks.some(t => t.status === 'RUNNING' || t.status === 'QUEUED');
+    $('pollHint').textContent = active ? '（执行中，自动刷新）' : '';
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(refresh, active ? 2500 : 10000);
+  } catch (e) {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(refresh, 5000);
+  }
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* ---------------- AI 评估 ---------------- */
+const GROUPS = ['A', 'B', 'B-Pad', 'C', 'D', 'D-Clean', 'D-Conflict'];
+const evalSel = {};           // taskId -> {checked, group}（跨刷新保留勾选状态）
+let openEvalId = null;
+let evalPollTimer = null;
+let currentEvalDetail = null;
+
+function renderEvalTargets(tasks) {
+  const candidates = tasks.filter(t => t.okCount > 0 && t.status !== 'RUNNING' && t.status !== 'QUEUED');
+  if (!candidates.length) {
+    $('evalTargetRows').innerHTML = '<tr><td colspan="4" class="muted">暂无可评估的已完成任务</td></tr>';
+    return;
+  }
+  $('evalTargetRows').innerHTML = candidates.map(t => {
+    const sel = evalSel[t.taskId] || {checked: false, group: 'A'};
+    return `<tr>
+      <td><input type="checkbox" ${sel.checked ? 'checked' : ''}
+           onchange="evalSel['${t.taskId}']={checked:this.checked,group:document.getElementById('grp-${t.taskId}').value}"></td>
+      <td><b>${esc(t.label)}</b> <span class="mono muted">${t.taskId}</span></td>
+      <td>${t.okCount}</td>
+      <td><select id="grp-${t.taskId}"
+           onchange="evalSel['${t.taskId}']=evalSel['${t.taskId}']||{checked:false};evalSel['${t.taskId}'].group=this.value">
+        ${GROUPS.map(g => `<option value="${g}" ${sel.group === g ? 'selected' : ''}>${g}</option>`).join('')}
+      </select></td>
+    </tr>`;
+  }).join('');
+}
+
+async function startEval() {
+  const targets = Object.entries(evalSel)
+    .filter(([, v]) => v.checked)
+    .map(([taskId, v]) => ({taskId, group: v.group || 'A'}));
+  $('evalMsg').innerHTML = '';
+  if (!targets.length) { $('evalMsg').innerHTML = '<div class="err">请先勾选待评估的任务并指定组别</div>'; return; }
+  const fd = new FormData();
+  fd.append('targets', JSON.stringify(targets));
+  if ($('rulesFile').files.length) fd.append('rulesFile', $('rulesFile').files[0]);
+  $('evalBtn').disabled = true;
+  try {
+    const resp = await fetch('/api/expe/evals', {method: 'POST', body: fd});
+    const body = await resp.json();
+    if (!resp.ok) throw new Error(body.error || resp.statusText);
+    $('evalMsg').innerHTML = `<div class="oknote">评估 ${body.evalId} 已启动（共 ${body.totalOutputs} 份输出）</div>`;
+    await refreshEvals();
+  } catch (e) {
+    $('evalMsg').innerHTML = `<div class="err">启动失败：${e.message}</div>`;
+  } finally { $('evalBtn').disabled = false; }
+}
+
+function renderEvals(evals) {
+  if (!evals.length) {
+    $('evalRows').innerHTML = '<tr><td colspan="7" class="muted">暂无评估</td></tr>';
+    return;
+  }
+  $('evalRows').innerHTML = evals.map(ev => {
+    const [cls, txt] = BADGE[ev.status] || (ev.status === 'FAILED' ? ['b-int', '失败'] : ['b-queue', ev.status]);
+    const pct = ev.totalOutputs ? Math.round(ev.doneOutputs / ev.totalOutputs * 100) : 0;
+    const running = ev.status === 'RUNNING' || ev.status === 'QUEUED';
+    const targets = ev.targets.map(t => `${t.group}:${esc(t.label)}`).join('、');
+    return `<tr>
+      <td class="mono muted">${ev.evalId}</td>
+      <td class="muted">${esc(ev.judgeModel)}</td>
+      <td class="muted" title="SHA-256 ${ev.rulesSha256}">${esc(ev.rulesFileName)}（${ev.ruleCount} 条）</td>
+      <td class="muted">${targets}</td>
+      <td><span class="badge ${cls}">${txt}</span>${ev.error ? `<div class="err">${esc(ev.error)}</div>` : ''}</td>
+      <td><div class="prog"><i style="width:${pct}%"></i></div><span class="muted">${ev.doneOutputs}/${ev.totalOutputs}</span></td>
+      <td>
+        <a class="dl" href="javascript:void(0)" onclick="toggleEvalDetail('${ev.evalId}')">${openEvalId === ev.evalId ? '收起' : '明细'}</a>
+        ${running ? `<a class="dl" style="color:var(--bad)" href="javascript:void(0)" onclick="cancelEval('${ev.evalId}')">取消</a>`
+                  : `<a class="dl" style="color:var(--bad)" href="javascript:void(0)" onclick="deleteEval('${ev.evalId}')">删除</a>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+const GROUP_ORDER = {A: 0, B: 1, 'B-Pad': 2, C: 3, D: 4, 'D-Clean': 5, 'D-Conflict': 6};
+
+function fmtPct(x) { return (x * 100).toFixed(1) + '%'; }
+
+function renderEvalDetail(d) {
+  if (!d) { $('evalDetail').innerHTML = ''; return; }
+  currentEvalDetail = d;
+  const aggr = [...d.aggregates].sort((a, b) => (GROUP_ORDER[a.group] ?? 9) - (GROUP_ORDER[b.group] ?? 9));
+  const aggrHtml = `<table class="aggr" style="margin-top:10px">
+    <thead><tr><th>组</th><th>任务</th><th>已评</th><th>SSR 均值</th><th>SSR 中位</th><th>HSR</th>
+      <th>Core 加权</th><th>Core 未加权</th><th>StablePass</th><th>P0 违规份数</th><th>Extra 兑现</th><th>judge 异常</th></tr></thead>
+    <tbody>${aggr.map(a => `<tr>
+      <td><b>${a.group}</b></td><td>${esc(a.label)}</td><td>${a.evaluated}</td>
+      <td>${fmtPct(a.ssrMean)}</td><td>${fmtPct(a.ssrMedian)}</td><td>${fmtPct(a.hsrRate)}</td>
+      <td>${a.coreWeightedMean.toFixed(1)}</td><td>${a.coreUnweightedMean.toFixed(1)}</td>
+      <td>${fmtPct(a.stablePassRate)}</td>
+      <td style="color:${a.p0FailedOutputs ? 'var(--bad)' : 'inherit'}">${a.p0FailedOutputs}</td>
+      <td>${a.extraAdherenceMean == null ? '—' : fmtPct(a.extraAdherenceMean)}</td>
+      <td>${a.judgeErrorOutputs || 0}</td>
+    </tr>`).join('')}</tbody></table>
+    <div class="muted" style="margin-top:4px">SSR=单指令满足率（PARTIAL 计 0.5）；HSR=整份全通过率；Core=共享核心规则得分（0–100）；
+    StablePass=共享核心规则全过的份数占比；Extra 兑现=本组新增层规则满足率；judge 异常份的 AI 规则计 0 分，结论披露前应剔除或重评。</div>`;
+
+  const heatmaps = aggr.map(a => renderHeatmap(d, a)).join('');
+  $('evalDetail').innerHTML = `<div class="detail">
+    <b style="font-size:13px">评估明细</b>
+    <span class="muted"> · 规则清单 SHA-256 <span class="mono">${d.info.rulesSha256}</span></span>
+    ${aggrHtml}${heatmaps}
+    <div class="muted" style="margin-top:6px">热力图：行=原子规则（共享核心置顶），列=第 N 次生成；
+      <span class="hm-cell v-PASS" style="display:inline-block;vertical-align:middle"></span> 满足
+      <span class="hm-cell v-PARTIAL" style="display:inline-block;vertical-align:middle"></span> 部分满足
+      <span class="hm-cell v-FAIL" style="display:inline-block;vertical-align:middle"></span> 违反
+      <span class="hm-cell v-ERROR" style="display:inline-block;vertical-align:middle"></span> 判定异常/待人工。点击格子看证据。</div>
+  </div>`;
+}
+
+function renderHeatmap(d, a) {
+  const outputs = d.info.outputs.filter(o => o.taskId === a.taskId);
+  if (!outputs.length) return '';
+  const ruleById = Object.fromEntries(d.rules.map(r => [r.ruleId, r]));
+  const ruleIds = outputs[0].verdicts.map(v => v.ruleId);
+  const sorted = [...ruleIds].sort((x, y) =>
+    (ruleById[y]?.shared ? 1 : 0) - (ruleById[x]?.shared ? 1 : 0) || ruleIds.indexOf(x) - ruleIds.indexOf(y));
+  const cols = outputs.length;
+  const rows = sorted.map(rid => {
+    const r = ruleById[rid] || {};
+    const cells = outputs.map((o, oi) => {
+      const v = o.verdicts.find(x => x.ruleId === rid);
+      const verdict = v ? v.verdict : 'ERROR';
+      return `<div class="hm-cell v-${verdict}" title="${esc(rid)} · 第${o.index}次 · ${verdict}"
+        onclick="showVerdict('${a.taskId}',${o.index},'${rid}')"></div>`;
+    }).join('');
+    return `<div class="hm-rule" title="${esc(r.ruleText || rid)}">
+      <span class="lv lv-${r.level}">${r.level}</span>${r.shared ? '★' : ''}${esc(rid)}</div>${cells}`;
+  }).join('');
+  return `<div style="margin-top:14px"><b style="font-size:12px">${a.group} · ${esc(a.label)}</b>
+    <div class="hm-wrap"><div class="hm-grid" style="grid-template-columns:auto repeat(${cols},17px)">${rows}</div></div></div>`;
+}
+
+function showVerdict(taskId, index, ruleId) {
+  if (!currentEvalDetail) return;
+  const o = currentEvalDetail.info.outputs.find(x => x.taskId === taskId && x.index === index);
+  const v = o?.verdicts.find(x => x.ruleId === ruleId);
+  const r = currentEvalDetail.rules.find(x => x.ruleId === ruleId);
+  if (!v) return;
+  $('previewTitle').textContent = `${ruleId} · ${taskId} · 第 ${index} 次 · ${v.verdict}`;
+  $('previewContent').textContent =
+    `规则：${r ? r.ruleText : ''}\n级别：${r ? r.level : ''}${r && r.shared ? '（共享核心）' : ''}\n` +
+    `判定：${v.verdict}\n理由：${v.reason || '—'}\n证据引用：${v.evidence || '—'}`;
+  $('previewBox').style.display = 'flex';
+}
+
+async function toggleEvalDetail(evalId) {
+  openEvalId = openEvalId === evalId ? null : evalId;
+  await refreshEvals();
+}
+
+async function cancelEval(evalId) {
+  await fetch(`/api/expe/evals/${evalId}/cancel`, {method: 'POST'});
+  await refreshEvals();
+}
+
+async function deleteEval(evalId) {
+  if (!confirm(`确认删除评估 ${evalId}？将同时清理全部判定明细与 judge 原始响应，不可恢复。`)) return;
+  const resp = await fetch(`/api/expe/evals/${evalId}`, {method: 'DELETE'});
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    alert(`删除失败：${body.error || resp.statusText}`);
+  }
+  if (openEvalId === evalId) openEvalId = null;
+  await refreshEvals();
+}
+
+async function refreshEvals() {
+  try {
+    const evals = await (await fetch('/api/expe/evals')).json();
+    renderEvals(evals);
+    if (openEvalId) {
+      const resp = await fetch(`/api/expe/evals/${openEvalId}`);
+      renderEvalDetail(resp.ok ? await resp.json() : null);
+    } else {
+      renderEvalDetail(null);
+    }
+    const active = evals.some(ev => ev.status === 'RUNNING' || ev.status === 'QUEUED');
+    $('evalPollHint').textContent = active ? '（评估中，自动刷新）' : '';
+    clearTimeout(evalPollTimer);
+    evalPollTimer = setTimeout(refreshEvals, active ? 3000 : 12000);
+  } catch (e) {
+    clearTimeout(evalPollTimer);
+    evalPollTimer = setTimeout(refreshEvals, 6000);
+  }
+}
+
+loadData();
+refresh();
+refreshEvals();
+</script>
+</body>
+</html>

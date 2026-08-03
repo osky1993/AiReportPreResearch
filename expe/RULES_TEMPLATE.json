@@ -1,0 +1,340 @@
+{
+  "template_version": "v1.0",
+  "template_date": "2026-08-03",
+  "template_notice": "原子规则清单模板（对齐实验方案 §10.1 九字段）。本文件是可直接机读执行的评估配置，也是给业务方逐条确认权重与判据的底稿。正式实验前必须：1) 按实际 A/B/C/D 提示词逐条增删规则并做人工可满足性检查（§17）；2) 业务方在看到任何实验结果前确认并锁定 weight 与 pass_rule；3) 锁定后计算本文件 SHA-256 入证据包，实验中途不得修改。",
+
+  "dataset_ref": {
+    "dataset_id": "haizhou_economy_2026q2_v1",
+    "data_json": "expe/DATA_JSON.json",
+    "note": "evidence_ids_valid 等校验器引用该数据包中的 indicator_id / industry_id / subregion_id / risk_id 作为合法证据 ID 全集"
+  },
+
+  "output_contract": {
+    "description": "四组统一的 JSON 输出外壳（方案 §3.3）。程序校验器中 target 使用 JSONPath 引用其字段；whole_text 表示 title+summary+全部 sections[].content 拼接后的正文。",
+    "shape": {
+      "title": "报告标题",
+      "summary": "总体摘要",
+      "sections": [
+        { "name": "章节名", "content": "正文", "evidence": ["IND_GDP"] }
+      ]
+    }
+  },
+
+  "field_spec": {
+    "rule_id": "唯一编号。命名约定：R-<层>-<序号>，层 ∈ K(共享内核)/H(B新增高价值)/M(C新增微操)/L(D新增高负载)/DC(仅 D-Conflict 诊断组)",
+    "rule_text": "规则原文（与提示词中的表述逐字一致，评审与热力图行名都用它）",
+    "level": {
+      "P0": "事实硬门禁——数值/期间/单位/方向/字段映射/不得编造。任何 P0 失败 = 该份输出不可直接交付，不参与加权得分抵消（一票否决）",
+      "P1": "核心业务要求——必要分析维度、证据、逻辑、关键结构",
+      "P2": "格式与表达要求——章节、列表、标题、篇幅",
+      "P3": "修辞微观偏好——句式、禁用词、语调、套话"
+    },
+    "shared": "是否 A—D 四组共有核心规则（CoreScore 只统计 shared=true 的规则）",
+    "introduced_in": "首次出现层 ∈ A/B/C/D/D-Conflict。嵌套设计下规则对『introduced_in 及其之后的组』生效：A 层规则四组全查，C 层规则只查 C/D",
+    "weight": "业务权重（建议基准 P0=10、P1=5、P2=2、P3=1，由业务方确认后锁定；P0 不进加权分，单列否决）。加权与未加权结果须同时披露（§10.3）",
+    "check_type": {
+      "PROGRAM": "确定性程序判定（带 check_spec，零 LLM）。凡程序可判的绝不交给 AI",
+      "AI": "语义规则，AI judge 逐条判定，必须附原文引用作为证据；judge 模型 ≠ 被测模型，判前须人工校准（kappa ≥ 0.7）",
+      "HUMAN": "仅人工判定（如业务盲评项）；AI/PROGRAM 判定的抽样复核也记在人工侧"
+    },
+    "pass_rule": "满足判据。PROGRAM 规则此处为人读描述（机读逻辑在 check_spec）；AI 规则此处即 judge 收到的判定标准原文",
+    "conflict_with": "冲突规则 id 列表（仅 D-Conflict 组使用；主实验各组必须为空）。judge 对无优先级的冲突对：识别冲突并说明取舍/请求澄清 = 合理行为，不得把满足任意一边判为失败（§6.1）"
+  },
+
+  "program_checkers": {
+    "json_schema": "输出可解析为 JSON 且含 title(字符串)/summary(字符串)/sections(非空数组，每项含 name/content/evidence)。params: {}",
+    "char_length_range": "target 的中文字符数（不含空白）落在 [min,max]。params: {target, min, max}",
+    "section_names_equals": "sections[].name 与 expected 完全一致且顺序相同。params: {expected: [..]}",
+    "evidence_ids_valid": "所有 sections[].evidence 中的 ID 均属于数据包合法 ID 全集，且每个 section 的 evidence 非空。params: {}",
+    "forbidden_terms": "target 中不出现任一列出词条。params: {target, terms: [..]}",
+    "required_regex": "target 匹配 pattern。params: {target, pattern}",
+    "forbidden_regex": "target 不匹配 pattern。params: {target, pattern}",
+    "starts_with_any": "target（或 target 的每个元素）以 options 之一开头。params: {target, options: [..]}",
+    "ends_with": "target 以 suffix 结尾。params: {target, suffix}",
+    "term_max_frequency": "target 中任一列出词条出现次数 ≤ max。params: {target, terms: [..], max}",
+    "_target_syntax": "target 取值：whole_text | $.title | $.summary | $.sections[*].content | $.sections[?name='重点问题'].content"
+  },
+
+  "rules": [
+    {
+      "rule_id": "R-K-001",
+      "rule_text": "只能使用给定数据和事实，不得联网，不得引用任何外部背景信息",
+      "level": "P0",
+      "shared": true,
+      "introduced_in": "A",
+      "weight": 10,
+      "check_type": "AI",
+      "pass_rule": "正文中每一个事实性陈述（数值、排名、变化、背景条件）都能在给定 JSON 数据包中找到直接依据；出现任何数据包之外的事实、背景、政策或行业信息即为失败。请引用违规原文。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-K-002",
+      "rule_text": "不得擅自补全缺失值（民间投资总额本期值、城镇调查失业率上年同期值均为暂缺，不可推断）",
+      "level": "P0",
+      "shared": true,
+      "introduced_in": "A",
+      "weight": 10,
+      "check_type": "AI",
+      "pass_rule": "输出中不得出现『民间投资总额本期数值』和『城镇调查失业率上年同期数值/同比变化』——这两项在数据包中标记为暂缺且不可推断。提及其缺失是允许的；给出具体数值或据此计算同比即为失败。请引用违规原文。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-K-003",
+      "rule_text": "每个章节必须在 evidence 数组中列出所依据的事实 ID，且 ID 必须真实存在于数据包中",
+      "level": "P0",
+      "shared": true,
+      "introduced_in": "A",
+      "weight": 10,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "evidence_ids_valid", "params": {} },
+      "pass_rule": "每个 section 的 evidence 非空，且所有 ID 均属于数据包的 indicator_id/industry_id/subregion_id/risk_id 全集",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-K-004",
+      "rule_text": "正文中的数据结论必须与所引证据 ID 对应的数据一致（数值、期间、单位、方向均不得错位）",
+      "level": "P0",
+      "shared": true,
+      "introduced_in": "A",
+      "weight": 10,
+      "check_type": "AI",
+      "pass_rule": "逐条核对正文数值型陈述与数据包：数值（含容差：展示精度半个末位）、所属期间（2026Q2 vs 2025Q2）、单位（亿元/%/个百分点）、变化方向（增长/下降）四要素均正确。任一要素错误或张冠李戴即失败。请列出每处错误的原文与正确值。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-K-005",
+      "rule_text": "不得把相关性表述为因果关系（risk_context 的背景证据仅支持审慎的关联分析）",
+      "level": "P0",
+      "shared": true,
+      "introduced_in": "A",
+      "weight": 10,
+      "check_type": "AI",
+      "pass_rule": "对房地产投资下降、出口下降等，允许『可能与…有关』『或受…影响』等审慎表述；出现『因为…导致』『主要原因是』等确定性因果断言，且数据包未提供因果依据的，即为失败。请引用违规原文。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-K-006",
+      "rule_text": "覆盖总体规模、结构、趋势和风险四个分析维度",
+      "level": "P1",
+      "shared": true,
+      "introduced_in": "A",
+      "weight": 5,
+      "check_type": "AI",
+      "pass_rule": "正文须同时包含：1) 总体经济规模及变化；2) 产业/区域/财政等结构性分析；3) 主要指标的变化趋势方向；4) 风险或值得关注的问题。四者缺一即失败，并指出缺失的维度。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-K-007",
+      "rule_text": "按统一 JSON 格式输出（title/summary/sections[{name,content,evidence}]）",
+      "level": "P2",
+      "shared": true,
+      "introduced_in": "A",
+      "weight": 2,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "json_schema", "params": {} },
+      "pass_rule": "首次解析即通过（解析失败直接计为该份失败，不做修复重试）",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-K-008",
+      "rule_text": "正文总篇幅 700—900 字",
+      "level": "P2",
+      "shared": true,
+      "introduced_in": "A",
+      "weight": 2,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "char_length_range", "params": { "target": "whole_text", "min": 700, "max": 900 } },
+      "pass_rule": "title+summary+全部章节正文的中文字符数（不含空白）在 700—900",
+      "conflict_with": []
+    },
+
+    {
+      "rule_id": "R-H-001",
+      "rule_text": "按『总体情况—结构变化—重点问题—工作建议』四章组织",
+      "level": "P1",
+      "shared": false,
+      "introduced_in": "B",
+      "weight": 5,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "section_names_equals", "params": { "expected": ["总体情况", "结构变化", "重点问题", "工作建议"] } },
+      "pass_rule": "sections 恰为四章且名称、顺序完全一致",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-H-002",
+      "rule_text": "重要结论按业务影响从大到小排序呈现",
+      "level": "P1",
+      "shared": false,
+      "introduced_in": "B",
+      "weight": 5,
+      "check_type": "AI",
+      "pass_rule": "各章节内多项结论的呈现顺序与其业务影响量级基本一致（如结构变化章先讲增长贡献最大的先进制造业/数字经济，重点问题章先讲降幅更大的房地产投资）。明显把次要项置于首要项之前即失败，请说明依据。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-H-003",
+      "rule_text": "风险与工作建议必须分别呈现，不得混写在同一章节",
+      "level": "P1",
+      "shared": false,
+      "introduced_in": "B",
+      "weight": 5,
+      "check_type": "AI",
+      "pass_rule": "风险/问题的陈述集中在『重点问题』章，行动建议集中在『工作建议』章；『重点问题』章出现具体行动建议、或『工作建议』章夹带新的风险披露即失败。请引用违规原文。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-H-004",
+      "rule_text": "语言正式、客观、克制，符合政务简报文风",
+      "level": "P2",
+      "shared": false,
+      "introduced_in": "B",
+      "weight": 2,
+      "check_type": "AI",
+      "pass_rule": "通篇书面政务语体：无口语化表达、无夸张修辞（如『令人震惊』『暴涨』）、无第一/第二人称、无感叹号。出现任一即失败，请引用违规原文。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-H-005",
+      "rule_text": "报告标题须含地区、期间与『经济运行分析』字样",
+      "level": "P2",
+      "shared": false,
+      "introduced_in": "B",
+      "weight": 2,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "required_regex", "params": { "target": "$.title", "pattern": "海州市.*2026年.*(二季度|第二季度).*经济运行分析" } },
+      "pass_rule": "标题匹配：海州市…2026年…二季度…经济运行分析",
+      "conflict_with": []
+    },
+
+    {
+      "rule_id": "R-M-001",
+      "rule_text": "摘要（summary）控制在 80—120 字",
+      "level": "P2",
+      "shared": false,
+      "introduced_in": "C",
+      "weight": 2,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "char_length_range", "params": { "target": "$.summary", "min": 80, "max": 120 } },
+      "pass_rule": "summary 中文字符数（不含空白）在 80—120",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-M-002",
+      "rule_text": "禁止使用套话：『总体来看』『众所周知』『不难看出』『综上所述』『再创新高』",
+      "level": "P3",
+      "shared": false,
+      "introduced_in": "C",
+      "weight": 1,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "forbidden_terms", "params": { "target": "whole_text", "terms": ["总体来看", "众所周知", "不难看出", "综上所述", "再创新高"] } },
+      "pass_rule": "全文（含标题与摘要）不出现任一禁用词",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-M-003",
+      "rule_text": "『工作建议』章的每条建议必须以『建议』『加快』『强化』『推动』之一开头",
+      "level": "P3",
+      "shared": false,
+      "introduced_in": "C",
+      "weight": 1,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "starts_with_any", "params": { "target": "$.sections[?name='工作建议'].content", "options": ["建议", "加快", "强化", "推动"] } },
+      "pass_rule": "工作建议章按分句/分条切分后，每条以指定动词之一开头",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-M-004",
+      "rule_text": "『重点问题』章必须以『需持续关注。』收尾",
+      "level": "P3",
+      "shared": false,
+      "introduced_in": "C",
+      "weight": 1,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "ends_with", "params": { "target": "$.sections[?name='重点问题'].content", "suffix": "需持续关注。" } },
+      "pass_rule": "重点问题章正文以指定短语结尾",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-M-005",
+      "rule_text": "『增长』一词全文出现不超过 6 次",
+      "level": "P3",
+      "shared": false,
+      "introduced_in": "C",
+      "weight": 1,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "term_max_frequency", "params": { "target": "whole_text", "terms": ["增长"], "max": 6 } },
+      "pass_rule": "『增长』出现次数 ≤ 6",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-M-006",
+      "rule_text": "每章正文段首句不超过 30 字",
+      "level": "P3",
+      "shared": false,
+      "introduced_in": "C",
+      "weight": 1,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "forbidden_regex", "params": { "target": "$.sections[*].content", "pattern": "^[^。！？]{31,}[。！？]" } },
+      "pass_rule": "每章 content 的第一个句号前不超过 30 字",
+      "conflict_with": []
+    },
+
+    {
+      "rule_id": "R-L-001",
+      "rule_text": "『工作建议』章的每条建议须与『重点问题』章的某一问题显式呼应（点名对应问题）",
+      "level": "P1",
+      "shared": false,
+      "introduced_in": "D",
+      "weight": 5,
+      "check_type": "AI",
+      "pass_rule": "工作建议章每条建议都能明确对应重点问题章提出的某一问题（如针对出口下滑的建议须提及出口/外需/订单）；出现与任何已述问题无关的悬空建议即失败。请给出建议与问题的对应关系表。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-L-002",
+      "rule_text": "分支规则：某指标同比降幅超过 5% 时，该指标在『重点问题』章须单独成段并给出两条背景证据；降幅未超 5% 的下降指标只需一句带过",
+      "level": "P1",
+      "shared": false,
+      "introduced_in": "D",
+      "weight": 5,
+      "check_type": "AI",
+      "pass_rule": "按数据包：房地产开发投资同比 -8.61%（超 5%）→ 须在重点问题章单独成段且引用去化周期 18.60 个月与新开工许可 12 个之二证据；货物出口 -3.08%（未超 5%）→ 一句带过即可，展开成段即失败。两个分支任一执行错误即失败。",
+      "conflict_with": []
+    },
+    {
+      "rule_id": "R-L-003",
+      "rule_text": "同一核心指标在不同章节不得重复同一句式表达（如 GDP 在摘要与总体情况章须换表达方式）",
+      "level": "P3",
+      "shared": false,
+      "introduced_in": "D",
+      "weight": 1,
+      "check_type": "AI",
+      "pass_rule": "同一指标的数值陈述在两处及以上出现时，句式不得逐字或近乎逐字重复（数值本身相同是允许且必须的）。发现近重复句对即失败，请引用两处原文。",
+      "conflict_with": []
+    },
+
+    {
+      "rule_id": "R-DC-001A",
+      "rule_text": "全文禁止使用括号",
+      "level": "P3",
+      "shared": false,
+      "introduced_in": "D-Conflict",
+      "weight": 1,
+      "check_type": "PROGRAM",
+      "check_spec": { "checker": "forbidden_regex", "params": { "target": "whole_text", "pattern": "[（()）]" } },
+      "pass_rule": "全文不出现中英文括号",
+      "conflict_with": ["R-DC-001B"]
+    },
+    {
+      "rule_id": "R-DC-001B",
+      "rule_text": "所有统计口径说明必须置于括号内（如『（按可比口径）』）",
+      "level": "P3",
+      "shared": false,
+      "introduced_in": "D-Conflict",
+      "weight": 1,
+      "check_type": "AI",
+      "pass_rule": "凡出现口径类说明须在括号内。注意：本规则与 R-DC-001A 构成无优先级冲突对——模型识别冲突并说明取舍或请求澄清应判为合理行为，仅满足单边不判失败（§6.1）。",
+      "conflict_with": ["R-DC-001A"]
+    }
+  ]
+}

@@ -92,6 +92,21 @@ report:
     price-per-1k-input: 0    # 看板成本估算单价（每千 prompt token）；0=不显示金额只显示 token（P6 契约2）
     price-per-1k-output: 0   # 每千 completion token 单价
 
+# Prompt 过载与边际效用验证实验（expe/ 目录，独立于问数/报告功能；演示页 /expe.html）
+# 供应商三元组复用上方 llm.*；此处仅实验自身参数
+expe:
+  data-json-path: ${EXPE_DATA_JSON_PATH:expe/DATA_JSON.json}   # 公共冻结数据包（拼到提示词末尾）
+  runs-dir: ${EXPE_RUNS_DIR:expe/runs}                         # 任务与结果落盘目录（已 gitignore）
+  timeout-seconds: 300      # 单次生成超时（长 Prompt+长文，远大于 llm.timeout-seconds）
+  worker-threads: 4         # 任务并发数：同时上传 A/B/C/D 时组间调用自然交错
+  evals-dir: ${EXPE_EVALS_DIR:expe/evals}          # AI 评估任务落盘目录（已 gitignore）
+  rules-path: ${EXPE_RULES_PATH:expe/RULES_TEMPLATE.json}  # 默认原子规则清单（创建评估不上传规则文件时用）
+  judge:                    # AI judge（评审模型）：必须 ≠ 被测模型 llm.model，被测模型自评不可信
+    base-url: ${EXPE_JUDGE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+    model: ${EXPE_JUDGE_MODEL:qwen3.7-max}
+    api-key: ${EXPE_JUDGE_API_KEY:${embedding.api-key:}}   # 默认复用 DashScope 通用 key（application-local.yml 的 embedding.api-key）
+    timeout-seconds: 180
+
 logging:
   level:
     com.treasury.nl2sql: INFO

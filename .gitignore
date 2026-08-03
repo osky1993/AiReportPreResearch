@@ -26,7 +26,13 @@ build/
 .DS_Store
 Thumbs.db
 
+# ---- Prompt 过载实验的生成/评估结果（原始证据落盘，不入库）----
+/expe/runs/
+/expe/evals/
+
 # ---- 日志 ----
 *.log
 logs/
 /tools/
+/graphify-out/
+/.claude/launch.json
