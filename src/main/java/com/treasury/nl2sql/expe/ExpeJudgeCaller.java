@@ -32,7 +32,11 @@ public class ExpeJudgeCaller {
 
     private static final Logger log = LoggerFactory.getLogger(ExpeJudgeCaller.class);
 
-    public record JudgeResult(List<RuleVerdict> verdicts, String rawResponse) {}
+    /** 统一业务质量盲评（四组同一把尺子，与规则清单无关；judge 不知道组别）：四维 1—5 整数 */
+    public record QualityScore(Integer structure, Integer analysis, Integer expression, Integer usability,
+                               String comment) {}
+
+    public record JudgeResult(List<RuleVerdict> verdicts, QualityScore quality, String rawResponse) {}
 
     private final ExpeProperties.Judge props;
     private final ObjectMapper mapper;
@@ -91,10 +95,26 @@ public class ExpeJudgeCaller {
                 ordered.add(byId.getOrDefault(r.ruleId(),
                         new RuleVerdict(r.ruleId(), "ERROR", null, "judge 响应未覆盖该规则")));
             }
-            return new JudgeResult(ordered, resp);
+            return new JudgeResult(ordered, parseQuality(mapper.readTree(content).path("quality")), resp);
         } catch (Exception e) {
             throw new RuntimeException("解析 judge 响应失败: " + e.getMessage(), e);
         }
+    }
+
+    /** 解析统一质量盲评；judge 未返回或维度非法时整体记 null（辅助指标缺失不影响规则判定） */
+    private static QualityScore parseQuality(JsonNode q) {
+        if (q == null || !q.isObject()) return null;
+        Integer structure = dim(q, "structure"), analysis = dim(q, "analysis"),
+                expression = dim(q, "expression"), usability = dim(q, "usability");
+        if (structure == null && analysis == null && expression == null && usability == null) return null;
+        return new QualityScore(structure, analysis, expression, usability, q.path("comment").asText(null));
+    }
+
+    private static Integer dim(JsonNode q, String field) {
+        JsonNode v = q.get(field);
+        if (v == null || !v.canConvertToInt()) return null;
+        int n = v.asInt();
+        return (n >= 1 && n <= 5) ? n : null;
     }
 
     private String buildPrompt(String dataJson, String outputContent, List<Rule> aiRules) {
@@ -107,9 +127,19 @@ public class ExpeJudgeCaller {
                 - 每条规则独立判定，verdict 只能是 PASS / PARTIAL / FAIL 之一（PARTIAL=大体满足但存在轻微违背）；
                 - verdict 为 FAIL 或 PARTIAL 时，必须在 evidence 中引用报告原文片段作为证据，并在 reason 中简述理由；
                 - 标注为【冲突对】的规则：若报告明确识别了规则间冲突并说明取舍或请求澄清，应判 PASS；
-                - 必须逐条覆盖全部规则，不得遗漏、不得新增；
-                - 严格按如下 JSON 结构输出，不输出其他内容：
-                  {"verdicts":[{"rule_id":"...","verdict":"PASS|PARTIAL|FAIL","evidence":"...","reason":"..."}]}
+                - 必须逐条覆盖全部规则，不得遗漏、不得新增。
+
+                【统一业务质量盲评】
+                完成规则判定后，另以政务简报的通用业务标准对报告整体打分。该打分与上述规则无关，
+                无论报告依据何种要求生成，评分标准完全一致，四个维度各给 1—5 的整数：
+                - structure：结构清晰度（层次与脉络是否一目了然）；
+                - analysis：分析价值（是否给出有业务含义的判断而非罗列数字）；
+                - expression：政务表达规范（书面、客观、克制）；
+                - usability：可直接使用程度（5=不修改即可上报，1=需要重写）。
+
+                【输出格式】严格按如下 JSON 结构输出，不输出其他内容：
+                {"verdicts":[{"rule_id":"...","verdict":"PASS|PARTIAL|FAIL","evidence":"...","reason":"..."}],
+                 "quality":{"structure":1,"analysis":1,"expression":1,"usability":1,"comment":"一句话总评"}}
 
                 【数据包（事实核对的唯一依据）】
                 """);

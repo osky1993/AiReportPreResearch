@@ -386,7 +386,7 @@ function renderEvalDetail(d) {
   const aggr = [...d.aggregates].sort((a, b) => (GROUP_ORDER[a.group] ?? 9) - (GROUP_ORDER[b.group] ?? 9));
   const aggrHtml = `<table class="aggr" style="margin-top:10px">
     <thead><tr><th>组</th><th>任务</th><th>已评</th><th>SSR 均值</th><th>SSR 中位</th><th>HSR</th>
-      <th>Core 加权</th><th>Core 未加权</th><th>StablePass</th><th>P0 违规份数</th><th>Extra 兑现</th><th>judge 异常</th></tr></thead>
+      <th>Core 加权</th><th>Core 未加权</th><th>StablePass</th><th>P0 违规份数</th><th>Extra 兑现</th><th>质量分</th><th>judge 异常</th></tr></thead>
     <tbody>${aggr.map(a => `<tr>
       <td><b>${a.group}</b></td><td>${esc(a.label)}</td><td>${a.evaluated}</td>
       <td>${fmtPct(a.ssrMean)}</td><td>${fmtPct(a.ssrMedian)}</td><td>${fmtPct(a.hsrRate)}</td>
@@ -394,10 +394,13 @@ function renderEvalDetail(d) {
       <td>${fmtPct(a.stablePassRate)}</td>
       <td style="color:${a.p0FailedOutputs ? 'var(--bad)' : 'inherit'}">${a.p0FailedOutputs}</td>
       <td>${a.extraAdherenceMean == null ? '—' : fmtPct(a.extraAdherenceMean)}</td>
+      <td>${a.qualityMean == null ? '—' : a.qualityMean.toFixed(2)}</td>
       <td>${a.judgeErrorOutputs || 0}</td>
     </tr>`).join('')}</tbody></table>
     <div class="muted" style="margin-top:4px">SSR=单指令满足率（PARTIAL 计 0.5）；HSR=整份全通过率；Core=共享核心规则得分（0–100）；
-    StablePass=共享核心规则全过的份数占比；Extra 兑现=本组新增层规则满足率；judge 异常份的 AI 规则计 0 分，结论披露前应剔除或重评。</div>`;
+    StablePass=共享核心规则全过的份数占比；Extra 兑现=本组新增层规则满足率（组内指标，勿跨组比较）；
+    质量分=judge 统一业务盲评均分（1–5，固定 rubric、与组别无关，是跨组横向可比的辅助指标）；judge 异常份的 AI 规则计 0 分，结论披露前应剔除或重评。<br>
+    <b>跨组横向对照只看四把统一尺子：Core（共享核心 K 层）、P0 违规、StablePass、质量分</b>——SSR/HSR/Extra 因各组规则集不同，仅作组内观察。</div>`;
 
   const heatmaps = aggr.map(a => renderHeatmap(d, a)).join('');
   $('evalDetail').innerHTML = `<div class="detail">

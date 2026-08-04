@@ -52,8 +52,9 @@ public class ExpeEvalService {
 
     public record EvalTarget(String taskId, String label, String group) {}
 
-    /** 单份输出的评估结果：verdicts 按适用规则清单顺序对齐 */
-    public record OutputEval(String taskId, int index, List<RuleVerdict> verdicts, String judgeError) {}
+    /** 单份输出的评估结果：verdicts 按适用规则清单顺序对齐；quality=judge 统一业务质量盲评（可为 null） */
+    public record OutputEval(String taskId, int index, List<RuleVerdict> verdicts,
+                             ExpeJudgeCaller.QualityScore quality, String judgeError) {}
 
     /** 评估任务快照（meta.json 持久化结构 + API 返回结构） */
     public record EvalInfo(String evalId, String createdAt, String finishedAt, String status,
@@ -65,12 +66,13 @@ public class ExpeEvalService {
     public record RuleRow(String ruleId, String ruleText, String level, boolean shared,
                           String introducedIn, String checkType, double weight) {}
 
-    /** 单目标（组）聚合指标；比率均为 0~1，Core 分为 0~100；extraAdherence 无新增层时为 null */
+    /** 单目标（组）聚合指标；比率均为 0~1，Core 分为 0~100；extraAdherence 无新增层时为 null；
+     *  qualityMean=统一业务质量盲评均分（1~5，四组同一把尺子，跨组横向可比；无有效打分时为 null） */
     public record TargetAggregate(String taskId, String label, String group, int evaluated,
                                   double ssrMean, double ssrMedian, double hsrRate,
                                   double coreWeightedMean, double coreUnweightedMean,
                                   double stablePassRate, int p0FailedOutputs, Double extraAdherenceMean,
-                                  int judgeErrorOutputs) {}
+                                  Double qualityMean, int judgeErrorOutputs) {}
 
     public record EvalDetail(EvalInfo info, List<RuleRow> rules, List<TargetAggregate> aggregates) {}
 
@@ -242,7 +244,7 @@ public class ExpeEvalService {
         Path dir = Path.of(props.getEvalsDir(), state.evalId);
         try {
             // 先为每个目标准备上下文，再把全部「待评输出」一次性扇出到 judge 共享池并行判定
-            record Job(EvalTarget target, int index, String dataJson, Set<String> validIds,
+            record Job(EvalTarget target, int index, String dataJson, Set<String> validIds, JsonNode dataRoot,
                        List<Rule> applicable, List<Rule> aiRules) {}
             List<Job> jobs = new ArrayList<>();
             for (EvalTarget target : state.targets) {
@@ -250,11 +252,12 @@ public class ExpeEvalService {
                 String dataJson = Files.readString(
                         Path.of(props.getRunsDir(), target.taskId(), "data.json"), StandardCharsets.UTF_8);
                 Set<String> validIds = collectEvidenceIds(dataJson);
+                JsonNode dataRoot = mapper.readTree(dataJson);
                 List<Rule> applicable = ruleSet.applicableTo(target.group());
                 List<Rule> aiRules = applicable.stream().filter(r -> "AI".equals(r.checkType())).toList();
                 for (ExpeTaskService.CallInfo call : task.calls()) {
                     if ("OK".equals(call.status())) {
-                        jobs.add(new Job(target, call.index(), dataJson, validIds, applicable, aiRules));
+                        jobs.add(new Job(target, call.index(), dataJson, validIds, dataRoot, applicable, aiRules));
                     }
                 }
             }
@@ -267,7 +270,7 @@ public class ExpeEvalService {
                         OutputEval oe;
                         try {
                             oe = evalOneOutput(state, dir, job.target(), job.index(), job.dataJson(),
-                                    job.validIds(), job.applicable(), job.aiRules());
+                                    job.validIds(), job.dataRoot(), job.applicable(), job.aiRules());
                         } catch (Exception e) {
                             // 单份评估异常不拖垮整个评估：该份全部规则记 ERROR，可复评
                             log.warn("[expe-eval] 评估 {} 任务 {} 第 {} 次异常: {}",
@@ -275,7 +278,7 @@ public class ExpeEvalService {
                             oe = new OutputEval(job.target().taskId(), job.index(),
                                     job.applicable().stream().map(r -> new RuleVerdict(r.ruleId(), "ERROR", null,
                                             "评估异常: " + abbreviate(e.getMessage(), 200))).toList(),
-                                    abbreviate(e.getMessage(), 1000));
+                                    null, abbreviate(e.getMessage(), 1000));
                         }
                         state.addOutput(oe);
                         saveMeta(state);
@@ -295,26 +298,29 @@ public class ExpeEvalService {
     }
 
     private OutputEval evalOneOutput(EvalState state, Path dir, EvalTarget target, int index, String dataJson,
-                                     Set<String> validIds, List<Rule> applicable, List<Rule> aiRules) throws IOException {
+                                     Set<String> validIds, JsonNode dataRoot,
+                                     List<Rule> applicable, List<Rule> aiRules) throws IOException {
         String content = new String(taskService.readResult(target.taskId(), index), StandardCharsets.UTF_8);
         ExpeProgramChecker.ParsedOutput parsed = checker.parse(content);
 
         Map<String, RuleVerdict> byId = new HashMap<>();
         for (Rule r : applicable) {
             if ("PROGRAM".equals(r.checkType())) {
-                byId.put(r.ruleId(), checker.check(r, parsed, validIds));
+                byId.put(r.ruleId(), checker.check(r, parsed, validIds, dataRoot));
             } else if ("HUMAN".equals(r.checkType())) {
                 byId.put(r.ruleId(), new RuleVerdict(r.ruleId(), "HUMAN", null, "需人工判定，不进自动汇总"));
             }
         }
 
         String judgeError = null;
+        ExpeJudgeCaller.QualityScore quality = null;
         if (!aiRules.isEmpty()) {
             try {
                 ExpeJudgeCaller.JudgeResult jr = judge.judge(dataJson, content, aiRules);
                 Files.writeString(dir.resolve("judge_raw").resolve("judge_" + target.taskId() + "_" + index + ".json"),
                         jr.rawResponse(), StandardCharsets.UTF_8);
                 for (RuleVerdict v : jr.verdicts()) byId.put(v.ruleId(), v);
+                quality = jr.quality();
             } catch (Exception e) {
                 judgeError = abbreviate(e.getMessage(), 1000);
                 for (Rule r : aiRules) {
@@ -326,7 +332,7 @@ public class ExpeEvalService {
         }
 
         List<RuleVerdict> ordered = applicable.stream().map(r -> byId.get(r.ruleId())).toList();
-        return new OutputEval(target.taskId(), index, ordered, judgeError);
+        return new OutputEval(target.taskId(), index, ordered, quality, judgeError);
     }
 
     /** 从冻结数据包收集合法证据 ID 全集（indicator_id/industry_id/subregion_id/risk_id 的所有取值） */
@@ -397,9 +403,12 @@ public class ExpeEvalService {
         int hsr = 0, stable = 0, p0Failed = 0, judgeErrors = 0;
         double coreWeightedSum = 0, coreUnweightedSum = 0;
         List<Double> extraMeans = new ArrayList<>();
+        List<Double> qualityOveralls = new ArrayList<>();
 
         for (OutputEval o : outputs) {
             if (o.judgeError() != null) judgeErrors++;
+            Double q = qualityOverall(o.quality());
+            if (q != null) qualityOveralls.add(q);
             double sum = 0, coreW = 0, coreWTotal = 0, coreSum = 0, extraSum = 0;
             int n = 0, coreN = 0, extraN = 0;
             boolean allPass = true, sharedAllPass = true, p0AllPass = true;
@@ -442,7 +451,19 @@ public class ExpeEvalService {
                 count == 0 ? 0 : (double) stable / count,
                 p0Failed,
                 extraMeans.isEmpty() ? null : mean(extraMeans),
+                qualityOveralls.isEmpty() ? null : mean(qualityOveralls),
                 judgeErrors);
+    }
+
+    /** 单份输出的统一质量总分 = 四维有效分均值（全部缺失时为 null） */
+    private static Double qualityOverall(ExpeJudgeCaller.QualityScore q) {
+        if (q == null) return null;
+        List<Integer> dims = new ArrayList<>();
+        if (q.structure() != null) dims.add(q.structure());
+        if (q.analysis() != null) dims.add(q.analysis());
+        if (q.expression() != null) dims.add(q.expression());
+        if (q.usability() != null) dims.add(q.usability());
+        return dims.isEmpty() ? null : dims.stream().mapToInt(Integer::intValue).average().orElse(0);
     }
 
     private static double mean(List<Double> xs) {

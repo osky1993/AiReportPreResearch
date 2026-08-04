@@ -49,11 +49,13 @@ public class ExpeRuleSet {
 
     public static Set<String> validGroups() { return GROUP_RANK.keySet(); }
 
-    /** 该组适用的规则（保持清单原顺序） */
+    /** 该组适用的规则（保持清单原顺序）。特例：D-Conflict 提示词不含 D 主组（D-Clean）的 L 层文本，
+     *  故 D-Conflict 组适用规则 = A+B+C 层 + DC 层，须排除 introduced_in=D 的规则 */
     public List<Rule> applicableTo(String group) {
         Integer rank = GROUP_RANK.get(group);
         if (rank == null) throw new IllegalArgumentException("未知组别: " + group + "，合法值 " + GROUP_RANK.keySet());
         return rules.stream()
+                .filter(r -> !("D-Conflict".equals(group) && "D".equals(r.introducedIn())))
                 .filter(r -> LAYER_RANK.getOrDefault(r.introducedIn(), Integer.MAX_VALUE) <= rank)
                 .toList();
     }
