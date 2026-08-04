@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
@@ -113,9 +114,12 @@ public class ExpeTaskService {
             for (CallInfo c : calls) {
                 if ("OK".equals(c.status())) ok++; else failed++;
             }
+            // 迭代并行执行后完成顺序不定，快照按序号排序保证展示与评估遍历稳定
+            List<CallInfo> sorted = calls.stream()
+                    .sorted(Comparator.comparingInt(CallInfo::index)).toList();
             return new TaskInfo(taskId, label, promptFileName, promptSha256, dataSha256, model,
                     temperature, maxTokens, iterations, status, createdAt, finishedAt, ok, failed,
-                    List.copyOf(calls));
+                    sorted);
         }
 
         synchronized void addCall(CallInfo call) { calls.add(call); }
@@ -132,6 +136,8 @@ public class ExpeTaskService {
     private final Map<String, TaskState> tasks = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
     private ExecutorService executor;
+    /** 生成调用共享池：所有任务的迭代都扇出到这里，全局并发 = expe.llm-concurrency */
+    private ExecutorService callExecutor;
 
     public ExpeTaskService(ExpeProperties props, ExpeLlmCaller caller, ObjectMapper mapper) {
         this.props = props;
@@ -146,6 +152,11 @@ public class ExpeTaskService {
             t.setDaemon(true);
             return t;
         });
+        callExecutor = Executors.newFixedThreadPool(Math.max(1, props.getLlmConcurrency()), r -> {
+            Thread t = new Thread(r, "expe-llm-call");
+            t.setDaemon(true);
+            return t;
+        });
         Files.createDirectories(Path.of(props.getRunsDir()));
         restoreFromDisk();
     }
@@ -153,6 +164,7 @@ public class ExpeTaskService {
     @PreDestroy
     void shutdown() {
         if (executor != null) executor.shutdownNow();
+        if (callExecutor != null) callExecutor.shutdownNow();
     }
 
     /** 重启恢复：扫描 runs 目录下所有 meta.json；被打断的执行中任务标记 INTERRUPTED（不自动续跑） */
@@ -240,7 +252,10 @@ public class ExpeTaskService {
         return created;
     }
 
-    /** 任务主循环：串行逐次生成，全新会话、无重试；失败原样记录后继续下一次 */
+    /**
+     * 任务主流程：全部迭代扇出到共享调用池并行执行（全局并发受 expe.llm-concurrency 约束），
+     * 每次仍是独立全新会话、随机 user_id、无重试；失败原样记录。多任务同时扇出时组间调用自然交错。
+     */
     private void runTask(TaskState state, String assembledPrompt) {
         synchronized (state) {
             if (state.cancelRequested) { state.finish("CANCELLED"); saveMeta(state); return; }
@@ -249,39 +264,58 @@ public class ExpeTaskService {
         saveMeta(state);
         Path dir = Path.of(props.getRunsDir(), state.taskId);
 
+        CountDownLatch latch = new CountDownLatch(state.iterations);
         for (int i = 1; i <= state.iterations; i++) {
-            if (state.cancelRequested) break;
-            String userId = "expe-" + UUID.randomUUID();
-            String startedAt = LocalDateTime.now().format(TS);
-            long t0 = System.nanoTime();
-            try {
-                ExpeLlmCaller.CallResult r = caller.call(assembledPrompt, state.temperature, state.maxTokens, userId);
-                long ms = (System.nanoTime() - t0) / 1_000_000;
-                Files.writeString(dir.resolve(resultFileName(i)), r.content(), StandardCharsets.UTF_8);
-                Files.writeString(dir.resolve(String.format("raw_%03d.json", i)), r.rawResponse(), StandardCharsets.UTF_8);
-                state.addCall(new CallInfo(i, userId, startedAt, ms, r.promptTokens(), r.completionTokens(),
-                        r.cacheHitTokens(), "OK", null));
-                if (r.cacheHitTokens() != null && r.cacheHitTokens() > 0) {
-                    log.warn("[expe] 任务 {} 第 {} 次调用命中前缀缓存 {} token——user_id 隔离未生效，请核查",
-                            state.taskId, i, r.cacheHitTokens());
-                }
-            } catch (Exception e) {
-                long ms = (System.nanoTime() - t0) / 1_000_000;
-                String error = abbreviate(e.getMessage(), 2000);
+            final int idx = i;
+            callExecutor.submit(() -> {
                 try {
-                    Files.writeString(dir.resolve(resultFileName(i)),
-                            "[本次调用失败，无模型输出]\n" + error, StandardCharsets.UTF_8);
-                } catch (IOException ignored) {
-                    // 结果目录不可写时错误已进 meta，不再级联
+                    if (!state.cancelRequested) {
+                        runOneCall(state, dir, idx, assembledPrompt);
+                        saveMeta(state);
+                    }
+                } finally {
+                    latch.countDown();
                 }
-                state.addCall(new CallInfo(i, userId, startedAt, ms, null, null, null, "FAILED", error));
-                log.warn("[expe] 任务 {} 第 {}/{} 次调用失败: {}", state.taskId, i, state.iterations, error);
-            }
-            saveMeta(state);
+            });
+        }
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
         state.finish(state.cancelRequested ? "CANCELLED" : "DONE");
         saveMeta(state);
         log.info("[expe] 任务 {} 结束，状态 {}", state.taskId, state.status);
+    }
+
+    /** 单次生成：调用 → 结果/原始响应落盘 → 记录；异常不重试、原样计入 */
+    private void runOneCall(TaskState state, Path dir, int i, String assembledPrompt) {
+        String userId = "expe-" + UUID.randomUUID();
+        String startedAt = LocalDateTime.now().format(TS);
+        long t0 = System.nanoTime();
+        try {
+            ExpeLlmCaller.CallResult r = caller.call(assembledPrompt, state.temperature, state.maxTokens, userId);
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+            Files.writeString(dir.resolve(resultFileName(i)), r.content(), StandardCharsets.UTF_8);
+            Files.writeString(dir.resolve(String.format("raw_%03d.json", i)), r.rawResponse(), StandardCharsets.UTF_8);
+            state.addCall(new CallInfo(i, userId, startedAt, ms, r.promptTokens(), r.completionTokens(),
+                    r.cacheHitTokens(), "OK", null));
+            if (r.cacheHitTokens() != null && r.cacheHitTokens() > 0) {
+                log.warn("[expe] 任务 {} 第 {} 次调用命中前缀缓存 {} token——user_id 隔离未生效，请核查",
+                        state.taskId, i, r.cacheHitTokens());
+            }
+        } catch (Exception e) {
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+            String error = abbreviate(e.getMessage(), 2000);
+            try {
+                Files.writeString(dir.resolve(resultFileName(i)),
+                        "[本次调用失败，无模型输出]\n" + error, StandardCharsets.UTF_8);
+            } catch (IOException ignored) {
+                // 结果目录不可写时错误已进 meta，不再级联
+            }
+            state.addCall(new CallInfo(i, userId, startedAt, ms, null, null, null, "FAILED", error));
+            log.warn("[expe] 任务 {} 第 {}/{} 次调用失败: {}", state.taskId, i, state.iterations, error);
+        }
     }
 
     public List<TaskInfo> listTasks() {
@@ -351,11 +385,14 @@ public class ExpeTaskService {
     }
 
     private void saveMeta(TaskState state) {
-        try {
-            Path meta = Path.of(props.getRunsDir(), state.taskId, "meta.json");
-            mapper.writerWithDefaultPrettyPrinter().writeValue(meta.toFile(), state.snapshot());
-        } catch (IOException e) {
-            log.warn("[expe] 写 meta.json 失败 {}: {}", state.taskId, e.getMessage());
+        // 并行迭代会从多个线程触发落盘，用 state 锁串行化写文件避免交叠损坏
+        synchronized (state) {
+            try {
+                Path meta = Path.of(props.getRunsDir(), state.taskId, "meta.json");
+                mapper.writerWithDefaultPrettyPrinter().writeValue(meta.toFile(), state.snapshot());
+            } catch (IOException e) {
+                log.warn("[expe] 写 meta.json 失败 {}: {}", state.taskId, e.getMessage());
+            }
         }
     }
 

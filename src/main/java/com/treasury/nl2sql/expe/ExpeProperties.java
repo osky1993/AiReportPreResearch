@@ -21,8 +21,14 @@ public class ExpeProperties {
     /** 单次生成的 HTTP 超时（长 Prompt + 长文生成，须显著大于底座 llm.timeout-seconds） */
     private int timeoutSeconds = 300;
 
-    /** 任务执行线程数：同时启动多组（A/B/C/D）任务时在池内并发，天然形成组间交错调用 */
+    /** 任务编排线程数：可同时处于执行态的生成任务数（任务内迭代再经 llm-concurrency 共享池扇出） */
     private int workerThreads = 4;
+
+    /** 生成调用全局并发上限（所有任务共享一个调用池）；调大前确认 LLM 供应商 QPS 配额，限流会污染实验结果 */
+    private int llmConcurrency = 8;
+
+    /** judge 调用全局并发上限（所有评估任务共享）；受 DashScope QPM 配额约束 */
+    private int judgeConcurrency = 6;
 
     /** 评估任务落盘根目录（相对工作目录，已 gitignore） */
     private String evalsDir = "expe/evals";
@@ -60,6 +66,10 @@ public class ExpeProperties {
     public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
     public int getWorkerThreads() { return workerThreads; }
     public void setWorkerThreads(int workerThreads) { this.workerThreads = workerThreads; }
+    public int getLlmConcurrency() { return llmConcurrency; }
+    public void setLlmConcurrency(int llmConcurrency) { this.llmConcurrency = llmConcurrency; }
+    public int getJudgeConcurrency() { return judgeConcurrency; }
+    public void setJudgeConcurrency(int judgeConcurrency) { this.judgeConcurrency = judgeConcurrency; }
     public String getEvalsDir() { return evalsDir; }
     public void setEvalsDir(String evalsDir) { this.evalsDir = evalsDir; }
     public String getRulesPath() { return rulesPath; }

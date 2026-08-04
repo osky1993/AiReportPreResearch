@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -111,8 +112,12 @@ public class ExpeEvalService {
         }
 
         synchronized EvalInfo snapshot() {
+            // 逐份评估并行执行后完成顺序不定，快照按（任务, 序号）排序保证热力图列序稳定
+            List<OutputEval> sorted = outputs.stream()
+                    .sorted(Comparator.comparing(OutputEval::taskId).thenComparingInt(OutputEval::index))
+                    .toList();
             return new EvalInfo(evalId, createdAt, finishedAt, status, judgeModel, rulesFileName, rulesSha256,
-                    ruleCount, targets, totalOutputs, outputs.size(), List.copyOf(outputs), error);
+                    ruleCount, targets, totalOutputs, sorted.size(), sorted, error);
         }
 
         synchronized void addOutput(OutputEval o) { outputs.add(o); }
@@ -132,6 +137,8 @@ public class ExpeEvalService {
     private final Map<String, EvalState> evals = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
     private ExecutorService executor;
+    /** judge 调用共享池：所有评估任务的逐份判定都扇出到这里，全局并发 = expe.judge-concurrency */
+    private ExecutorService judgeExecutor;
 
     public ExpeEvalService(ExpeProperties props, ExpeTaskService taskService, ExpeProgramChecker checker,
                            ExpeJudgeCaller judge, ObjectMapper mapper) {
@@ -149,6 +156,11 @@ public class ExpeEvalService {
             t.setDaemon(true);
             return t;
         });
+        judgeExecutor = Executors.newFixedThreadPool(Math.max(1, props.getJudgeConcurrency()), r -> {
+            Thread t = new Thread(r, "expe-judge-call");
+            t.setDaemon(true);
+            return t;
+        });
         Files.createDirectories(Path.of(props.getEvalsDir()));
         restoreFromDisk();
     }
@@ -156,6 +168,7 @@ public class ExpeEvalService {
     @PreDestroy
     void shutdown() {
         if (executor != null) executor.shutdownNow();
+        if (judgeExecutor != null) judgeExecutor.shutdownNow();
     }
 
     private void restoreFromDisk() {
@@ -228,6 +241,10 @@ public class ExpeEvalService {
         saveMeta(state);
         Path dir = Path.of(props.getEvalsDir(), state.evalId);
         try {
+            // 先为每个目标准备上下文，再把全部「待评输出」一次性扇出到 judge 共享池并行判定
+            record Job(EvalTarget target, int index, String dataJson, Set<String> validIds,
+                       List<Rule> applicable, List<Rule> aiRules) {}
+            List<Job> jobs = new ArrayList<>();
             for (EvalTarget target : state.targets) {
                 ExpeTaskService.TaskInfo task = taskService.getTask(target.taskId());
                 String dataJson = Files.readString(
@@ -235,15 +252,39 @@ public class ExpeEvalService {
                 Set<String> validIds = collectEvidenceIds(dataJson);
                 List<Rule> applicable = ruleSet.applicableTo(target.group());
                 List<Rule> aiRules = applicable.stream().filter(r -> "AI".equals(r.checkType())).toList();
-
                 for (ExpeTaskService.CallInfo call : task.calls()) {
-                    if (state.cancelRequested) break;
-                    if (!"OK".equals(call.status())) continue;
-                    state.addOutput(evalOneOutput(state, dir, target, call.index(), dataJson, validIds, applicable, aiRules));
-                    saveMeta(state);
+                    if ("OK".equals(call.status())) {
+                        jobs.add(new Job(target, call.index(), dataJson, validIds, applicable, aiRules));
+                    }
                 }
-                if (state.cancelRequested) break;
             }
+
+            CountDownLatch latch = new CountDownLatch(jobs.size());
+            for (Job job : jobs) {
+                judgeExecutor.submit(() -> {
+                    try {
+                        if (state.cancelRequested) return;
+                        OutputEval oe;
+                        try {
+                            oe = evalOneOutput(state, dir, job.target(), job.index(), job.dataJson(),
+                                    job.validIds(), job.applicable(), job.aiRules());
+                        } catch (Exception e) {
+                            // 单份评估异常不拖垮整个评估：该份全部规则记 ERROR，可复评
+                            log.warn("[expe-eval] 评估 {} 任务 {} 第 {} 次异常: {}",
+                                    state.evalId, job.target().label(), job.index(), e.getMessage());
+                            oe = new OutputEval(job.target().taskId(), job.index(),
+                                    job.applicable().stream().map(r -> new RuleVerdict(r.ruleId(), "ERROR", null,
+                                            "评估异常: " + abbreviate(e.getMessage(), 200))).toList(),
+                                    abbreviate(e.getMessage(), 1000));
+                        }
+                        state.addOutput(oe);
+                        saveMeta(state);
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+            latch.await();
             state.finish(state.cancelRequested ? "CANCELLED" : "DONE", null);
         } catch (Exception e) {
             log.warn("[expe-eval] 评估 {} 异常终止: {}", state.evalId, e.getMessage(), e);
@@ -441,11 +482,14 @@ public class ExpeEvalService {
     }
 
     private void saveMeta(EvalState state) {
-        try {
-            Path meta = Path.of(props.getEvalsDir(), state.evalId, "meta.json");
-            mapper.writerWithDefaultPrettyPrinter().writeValue(meta.toFile(), state.snapshot());
-        } catch (IOException e) {
-            log.warn("[expe-eval] 写 meta.json 失败 {}: {}", state.evalId, e.getMessage());
+        // 并行判定会从多个线程触发落盘，用 state 锁串行化写文件避免交叠损坏
+        synchronized (state) {
+            try {
+                Path meta = Path.of(props.getEvalsDir(), state.evalId, "meta.json");
+                mapper.writerWithDefaultPrettyPrinter().writeValue(meta.toFile(), state.snapshot());
+            } catch (IOException e) {
+                log.warn("[expe-eval] 写 meta.json 失败 {}: {}", state.evalId, e.getMessage());
+            }
         }
     }
 
