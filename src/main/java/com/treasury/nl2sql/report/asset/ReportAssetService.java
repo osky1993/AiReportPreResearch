@@ -62,6 +62,7 @@ public class ReportAssetService {
         this.metricRepo = metricRepo;
     }
 
+    /** 启动时执行：先导入种子，再装载运行态版本，并执行全量自检（任一失败直接中断）。 */
     @PostConstruct
     public void load() {
         int seededMetrics = seedMetrics();
@@ -75,6 +76,10 @@ public class ReportAssetService {
 
     // ---------- 种子导入（幂等：按资产 id 粒度 existsById） ----------
 
+    /**
+     * 指标种子导入（幂等）：按 metricId 去重 + 结构校验；重复 id 或不满足引用规则直接阻断启动，
+     * 不允许“部分落库后再失败”，避免库状态与类里规则不一致。
+     */
     private int seedMetrics() {
         MetricDefinition[] seeds;
         try (var in = new ClassPathResource("report/metrics.json").getInputStream()) {
@@ -102,6 +107,10 @@ public class ReportAssetService {
         return seeded;
     }
 
+    /**
+     * 模板种子导入（幂等）：按 templateId 去重 + 模板/指标引用校验；
+     * 模板校验失败意味着服务不可用（启动 fail-fast）而不是运行期再暴露 500。
+     */
     private int seedTemplates() {
         List<Resource> files;
         try {
@@ -130,6 +139,7 @@ public class ReportAssetService {
 
     // ---------- 从库装缓存（库是唯一事实源） ----------
 
+    /** 将数据库已发布指标版本加载到内存：每个 metricId 只能有 1 个 PUBLISHED，否则按不变量直接拒绝启动。 */
     private void loadMetricsFromDb() {
         Map<String, VersionedMetric> next = new LinkedHashMap<>();
         for (AssetRow row : metricRepo.findPublished()) {
@@ -143,6 +153,7 @@ public class ReportAssetService {
         metrics = next;
     }
 
+    /** 将数据库已发布模板版本加载到内储存：每个 templateId 只能有 1 个 PUBLISHED，否则视为配置污染。 */
     private void loadTemplatesFromDb() {
         Map<String, VersionedTemplate> next = new LinkedHashMap<>();
         for (AssetRow row : templateRepo.findPublished()) {
@@ -177,6 +188,10 @@ public class ReportAssetService {
 
     // ---------- 自检（对缓存全量执行，覆盖库中手工写入的资产） ----------
 
+    /**
+     * 启动/重载后统一自检（用于启动与资产变更后的原子一致性检查）：
+     * 缺指标、旧资产语义漂移、模板引用空位、派生规则失配都会直接报错并回滚事务。
+     */
     private void selfCheck() {
         if (templates.isEmpty()) {
             throw new IllegalStateException("注册表中没有任何 PUBLISHED 模板（种子导入失败或被全部下架）");
@@ -254,6 +269,7 @@ public class ReportAssetService {
 
     // ---------- 查询 API ----------
 
+    /** 运行时读取模板入口：只从内存缓存读（库是唯一事实源，但已缓存到运行态引用）。 */
     public Optional<ReportTemplateDef> template(String templateId) {
         VersionedTemplate vt = templates.get(templateId);
         return vt == null ? Optional.empty() : Optional.of(vt.def());

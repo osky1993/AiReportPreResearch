@@ -28,6 +28,7 @@ public record ClaimRecord(
     /** 仅人工勾选可达（LLM 产出即为越权，服务端拒绝）。 */
     public static final String LEVEL_CONFIRMED = "confirmed";
 
+    /** 证据集中只要出现 EVT-n 即视为有事件支撑；空值安全。 */
     public boolean hasEventEvidence() {
         return evidenceRefs != null && evidenceRefs.stream().anyMatch(r -> r != null && r.startsWith("EVT-"));
     }

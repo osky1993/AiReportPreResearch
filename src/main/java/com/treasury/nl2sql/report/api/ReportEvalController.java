@@ -21,10 +21,14 @@ public class ReportEvalController {
 
     private final ReportEvalService eval;
 
+    /**
+     * 构造器。评测服务不会改写状态表，故 Controller 仅做参数透传 + 响应分类。
+     */
     public ReportEvalController(ReportEvalService eval) {
         this.eval = eval;
     }
 
+    /** 同步执行评测：deterministic 为无 LLM 基线链路，llm 为人工路径（含 token 成本）。 */
     @PostMapping("/run")
     public ResponseEntity<?> run(@RequestParam String layer) {
         return switch (layer.toLowerCase()) {

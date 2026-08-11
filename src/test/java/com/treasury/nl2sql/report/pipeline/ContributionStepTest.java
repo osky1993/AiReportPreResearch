@@ -19,7 +19,10 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.when;
 
-/** 维度贡献拆解单测（FetchStep 打桩）：贡献额 = 本期行 − 基期行、贡献占比、基期缺行按 0、消失维度负贡献。 */
+/**
+ * ⑤ 维度贡献拆解单测（纯逻辑）。在存在异常 fact 时，用当前/基期维度行计算贡献增量与占比：
+ * 贡献额 = 本期 - 基期；基期缺行按 0 处理；占比在总变化为 0 时跳过并记录说明。
+ */
 @ExtendWith(MockitoExtension.class)
 class ContributionStepTest {
 
@@ -51,6 +54,10 @@ class ContributionStepTest {
         return new FetchStep.FetchResult(spec, "select", "h", rows, "rh");
     }
 
+    /**
+     * 输入：异常触发指标 + 两期维度值（包含消失维度）。
+     * 预期：每个维度都产出 contrib 与 contrib_share；缺失维度可产生负贡献，符合消失成本含义。
+     */
     @Test
     void contributionAndShareFactsAreBuilt() {
         // 本期 CNY 385万/USD 1436；基期 CNY 159万/EUR 5000（EUR 本期消失 → 负贡献）
@@ -80,6 +87,10 @@ class ContributionStepTest {
         assertEquals(0, eur.value().compareTo(new BigDecimal("-5000")));
     }
 
+    /**
+     * 输入：无波动类异常或缺失贡献维度指标。
+     * 预期：不执行拆解，返回空集合。
+     */
     @Test
     void nonVolatilityOrNoDimensionAnomaliesAreSkipped() {
         ContributionStep step = new ContributionStep(fetchStep);
@@ -87,6 +98,10 @@ class ContributionStepTest {
                 PeriodResolver.resolve("2026-W26"), Map.of("by_ccy", dimMetric()), new ArrayList<>()).isEmpty());
     }
 
+    /**
+     * 输入：异常引用了不存在的 metricId。
+     * 预期：直接抛 PolicyException，保证引用一致性不被静默忽略。
+     */
     @Test
     void missingDimensionMetricFailsClosed() {
         ContributionStep step = new ContributionStep(fetchStep);
@@ -94,6 +109,10 @@ class ContributionStepTest {
                 PeriodResolver.resolve("2026-W26"), Map.of("by_ccy", dimMetric()), new ArrayList<>()));
     }
 
+    /**
+     * 输入：总变化为 0 时。
+     * 预期：仅保留贡献额，不输出占比，避免 0 分母误导比例值。
+     */
     @Test
     void zeroTotalDeltaSkipsShareWithNote() {
         when(fetchStep.run(anyList(), anyMap())).thenReturn(

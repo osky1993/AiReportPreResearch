@@ -23,14 +23,21 @@ import java.util.List;
 @Component
 public class ChartBuildStep {
 
+    /** 图表绑定过程日志：用于排查绑定不到数据点/序列退化等可观测问题。 */
     private static final Logger log = LoggerFactory.getLogger(ChartBuildStep.class);
 
+    /** ECharts option 生成器，避免手写字符串拼接导致的 JSON 注入/精度变形。 */
     private final ObjectMapper mapper;
 
+    /** 构造注入 JSON 序列化器；图表数据绑定只读，不参与 LLM、仅读取 fact。 */
     public ChartBuildStep(ObjectMapper mapper) {
         this.mapper = mapper;
     }
 
+    /**
+     * 按章节的 chart 定义从 fact 池提取绑定点，拼装可渲染的 option 与 fact 引用列表。
+     * 空数据点直接记 note 并跳过该图，pipeline 继续产出其余图表；无点属于可接受的数据缺失分支。
+     */
     public List<ChartRecord> build(Outline outline, List<FactRecord> facts, List<String> notes) {
         List<ChartRecord> charts = new ArrayList<>();
         for (Outline.OutlineChapter ch : outline.chapters()) {
@@ -79,6 +86,7 @@ public class ChartBuildStep {
                 .toList();
     }
 
+    /** 将同一图的点位序列固定成可回放结构：title/tooltip/series + 绑定 factKey 列表（审计用）。 */
     private ChartRecord toRecord(ChartDef def, String chapterId, List<FactRecord> points) {
         ObjectNode option = mapper.createObjectNode();
         option.putObject("title").put("text", def.title());

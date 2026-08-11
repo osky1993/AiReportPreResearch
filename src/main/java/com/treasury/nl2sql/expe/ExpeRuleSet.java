@@ -18,12 +18,20 @@ import java.util.Set;
  */
 public class ExpeRuleSet {
 
-    /** 单条原子规则；checkSpec 仅 PROGRAM 规则有 */
+    /**
+     * 单条原子规则；
+     * checkType=PROGRAM 时，checkSpec 需给出 checker 与参数；AI/HUMAN 规则由外部评审器解释。
+     * check_rule 是自然语言断言模板，配合 judge 输出与冲突图用于评分计算。
+     */
     public record Rule(String ruleId, String ruleText, String level, boolean shared, String introducedIn,
                        double weight, String checkType, String passRule, List<String> conflictWith,
                        JsonNode checkSpec) {}
 
-    /** 单条规则对单份输出的判定：verdict ∈ PASS/PARTIAL/FAIL/ERROR（ERROR=判定基础设施故障，非样本结论） */
+    /**
+     * 单条规则对单份输出的判定结果；
+     * verdict ∈ PASS/PARTIAL/FAIL/ERROR。
+     * ERROR 表示评估基础设施问题，必须与样本真实效果分离。
+     */
     public record RuleVerdict(String ruleId, String verdict, String evidence, String reason) {}
 
     /** 组别 → 可达层秩（B-Pad 与 B 同层、D-Clean 与 D 同层） */
@@ -43,10 +51,21 @@ public class ExpeRuleSet {
         this.version = version;
     }
 
+    /**
+     * 返回本组装规则集的完整清单；调用方应只读遍历，不做外部改写。
+     */
     public List<Rule> rules() { return rules; }
+    /**
+     * 返回规则模板文件 SHA-256，用于评估报告与日志中的 trace 对齐（同一版本可重放）。
+     */
     public String sha256() { return sha256; }
+    /** 规则模板版本号；常用于输出日志与评估报告中的来源标记。 */
     public String version() { return version; }
 
+    /**
+     * 规则生效的实验组别白名单（A/B/B-Pad/C/D/D-Clean/D-Conflict）。
+     * 新增组别需同时补齐 GROUP_RANK 与 LAYER_RANK 才能进入评估路径。
+     */
     public static Set<String> validGroups() { return GROUP_RANK.keySet(); }
 
     /** 该组适用的规则（保持清单原顺序）。特例：D-Conflict 提示词不含 D 主组（D-Clean）的 L 层文本，
@@ -68,7 +87,10 @@ public class ExpeRuleSet {
                 .toList();
     }
 
-    /** 解析并校验规则文件；结构非法即抛 IllegalArgumentException（失败关闭，不猜测补全） */
+    /**
+     * 解析并校验规则文件；结构非法即抛 IllegalArgumentException（失败关闭，不猜测补全）。
+     * 解析成功后返回不可变 RuleSet，避免运行时被外部持有引用篡改。
+     */
     public static ExpeRuleSet parse(byte[] json, ObjectMapper mapper) {
         JsonNode root;
         try {
@@ -111,6 +133,7 @@ public class ExpeRuleSet {
         return new ExpeRuleSet(List.copyOf(rules), sha256(json), root.path("template_version").asText(""));
     }
 
+    /** 取必填字段：缺失或空串按失败关闭策略快速失败，并保留 rule_id 便于定位。 */
     private static String req(JsonNode n, String field) {
         JsonNode v = n.get(field);
         if (v == null || v.asText().isBlank()) {
@@ -119,6 +142,7 @@ public class ExpeRuleSet {
         return v.asText();
     }
 
+    /** 规则文件 sha256，用于执行过程追踪与报告中的可重复性索引。 */
     private static String sha256(byte[] bytes) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));

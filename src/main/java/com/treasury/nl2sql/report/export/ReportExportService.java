@@ -90,9 +90,20 @@ public class ReportExportService {
         this.fontPath = fontPath == null ? "" : fontPath.trim();
     }
 
+    /**
+     * 导出已签发报告（仅允许 PUBLISHED）为 PDF 或 DOCX。
+     * <p>输入约束：仅消费数据库内 PUBLISHED 版本，不接受草稿重建；图像列表为不可信输入，必须先通过
+     * 非空、ID 白名单、PNG 合法性与 2MB 尺度校验；任一校验失败即 fail-closed 全量失败。
+     *
+     * @param runId 已签发 run_id
+     * @param format 目标格式（pdf/docx，大小写不敏感）
+     * @param images 客户端上送图像（可为空，允许缺图时降级为纯数据表）
+     * @return 导出文件名、MIME 和字节；异常分支会带明确错误码语义，避免“导出成功但内容丢失”
+     */
     public ExportFile export(long runId, String format, List<ChartImage> images) {
         ReportRun run = runRepo.findById(runId)
                 .orElseThrow(() -> new IllegalArgumentException("运行不存在: " + runId));
+        // 导出是“只读发布物下沉”动作，未签发报告不允许导出，避免把未过审版本对外可见。
         if (!RunStatus.PUBLISHED.name().equals(run.status())) {
             throw new IllegalStateException("当前状态 " + run.status() + " 不允许「导出」——仅已签发（PUBLISHED）报告可导出");
         }
@@ -118,6 +129,10 @@ public class ReportExportService {
 
     // ---------- 装配：正文块序 + 图表按 chapterId 挂到对应章末 ----------
 
+    /**
+     * 将正文块与图表按章挂靠拼接成线性输出序列（章末图在对应章后）：
+     * 缺章图或章节名对不齐时，未挂靠图表会被放到“附图”尾部，避免丢数。
+     */
     private List<DocItem> assemble(ReportRun run, List<ChartRecord> charts,
                                    Map<String, Png> pngs, Map<String, FactRecord> factsByKey) {
         Map<String, String> chapterIdByTitle = chapterTitles(run.outlineJson());
@@ -143,6 +158,10 @@ public class ReportExportService {
         return items;
     }
 
+    /**
+     * 按章追加图表：确保每张图只渲染一次；缺图自动走纯表格降级。
+     * <p>降级是数据优先策略：即便 PNG 丢失，也保留图表数据表以保证审计链路不丢，后续可重新补图。</p>
+     */
     private static void appendCharts(List<DocItem> items, List<ChartRecord> charts, Map<String, Png> pngs,
                                      Map<String, FactRecord> factsByKey, Set<String> placed) {
         if (charts == null) return;
@@ -152,7 +171,10 @@ public class ReportExportService {
         }
     }
 
-    /** outline 快照的章 title → chapterId（终稿 ## 标题与 outline title 严格一致，作图表挂靠键）。 */
+    /**
+     * 解析 outline 快照中的章标题映射，作为图表挂靠键（title 在前端与 outline 严格一致）。
+     * 解析失败直接 fail-closed，避免图/文错位导出。
+     */
     private Map<String, String> chapterTitles(String outlineJson) {
         Map<String, String> byTitle = new LinkedHashMap<>();
         if (outlineJson == null || outlineJson.isBlank()) return byTitle;
@@ -166,6 +188,7 @@ public class ReportExportService {
         return byTitle;
     }
 
+    /** 客户端可选带图列表解析，失败即全量导出失败，防止“有图无表” silent fail。 */
     private List<ChartRecord> parseCharts(String chartsJson) {
         if (chartsJson == null || chartsJson.isBlank()) return List.of();
         try {
@@ -177,6 +200,10 @@ public class ReportExportService {
 
     // ---------- 客户端图片校验（不可信输入，失败关闭） ----------
 
+    /**
+     * 客户端上传图像入口的边界控制：chartId 必须匹配本 run，且必须是合法 PNG。
+     * <p>非可信输入路径按 fail-closed 设计：任一项校验失败直接拒绝整个导出，防止用坏图导致“部分图缺失但导出成功”。</p>
+     */
     private static Map<String, Png> validateImages(List<ChartImage> images, List<ChartRecord> charts) {
         if (images == null || images.isEmpty()) return Map.of();
         Set<String> known = charts.stream().map(ChartRecord::chartId).collect(Collectors.toSet());
@@ -198,6 +225,7 @@ public class ReportExportService {
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("图片 base64 解码失败: " + img.chartId());
             }
+            // 2MB 限额是前端上传通道和导出服务的共同保护上限，兼顾渲染性能与带宽可控性。
             if (bytes.length > IMAGE_MAX_BYTES) {
                 throw new IllegalArgumentException("图片超过 2MB 上限: " + img.chartId());
             }
@@ -219,6 +247,10 @@ public class ReportExportService {
 
     // ---------- PDF：结构块 → XHTML → openhtmltopdf ----------
 
+    /**
+     * PDF 渲染（openhtmltopdf）：只用 HTML/CSS 字符串渲染；
+     * 使用内置 CSS 和 resolvedFont，字体缺失直接报错（不做回退，以防乱码）。
+     */
     private byte[] renderPdf(String title, String meta, List<DocItem> items) {
         File font = resolveFont();
         StringBuilder body = new StringBuilder();
@@ -269,6 +301,7 @@ public class ReportExportService {
         }
     }
 
+    /** HTML 导出图块：带图像则内嵌 base64；无图也保留事实表，满足“数据可回放”。 */
     private static void appendChartHtml(StringBuilder sb, ChartItem item) {
         sb.append("<div class=\"chart\">");
         sb.append("<div class=\"charttitle\">").append(esc(item.chart().title())).append("</div>");
@@ -285,6 +318,7 @@ public class ReportExportService {
         sb.append("</table></div>");
     }
 
+    /** 行内片段转义并保留 fact 引用语义（加标记 span）以支持“点击定位 / 样式控制”。 */
     private static String inlineHtml(String text) {
         StringBuilder sb = new StringBuilder();
         for (ReportMdRenderer.Seg seg : ReportMdRenderer.segments(text)) {
@@ -336,6 +370,7 @@ public class ReportExportService {
 
     // ---------- Docx：结构块 → POI XWPF ----------
 
+    /** Docx 渲染（Apache POI）：复用段落与表格逻辑，不依赖字体文件，便于跨环境导出。 */
     private byte[] renderDocx(String title, String meta, List<DocItem> items) {
         try (XWPFDocument doc = new XWPFDocument()) {
             XWPFParagraph tp = doc.createParagraph();
@@ -365,6 +400,7 @@ public class ReportExportService {
         }
     }
 
+    /** 文本块到 Docx 的最小映射：标题/段落/列表/表格。 */
     private static void appendBlockDocx(XWPFDocument doc, ReportMdRenderer.Block block) {
         if (block instanceof ReportMdRenderer.Heading h) {
             XWPFParagraph p = doc.createParagraph();
@@ -382,6 +418,7 @@ public class ReportExportService {
         }
     }
 
+    /** 图表块到 Docx：先标题，再可选图片，再数据表，确保无图可退化。 */
     private static void appendChartDocx(XWPFDocument doc, ChartItem item) {
         XWPFParagraph tp = doc.createParagraph();
         tp.setSpacingBefore(160);

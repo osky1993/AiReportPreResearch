@@ -21,23 +21,56 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 底层查询与查询诊断入口（首页与实验页面共享）。
+ * <p>
+ * 本控制器职责覆盖三层：
+ * <ul>
+ *   <li>查询执行：{@code /query}, {@code /ask}, {@code /reuse}, {@code /verify}, {@code /explain}</li>
+ *   <li>运行态透明化：schema、glossary、linking、fewshot、评估相关端点</li>
+ *   <li>系统健康与回执：health、异常边界映射</li>
+ * </ul>
+ * <p>
+ * 边界约束：
+ * <ul>
+ *   <li>业务性输入校验在本层转换为 400，避免吞掉失败语义</li>
+ *   <li>查询结果一致性与 SQL 可追溯性依赖下游服务层与 DB 约束，不在本类重复实现</li>
+ *   <li>同步评估接口可能阻塞较长时间；如需弹性可优先走 /eval/start 异步链路</li>
+ * </ul>
+ */
 @RestController
 @RequestMapping("/api")
 public class QueryController {
 
+    /** NL→MQL→SQL 主链路服务，负责正常查询、生成及中间产物返回。 */
     private final Nl2SqlService service;
+    /** 标杆评估服务，执行金标数据集与通过率统计。 */
     private final EvalService evalService;
+    /** 异步评估任务服务，避免一次性评估请求长期占用接口线程。 */
     private final EvalJobService evalJobs;
+    /** 表结构召回链路实现。 */
     private final SchemaLinker schemaLinker;
+    /** few-shot 示例召回与注入服务。 */
     private final FewShotSelector fewShot;
+    /** 术语口径字典服务。 */
     private final GlossaryService glossary;
+    /** 召回质量评估服务（vector/lexical 对比）。 */
     private final LinkingEvalService linkingEval;
+    /** DB Schema 快照服务。 */
     private final SchemaService schemaService;
+    /** 人工在回路口径服务。 */
     private final AssistedQueryService assisted;
+    /** 口径存储与召回服务。 */
     private final CaliberStore caliberStore;
+    /** MQL 口径反翻译服务。 */
     private final MqlExplainService explainService;
+    /** JSON 序列化器：将请求体中的 MQL 节点落为 JSON 字符串。 */
     private final ObjectMapper mapper;
 
+    /**
+     * 构造函数以显式注入方式保证端点运行依赖完整。
+     * 缺失任何底层服务会在 SpringContext 初始化失败，避免半可用实例导致静默 500。
+     */
     public QueryController(Nl2SqlService service, EvalService evalService, EvalJobService evalJobs,
                            SchemaLinker schemaLinker, FewShotSelector fewShot, GlossaryService glossary,
                            LinkingEvalService linkingEval, SchemaService schemaService,
@@ -117,6 +150,7 @@ public class QueryController {
         return evalService.runAb(k);
     }
 
+    /** 入参仅包含 question 的轻量请求体，便于复用与审计比对。 */
     public record QueryRequest(String question) {}
 
     /** 自然语言查询：纯生成链路，返回 MQL、SQL、结果与中间过程（供评估/对照，无口径召回）。 */
@@ -127,6 +161,7 @@ public class QueryController {
 
     // ==================== 人在回路 / 可演进 ====================
 
+    /** 入参用于有人在回路路径；bypassCaliber=true 时跳过口径召回直达生成。 */
     public record AskRequest(String question, Boolean bypassCaliber) {}
 
     /** 带人在回路的提问：先召回已核验口径分档（命中直取 / 候选澄清 / 未命中生成）。 */
@@ -136,6 +171,7 @@ public class QueryController {
         return assisted.ask(req.question(), bypass);
     }
 
+    /** 入参用于复用已候选口径直调执行。 */
     public record ReuseRequest(long assetId, String question) {}
 
     /** 候选澄清后「复用该候选口径」：按 assetId 直取执行。 */
@@ -144,6 +180,7 @@ public class QueryController {
         return assisted.reuse(req.assetId(), req.question());
     }
 
+    /** 入参用于口径验收；accept=false 表示拒绝并返回系统意见。 */
     public record VerifyRequest(String question, JsonNode mql, boolean accept, String createdBy) {}
 
     /** 核验闸门：采纳（沉淀为口径资产）或驳回（丢弃）。采纳时服务端重校验 MQL。 */
@@ -159,6 +196,7 @@ public class QueryController {
         return caliberStore.recall(question);
     }
 
+    /** 入参仅包含待反翻译的 MQL 节点。 */
     public record ExplainRequest(JsonNode mql) {}
 
     /**
@@ -176,6 +214,7 @@ public class QueryController {
         return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
     }
 
+    /** 系统可用性探针；返回固定 ok。 */
     @GetMapping("/health")
     public String health() {
         return "ok";

@@ -23,12 +23,16 @@ public class AuditStep {
     private final WriteStep writeStep;
     private final int maxRewriteRounds;
 
+    /**
+     * @param writeStep 步骤 ⑤ 输出对象
+     * @param maxRewriteRounds 最大重写轮次，超限直接 BLOCKED[POLICY]
+     */
     public AuditStep(WriteStep writeStep, @Value("${report.max-rewrite-rounds:2}") int maxRewriteRounds) {
         this.writeStep = writeStep;
         this.maxRewriteRounds = maxRewriteRounds;
     }
 
-    /** @param reportMd 替换后的终稿（数值带 [fact_xxx] 引用） */
+    /** 数字与因果约束最终产物：`reportMd` 为 {{fact}} 替换后的终稿文本（数值带 [fact_xxx] 引用）。 */
     public record AuditOutcome(String reportMd, AuditResult audit) {}
 
     /** 纯逻辑单测入口（无归因）。 */
@@ -48,6 +52,7 @@ public class AuditStep {
         String md = draft.reportMd();
         int round = 0;
         List<String> violations = draftViolations(md, factsByKey, claims);
+        // 违规时原地回灌，不重建对话：失败闭环放在同一次对话上下文，减少“上下文漂移”导致的无效修复。
         while (!violations.isEmpty() && round < maxRewriteRounds) {
             round++;
             log.info("[AUDIT] 草稿检查违规 {} 处，回灌重写第 {} 轮: {}", violations.size(), round, violations);
@@ -76,7 +81,10 @@ public class AuditStep {
         return new AuditOutcome(rendered, audit);
     }
 
-    /** 检查1 违规集 = 禁数扫描（NumberAuditor）∪ 因果措辞审计（CausalityAuditor，Phase05）。 */
+    /**
+     * 检查1 违规集 = 禁数扫描（NumberAuditor）+ 因果措辞审计（CausalityAuditor，Phase05）。
+     * 这是回灌重写的输入边界；两类违规必须都为 0 后才能进入 ⑥ 渲染回读核对。
+     */
     private static List<String> draftViolations(String md, Map<String, FactRecord> factsByKey,
                                                 List<com.treasury.nl2sql.report.domain.ClaimRecord> claims) {
         List<String> violations = new java.util.ArrayList<>(NumberAuditor.checkDraft(md, factsByKey));

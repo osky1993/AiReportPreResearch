@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 评估集与 few-shot 示例库隔离守卫（离线、可进 CI）：
  * 防答案泄漏——评估问题不得与任一 few-shot 示例问题「文本完全相同」或「字面近重复」。
  * 用本地哈希向量（确定性、无网络）做字面相似度；语义级近重复需真实 embedding（见 RoadMapTODO）。
+ * 本测试的失效意味着评估结果与样例库存在污染风险，服务端应视为可发布阻断。
  */
 class EvalFewshotIsolationTest {
 
@@ -43,6 +44,10 @@ class EvalFewshotIsolationTest {
         }
     }
 
+    /**
+     * 输入：评估集与 few-shot 全量问题库；
+     * 预期：逐条检测完全一致与文本近重复，任一命中立即标记为泄漏，阻断发布。
+     */
     @Test
     void evalSet_isIsolatedFromFewshot() throws Exception {
         List<String> evalQs = evalQuestions();

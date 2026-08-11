@@ -18,7 +18,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 血缘装配纯逻辑单测（P6 契约1，纪律 14 对抗先行）：
- * 完整 run 出全图；三类断链（derivedFrom / 图表绑定 / 事件引用）失败关闭；老 run 合法空 absent。
+ * 验证完整 run 的边缘/中间节点可组装为可追溯图谱；
+ * derivedFrom、chart 绑定、事件引用三类断链触发 fail-closed；
+ * 并校验 legacy/absent 快照在运行历史上仍有一致降级语义。
  */
 class LineageAssemblerTest {
 
@@ -55,6 +57,9 @@ class LineageAssemblerTest {
                 "描述", "人工录入", "ACTIVE", "demo", LocalDateTime.now(), null, null);
     }
 
+    /**
+     * 验证已签发 run 能将指标/SQL/fact/chart/claim/event 全量拼接为血缘图，且关键关系完整。
+     */
     @Test
     void fullRunAssemblesCompleteGraph() {
         List<FactRecord> facts = List.of(
@@ -103,6 +108,9 @@ class LineageAssemblerTest {
         assertEquals("1/1", audit.get("chartChecks"));
     }
 
+    /**
+     * 验证派生 fact 引用缺失会触发 fail-closed，避免血缘图出现幽灵节点。
+     */
     @Test
     void brokenDerivedFromFailsClosed() {
         List<FactRecord> facts = List.of(fact("fact_x_wow", FactRecord.TYPE_DERIVED, null, null, "fact_gone"));
@@ -113,6 +121,9 @@ class LineageAssemblerTest {
         assertTrue(e.getMessage().contains("fact_gone"));
     }
 
+    /**
+     * 验证图表绑定缺失和事件引用缺失均应 reject，防止最终前端无法追溯。
+     */
     @Test
     void brokenChartBindingAndEventRefFailClosed() {
         List<FactRecord> facts = List.of(fact("fact_001", FactRecord.TYPE_BASE, SPEC, "h1", null));
@@ -127,6 +138,9 @@ class LineageAssemblerTest {
                         List.of(), Map.of(), null));
     }
 
+    /**
+     * 验证历史 legacy run 无快照的降级语义：metric 相关节点缺省 absent，不阻断装配。
+     */
     @Test
     void legacyRunWithoutSnapshotIsLegalAbsent() {
         List<FactRecord> facts = List.of(fact("fact_001", FactRecord.TYPE_BASE, SPEC, "h1", null));

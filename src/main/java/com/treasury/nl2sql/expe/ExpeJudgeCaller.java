@@ -21,7 +21,7 @@ import java.util.Map;
  * AI judge 调用器：对单份输出的全部语义（AI 型）规则一次调用逐条判定。
  * 可信度约束（方案 §10.7 + 已确认设计）：
  * <ul>
- *   <li>judge 模型 ≠ 被测模型（qwen3.7-max vs deepseek-v4-pro，跨模型家族）；</li>
+ *   <li>judge 模型必须与被测模型配置分离（默认通常是不同家族，避免同源偏置）；</li>
  *   <li>temperature=0、强制 JSON 输出；FAIL/PARTIAL 必须附原文引用证据；</li>
  *   <li>judge 结果只作辅助指标；原始响应全量落盘可复查；</li>
  *   <li>judge 调用失败不重试——相关规则记 ERROR（基础设施故障，与样本结论分开）。</li>
@@ -54,6 +54,9 @@ public class ExpeJudgeCaller {
                 .build();
     }
 
+    /**
+     * 返回 judge 模型名，便于上游日志与审计产物携带模型标签（便于后续复盘“评价标准是否可比”）。
+     */
     public String model() { return props.getModel(); }
 
     /** 逐条判定 aiRules；返回按传入顺序对齐的 verdicts（judge 遗漏的规则补 ERROR） */
@@ -62,8 +65,8 @@ public class ExpeJudgeCaller {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", props.getModel());
         body.put("temperature", 0);
-        body.put("messages", List.of(Map.of("role", "user", "content", prompt)));
-        body.put("response_format", Map.of("type", "json_object"));
+            body.put("messages", List.of(Map.of("role", "user", "content", prompt)));
+            body.put("response_format", Map.of("type", "json_object"));
         log.info("[expe-judge] >>> 评审请求 model={} 规则数={}\n----- 输入全文 -----\n{}\n----- 输入结束 -----",
                 props.getModel(), aiRules.size(), prompt);
 
@@ -101,7 +104,10 @@ public class ExpeJudgeCaller {
         }
     }
 
-    /** 解析统一质量盲评；judge 未返回或维度非法时整体记 null（辅助指标缺失不影响规则判定） */
+    /**
+     * 解析统一质量盲评。
+     * judge 未返回或维度不合法时整体记 null；该字段只用于展示，不影响规则判定主流程。
+     */
     private static QualityScore parseQuality(JsonNode q) {
         if (q == null || !q.isObject()) return null;
         Integer structure = dim(q, "structure"), analysis = dim(q, "analysis"),
@@ -117,6 +123,7 @@ public class ExpeJudgeCaller {
         return (n >= 1 && n <= 5) ? n : null;
     }
 
+    /** 组装 judge 的系统提示：要求输出为固定 JSON 结构，并要求 FAIL/PARTIAL 必带 evidence 与 reason。 */
     private String buildPrompt(String dataJson, String outputContent, List<Rule> aiRules) {
         StringBuilder sb = new StringBuilder();
         sb.append("""

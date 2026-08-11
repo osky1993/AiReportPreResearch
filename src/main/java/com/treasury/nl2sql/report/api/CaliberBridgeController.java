@@ -37,6 +37,7 @@ public class CaliberBridgeController {
     private final CaliberRepository calibers;
     private final CaliberStore store;
 
+    /** 仅允许注入仓储与内存索引组件，避免直接构造导致回写链路缺失。 */
     public CaliberBridgeController(CaliberRepository calibers, CaliberStore store) {
         this.calibers = calibers;
         this.store = store;
@@ -66,7 +67,12 @@ public class CaliberBridgeController {
 
     public record DeprecateRequest(String operator) {}
 
-    /** 下架口径：走 CaliberStore（库 + 内存召回索引联动），operator 仅留痕日志、零 schema 变更。 */
+    /**
+     * 下架口径资产。
+     * <p>走 CaliberStore#deprecate 保证数据库状态与内存召回索引同步；
+     * 如果只改库不更新索引，重启后可能出现“再次被召回”的幻觉。</p>
+     * <p>失败模式：不存在 id 或重复下架将返回 400。</p>
+     */
     @PostMapping("/calibers/{id}/deprecate")
     public Map<String, Object> deprecate(@PathVariable long id, @RequestBody(required = false) DeprecateRequest req) {
         CaliberAsset asset = calibers.findById(id);

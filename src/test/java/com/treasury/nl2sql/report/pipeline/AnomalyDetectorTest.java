@@ -12,7 +12,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 异常检测纯逻辑单测（Phase05 契约1，对抗先行）：阈值/波动命中、粒度不匹配静默、上限失败关闭。 */
+/**
+ * ⑥ 异常识别防线单测（纯逻辑）。验证异常规则如何被触发、命名、去重与失败关闭。
+ * <p>
+ * 关注点：只有命中规则的异常事实会生成 _anom 派生事实；未命中或缺口数据不应产出噪声；异常条数超限必须抛异常并中断。
+ */
 class AnomalyDetectorTest {
 
     private static MetricDefinition metricWithRules(String id, List<MetricDefinition.AnomalyRule> rules) {
@@ -41,6 +45,10 @@ class AnomalyDetectorTest {
                 List.of());
     }
 
+    /**
+     * 输入：单一指标有波动规则命中且存在对应 _wow 比较值。
+     * 预期：输出 1 条 _anom 派生事实，派生 factKey/来源与规则文本均可回放。
+     */
     @Test
     void volatilityHitProducesAnomalyFactWithRuleNote() {
         var defs = Map.of("m1", metricWithRules("m1", List.of(volatility("wow", "30"))));
@@ -61,6 +69,10 @@ class AnomalyDetectorTest {
         assertEquals(1, notes.size());
     }
 
+    /**
+     * 输入：同一指标只有波动基准低于阈值 + 不存在的基础/比较 basis。
+     * 预期：异常规则静默，返回空，避免把“接近阈值”错误放大为异常信号。
+     */
     @Test
     void volatilityBelowThresholdOrMissingBasisIsSilent() {
         var defs = Map.of("m1", metricWithRules("m1", List.of(volatility("wow", "30"), volatility("mom", "30"))));
@@ -71,6 +83,10 @@ class AnomalyDetectorTest {
         assertTrue(AnomalyDetector.detect(outline("m1"), facts, defs, new ArrayList<>()).isEmpty());
     }
 
+    /**
+     * 输入：同一指标有阈值和波动两条规则。
+     * 预期：只执行第一条命中规则（first-match），防止重复 _anom 与后续指标异常链被放大。
+     */
     @Test
     void thresholdHitAndFirstRuleWins() {
         var defs = Map.of("m1", metricWithRules("m1",
@@ -84,6 +100,10 @@ class AnomalyDetectorTest {
         assertEquals("CNY", anomalies.get(0).fact().unit());
     }
 
+    /**
+     * 输入：规则缺失或当前事实缺失。
+     * 预期：按静默策略返回空列表，不抛异常，减少对上游流水线的噪声。
+     */
     @Test
     void noRulesOrNoCurrentFactIsSilent() {
         var defs = Map.of("m1", metricWithRules("m1", null));
@@ -93,6 +113,10 @@ class AnomalyDetectorTest {
         assertTrue(AnomalyDetector.detect(outline("m1"), List.of(), withRules, new ArrayList<>()).isEmpty());
     }
 
+    /**
+     * 输入：多指标同时命中异常且超过系统上限。
+     * 预期：直接抛 PolicyException，进入失败关闭路径，避免异常事实集被过载。
+     */
     @Test
     void anomalyCapFailsClosed() {
         Map<String, MetricDefinition> defs = new java.util.LinkedHashMap<>();

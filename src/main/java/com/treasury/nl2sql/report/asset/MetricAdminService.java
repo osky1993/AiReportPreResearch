@@ -24,10 +24,12 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 指标资产管理服务（P5 契约；镜像 TemplateAdminService：校验在服务端、行不可变、单一 PUBLISHED）。
- * 保存走五重校验（结构 → 哨兵填充无残留 → 白名单校验 → 真实库试执行 → 恰 1 行 1 值），
- * 全过才写 DRAFT；错误 details 的 location 承载 check 类别
- * （STRUCTURE / PLACEHOLDER / MQL_VALIDATION / TRIAL_EXECUTION / RESULT_SHAPE），前端按类归红字。
+ * 指标资产管理服务（P5 契约）。
+ *
+ * <p>规则：指标只能以“新版本”方式演进，且新建前必须通过五重校验后才落入 DRAFT。
+ * 五重校验覆盖：结构边界、占位符策略、MQL 白名单与形状校验、真实库试执行、返回行列形状。
+ * 任何失败都会以结构化错误返回，便于前端按检查类型逐项提示。
+ * </p>
  */
 @Service
 public class MetricAdminService {
@@ -37,13 +39,17 @@ public class MetricAdminService {
     private static final Set<String> NULL_POLICIES = Set.of(MetricDefinition.NULL_ZERO, MetricDefinition.NULL_BLOCK);
     private static final Set<String> QUALITY_CHECKS = Set.of(MetricDefinition.CHECK_NON_NEGATIVE);
 
+    /** 列表页摘要：给前端提供“最新版本与已发布标识”的最小展示模型。 */
     public record MetricSummary(String metricId, String name, int latestVersion,
-                                Integer publishedVersion, String latestStatus, String source,
-                                LocalDateTime updatedAt) {}
+                               Integer publishedVersion, String latestStatus, String source,
+                               LocalDateTime updatedAt) {}
+    /** 版本明细模型：每行对应一个版本 row。 */
     public record VersionInfo(int version, String name, String status, String source,
-                              String createdBy, LocalDateTime createdAt, String remark) {}
+                             String createdBy, LocalDateTime createdAt, String remark) {}
+    /** 详情模型：历史版本 + 最新发布版本 + 当前最新版本，前端“回溯-编辑”共用。 */
     public record MetricDetail(String metricId, List<VersionInfo> versions,
-                               MetricDefinition published, MetricDefinition latest) {}
+                              MetricDefinition published, MetricDefinition latest) {}
+    /** 写入或状态流转结果模型。 */
     public record SaveResult(String metricId, int version, String status) {}
 
     private final MetricAssetRepository repo;
@@ -61,14 +67,17 @@ public class MetricAdminService {
 
     // ---------- 读 ----------
 
+    /** 列表查询：按业务 id 分组，返回每组最新版本并保留“发布版本号”用于页面红绿标识。 */
     public List<MetricSummary> list() {
         Map<String, List<AssetRow>> grouped = new LinkedHashMap<>();
+        // findAll 已按版本倒序返回，rows[0] 为该 metricId 的最新版本；这样列表显示的是“当前视图”而不是“发布视图”。
         for (AssetRow row : repo.findAll()) {
             grouped.computeIfAbsent(row.assetId(), k -> new ArrayList<>()).add(row);
         }
         List<MetricSummary> out = new ArrayList<>();
         for (List<AssetRow> rows : grouped.values()) {
             AssetRow latest = rows.get(0);
+            // 发布版本可能不存在（可为 null）；列表只展示是否已发布，不把无发布状态误导为 0 号版本。
             Integer publishedVersion = rows.stream()
                     .filter(r -> "PUBLISHED".equals(r.status()))
                     .map(AssetRow::version).findFirst().orElse(null);
@@ -78,6 +87,7 @@ public class MetricAdminService {
         return out;
     }
 
+    /** 详情查询：返回该指标全部版本链与发布点快照；找不到则返回 404。 */
     public MetricDetail detail(String metricId) {
         List<AssetRow> rows = repo.findByAssetId(metricId);
         if (rows.isEmpty()) {
@@ -87,6 +97,7 @@ public class MetricAdminService {
                 .map(r -> new VersionInfo(r.version(), r.name(), r.status(), r.source(),
                         r.createdBy(), r.createdAt(), r.remark()))
                 .toList();
+        // 返回已发布快照用于对比，仅在 detail 展示时使用，不影响编辑动作默认填充到 latest。
         MetricDefinition published = rows.stream()
                 .filter(r -> "PUBLISHED".equals(r.status())).findFirst()
                 .map(this::parse).orElse(null);
@@ -95,6 +106,11 @@ public class MetricAdminService {
 
     // ---------- 保存（五重校验全过才写 v1 DRAFT） ----------
 
+    /**
+     * 五重校验后才落库（结构/占位符/白名单/试执行/结果形状）：
+     * - 任何一层有错即 ValidationFailedException（结构化 details）；
+     * - 通过才写 DRAFT，保证运行时可回溯“为什么没法发版”。
+     */
     public SaveResult save(MetricDefinition m, String tryQuestion, String createdBy) {
         // ① STRUCTURE
         List<ValidationError> errors = new ArrayList<>();
@@ -113,6 +129,7 @@ public class MetricAdminService {
         failIfAny(errors);
         Mql filled;
         try {
+            // 用固定哨兵参数渲染，不是为了验证返回值，而是为了检测“未替换占位符”风险与参数非法字段。
             filled = MqlTemplateFiller.fill(mapper, m.metricId(), m.mqlTemplate(), MqlTemplateFiller.SENTINEL_PARAMS);
         } catch (PolicyException e) {
             throw new ValidationFailedException(List.of(err("PLACEHOLDER", e.getMessage())));
@@ -130,6 +147,7 @@ public class MetricAdminService {
         // ④ TRIAL_EXECUTION：真实库只读试执行
         List<Map<String, Object>> rows;
         try {
+            // 真库一次只读执行用于提前暴露“能编译但不能运行”的 SQL；失败会变成结构化提示。
             rows = trial.execute(filled);
         } catch (PolicyException e) {
             throw new ValidationFailedException(List.of(err("TRIAL_EXECUTION", e.getMessage())));
@@ -161,12 +179,17 @@ public class MetricAdminService {
 
         String remark = tryQuestion == null || tryQuestion.isBlank() ? "指标向导制作"
                 : "试查问法: " + tryQuestion;
+        // 新建永远写 DRAFT：必须经过独立发布动作才允许上线，避免生成即发布带来的误发布风险。
         int v = repo.insertNewVersion(m.metricId(), m.name(), toJson(m),
                 "DRAFT", "MANUAL", blankTo(createdBy), remark);
         log.info("[METRIC-ADMIN] 新建指标 {} v{} DRAFT by {}", m.metricId(), v, createdBy);
         return new SaveResult(m.metricId(), v, "DRAFT");
     }
 
+    /**
+     * 结构层校验：指标定义边界（id、name、metricTemplate 是否存在、可比性与 nullPolicy一致性）。
+     * 这里故意不校验 mql 语义，留到后续哨兵填充和 validator 阶段。
+     */
     private void checkStructure(MetricDefinition m, List<ValidationError> errors) {
         if (m == null) {
             errors.add(err("STRUCTURE", "指标体为空"));
@@ -199,7 +222,7 @@ public class MetricAdminService {
 
     // ---------- 状态流转（镜像 TemplateAdminService；守卫在服务端） ----------
 
-    /** DRAFT→PUBLISHED；旧 PUBLISHED 自动 DEPRECATED；reload 失败即回滚，坏指标不上线。 */
+    /** 发布：DRAFT→PUBLISHED；旧 PUBLISHED 自动 DEPRECATED；失败即回滚，坏指标不会上线。 */
     @Transactional
     public SaveResult publish(String metricId, int version) {
         AssetRow row = requireVersion(metricId, version);
@@ -217,7 +240,9 @@ public class MetricAdminService {
         return new SaveResult(metricId, version, "PUBLISHED");
     }
 
-    /** DRAFT/PUBLISHED→DEPRECATED；PUBLISHED 版本被任何 PUBLISHED 模板引用时拒绝下架。 */
+    /** 下架：PUBLISHED 下架前会检测引用约束（被 PUBLISHED 模板引用则拒绝）；
+     * 作用是保护已在运行中的报表资产不会出现断链。
+     */
     @Transactional
     public SaveResult deprecate(String metricId, int version) {
         AssetRow row = requireVersion(metricId, version);

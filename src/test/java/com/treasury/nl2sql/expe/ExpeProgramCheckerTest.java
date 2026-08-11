@@ -13,7 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 程序校验器纯逻辑单测（无需 DB/LLM）：覆盖 JSON 与 Markdown 双载体。 */
+/**
+ * 程序校验器（ExpeProgramChecker）纯逻辑回归（无需 DB/LLM）：
+ * 覆盖规则类型分发、JSON/Markdown 双解析路径、证据锚点合法性、边界长度约束和规则集加载器解析。
+ * 设计目标是把「看起来像结果」和「实际规则语义通过」区分开，确保实验可复验。
+ */
 class ExpeProgramCheckerTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -82,7 +86,10 @@ class ExpeProgramCheckerTest {
     }
 
     // ---------- JSON 载体（兼容保留） ----------
-
+    /**
+     * 输入：正常 JSON 与被 markdown fence 包裹的 JSON，期望校验通过；
+     * 输入：纯文本或禁止 fence 时，期望校验失败并区分原因。
+     */
     @Test
     void jsonSchema_validPasses_fenceTolerated_markdownAndGarbageFail() throws Exception {
         Rule r = rule("json_schema", "{}");
@@ -95,6 +102,10 @@ class ExpeProgramCheckerTest {
         assertEquals("FAIL", check(strict, checker.parse("```json\n" + GOOD_JSON + "\n```")).verdict());
     }
 
+    /**
+     * 输入：对 summary 与 whole_text 做不同长度上下限校验。
+     * 预期：既检测通过场景，也检测超长、字段缺失导致的 fail-closed 分支。
+     */
     @Test
     void charLengthRange_onSummaryAndWholeText() throws Exception {
         var parsed = checker.parse(GOOD_JSON);
@@ -113,6 +124,10 @@ class ExpeProgramCheckerTest {
                 checker.parse(GOOD_MD)).verdict());
     }
 
+    /**
+     * 输入：禁用词与频次规则。
+     * 预期：白名单文本通过，出现禁语命中则 fail，并给出命中证据。
+     */
     @Test
     void forbiddenTerms_requiredRegex_frequency() throws Exception {
         var parsed = checker.parse(GOOD_JSON);
@@ -128,6 +143,10 @@ class ExpeProgramCheckerTest {
                 "{\"target\":\"whole_text\",\"terms\":[\"，\"],\"max\":1}"), parsed).verdict());
     }
 
+    /**
+     * 输入：命名章节内容命中前后缀规则。
+     * 预期：工作建议章节起始命中通过，错误前缀/缺失章节命中 fail，以防结构漂移。
+     */
     @Test
     void startsWithAny_endsWith_onNamedSection() throws Exception {
         var parsed = checker.parse(GOOD_JSON);
@@ -143,6 +162,10 @@ class ExpeProgramCheckerTest {
                 "{\"target\":\"$.sections[?name='不存在'].content\",\"suffix\":\"x\"}"), parsed).verdict());
     }
 
+    /**
+     * 输入：非结构化文本（无标题、无 section）。
+     * 预期：结构型规则 fail，但 whole_text 级规则仍可独立运行，不被无效 parse 短路。
+     */
     @Test
     void unparsedText_withoutHeadings_structTargetsFail_wholeTextStillWorks() throws Exception {
         var garbage = checker.parse("非 JSON 输出，也没有任何标题");
@@ -154,7 +177,10 @@ class ExpeProgramCheckerTest {
     }
 
     // ---------- Markdown 载体（v2.0 主路径） ----------
-
+    /**
+     * 输入：v2.0 主路径 markdown 报文。
+     * 预期：标题、章节名（去序号归一化）和证据内容按同一约束被正确抽取。
+     */
     @Test
     void markdown_parsedIntoStructure_titleAndNormalizedSections() throws Exception {
         var parsed = checker.parse(GOOD_MD);
@@ -176,6 +202,10 @@ class ExpeProgramCheckerTest {
                 parsed).verdict());
     }
 
+    /**
+     * 输入：章节名子序列校验。
+     * 预期：核心章节顺序包含即 PASS，错序或缺章即 fail，防止结构重排。
+     */
     @Test
     void sectionNamesContains_subsequenceSemantics() throws Exception {
         var parsed = checker.parse(GOOD_MD);
@@ -189,6 +219,10 @@ class ExpeProgramCheckerTest {
                 "{\"expected\":[\"工作建议\"]}"), parsed).verdict());
     }
 
+    /**
+     * 输入：全局/章节级 required_terms 规则。
+     * 预期：同时覆盖中文指标词与数据口径 JSONPath 取值，缺失关键术语 fail。
+     */
     @Test
     void requiredTerms_onWholeTextAndNamedSection() throws Exception {
         var parsed = checker.parse(GOOD_MD);
@@ -201,6 +235,10 @@ class ExpeProgramCheckerTest {
         assertEquals("社会消费品零售总额", missing.evidence());
     }
 
+    /**
+     * 输入：真实证据 ID 与伪造证据/伪造路径。
+     * 预期：合法路径 PASS，缺失标识和越界 JSONPath fail，并返回证据链条。
+     */
     @Test
     void markdownEvidenceIds_validAndFabricatedAndPath() throws Exception {
         // 全部标识真实（含 JSONPath 导航）→ PASS
@@ -217,6 +255,10 @@ class ExpeProgramCheckerTest {
                 checker.parse("# 报告\n\n## 总体运行态势\n\n缺失[data_quality.0.status]。")).verdict());
     }
 
+    /**
+     * 输入：按章节要求覆盖 evidence。
+     * 预期：缺少指定章节证据 fail，避免章节上交给人审却无数值依据。
+     */
     @Test
     void markdownEvidenceIds_sectionCoverage() throws Exception {
         var parsed = checker.parse(GOOD_MD);
@@ -230,6 +272,10 @@ class ExpeProgramCheckerTest {
         assertTrue(v.evidence().contains("数据质量与口径说明"));
     }
 
+    /**
+     * 输入：含标题/表格/ID 的报告正文。
+     * 预期：正文长度剥离装饰符后的有效字符才能作为 narrative 长度边界，抑制格式噪音影响。
+     */
     @Test
     void narrativeCharLength_stripsHeadingsTablesIdsAndListMarkers() throws Exception {
         var parsed = checker.parse(GOOD_MD);
@@ -241,6 +287,10 @@ class ExpeProgramCheckerTest {
         assertEquals("PASS", check(rule("narrative_char_length", "{\"min\":10,\"max\":1000}"), parsed).verdict());
     }
 
+    /**
+     * 输入：模板规则文件 RULES_TEMPLATE.json。
+     * 预期：规则总数与按提示词级别可见规则计数可反序列化且分层收敛，阻断模板与模板引擎漂移。
+     */
     @Test
     void ruleSetParse_templateFileShape() throws Exception {
         // 模板自身必须能被解析器接受（结构守护，防止模板与解析器漂移）

@@ -11,8 +11,10 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * ⑥ 审计器纯逻辑单测（无 DB/LLM）——「数字一致率 100%」硬门禁的证据：
- * 含「故意注入不一致数字被拦截」的断言（端到端演练 c 的单测化）。
+ * ⑥ NumberAuditor 双重审计单测（纯逻辑，聚焦「数字一致率 100%」）。
+ * - 检查1：checkDraft 阶段阻断裸数字和非法 fact 引用；
+ * - 检查2：substitute/verifyRendered 阶段反解析核对一致率；
+ * - 兼容中文数词、表格场景、单位去重和外币单位展示边界。
  */
 class NumberAuditorTest {
 
@@ -31,6 +33,10 @@ class NumberAuditorTest {
 
     // ---------- 检查1：草稿禁数扫描 ----------
 
+    /**
+     * 输入：仅有 fact 占位符与日期表达，不含裸数字。
+     * 预期：checkDraft 通过，说明放行白名单语法正常。
+     */
     @Test
     void draftWithOnlyPlaceholdersPasses() {
         String draft = "## 一、核心结论\n本周（2026-W26，2026-06-22 至 2026-06-28）人民币活跃账户余额合计为{{fact_001}}，"
@@ -38,6 +44,10 @@ class NumberAuditorTest {
         assertEquals(List.of(), NumberAuditor.checkDraft(draft, facts));
     }
 
+    /**
+     * 输入：草稿中直接出现裸数字。
+     * 预期：fail-closed，返回裸数字违规，防止文本作弊。
+     */
     @Test
     void bareNumberInDraftIsCaught() {
         String draft = "本周余额合计 6570 万元，交易{{fact_002}}。";
@@ -47,6 +57,10 @@ class NumberAuditorTest {
         assertTrue(v.get(0).contains("裸数字"));
     }
 
+    /**
+     * 输入：草稿引用未知 fact key。
+     * 预期：直接报错，确保 ⑤ 只能引用已生成 fact。
+     */
     @Test
     void unknownFactRefInDraftIsCaught() {
         List<String> v = NumberAuditor.checkDraft("余额为{{fact_999}}。", facts);
@@ -54,6 +68,10 @@ class NumberAuditorTest {
         assertTrue(v.get(0).contains("fact_999"));
     }
 
+    /**
+     * 输入：合法时间表达与周期文本。
+     * 预期：应通过，白名单规则不应扩大到日期语法。
+     */
     @Test
     void whitelistedPeriodExpressionsPass() {
         String draft = "报告期 2026-W26（第 26 周，2026-06-22 至 2026-06-28），对比 W25；2026 年趋势平稳。";
@@ -62,6 +80,10 @@ class NumberAuditorTest {
 
     // ---------- 中文数词射程（P2-T4：stylePrompt 注入对抗变体，固化为回归项） ----------
 
+    /**
+     * 输入：中文“过大数量词”表达。
+     * 预期：被中文数词检测命中，拦截 stylePrompt 对抗。
+     */
     @Test
     void chineseNumeralInDraftIsCaught() {
         // 对抗变体：stylePrompt 诱导「用中文数字把金额写成两千万」——绕过阿拉伯数字扫描的老盲区
@@ -98,6 +120,10 @@ class NumberAuditorTest {
 
     // ---------- 替换 + 检查2：渲染回读 ----------
 
+    /**
+     * 输入：替换后渲染文本与 fact 完全匹配。
+     * 预期：verifyRendered 通过、匹配数与总数一致且一致率=1.0。
+     */
     @Test
     void substituteThenVerifyIsFullyConsistent() {
         String draft = "余额合计{{fact_001}}，交易{{fact_002}}，环比{{fact_003}}，零头{{fact_004}}。";
@@ -114,6 +140,10 @@ class NumberAuditorTest {
         assertEquals(1.0, audit.consistencyRate());
     }
 
+    /**
+     * 输入：外币 fact（亿元单位）替换与回读。
+     * 预期：render/verify 全链一致，拒绝篡改后单位与数值。
+     */
     @Test
     void yiYuanUnitRendersAndVerifies() {
         // gk 国库域：金额以亿元存储直显（两位小数、无量级换算）——替换与回读全链一致
@@ -131,6 +161,10 @@ class NumberAuditorTest {
                 NumberAuditor.dedupeUnitAfterRef("余额817.44 亿元[fact_101]亿元。"));
     }
 
+    /**
+     * 输入：故意篡改 rendered 数值。
+     * 预期：verifyRendered 发现 mismatch，阻断最终发布。
+     */
     @Test
     void tamperedNumberIsCaught() {
         // 故意注入不一致：6,570 篡改为 6,571 —— 审计必须拦截（唯一发布硬门禁）
@@ -246,6 +280,10 @@ class NumberAuditorTest {
             "fact_007", fact("fact_007", "1000000", "CNY"),
             "fact_007_cny_share", fact("fact_007_cny_share", "75.0", "percent"));
 
+    /**
+     * 输入：table 单元格内的裸数字。
+     * 预期：checkDraft 同样触发（不区分表格内外文本）。
+     */
     @Test
     void bareNumberInsideMarkdownTableIsCaughtByCheck1() {
         String draft = "| 币种 | 金额 | 占比 |\n|---|---|---|\n| CNY | {{fact_007_cny}} | 75% |\n";

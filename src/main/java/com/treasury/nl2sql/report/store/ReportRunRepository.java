@@ -61,7 +61,11 @@ public class ReportRunRepository {
             toLdt(rs.getTimestamp("created_at")),
             toLdt(rs.getTimestamp("updated_at")));
 
-    /** 新建一次运行（初始状态 RUNNING，① 同步跑完后再落大纲或 BLOCKED）。 */
+    /**
+     * 新建一次 run。
+     * 约束：入库时直接进入 RUNNING/OUTLINE，为异步流水线开辟主键。
+     * run_id 由 DB 自增回传，供任务生命周期后续步进。
+     */
     public long insert(String requestText) {
         KeyHolder kh = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -75,16 +79,24 @@ public class ReportRunRepository {
         return key == null ? -1L : key.longValue();
     }
 
+    /** 按 run_id 精准查询；不存在时返回 Optional.empty，避免 findByXxxOrElseThrow 的异常副作用。 */
     public Optional<ReportRun> findById(long runId) {
         List<ReportRun> list = jdbc.query("SELECT " + COLS + " FROM report_run WHERE run_id = ?", MAPPER, runId);
         return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
     }
 
+    /** 全量列表按主键倒序，便于分页和重放场景按“最近任务”优先展示。 */
     public List<ReportRun> findAll() {
         return jdbc.query("SELECT " + COLS + " FROM report_run ORDER BY run_id DESC", MAPPER);
     }
 
-    /** ① 成功：落大纲与周期窗口（含模板版本固化；同比窗口仅声明了同比的模板非空），进入 HITL 卡点1 等待。 */
+    /**
+     * 卡点1 前置落库：保存模板+周期窗口。
+     * 特点：
+     * 1) 锁定模板版本号，形成不可回溯的口径锚点；
+     * 2) 同时清空 BLOCKED_REASON（因为已达可审批阶段）；
+     * 3) 状态变更到 AWAITING_OUTLINE_APPROVAL，进入 HITL 第一道门禁。
+     */
     public void saveOutline(long runId, String templateId, Integer templateVersion, String periodLabel,
                             LocalDate periodStart, LocalDate periodEnd,
                             LocalDate compareStart, LocalDate compareEnd,
@@ -98,7 +110,11 @@ public class ReportRunRepository {
                 toDate(compareStart), toDate(compareEnd), toDate(yoyStart), toDate(yoyEnd), outlineJson, runId);
     }
 
-    /** HITL 卡点1 确认：以人确认的大纲版本为准落库（同时固化指标版本快照——口径锁死时点），转 RUNNING。 */
+    /**
+     * HITL 卡点1通过时落地：
+     * - 以人工签核后的 outline_json 覆盖草稿；
+     * - metric_versions_json 作为口径快照入库（后续 Fetch / FactBuild 使用该快照，而非动态最新）。
+     */
     public void approveOutline(long runId, String approver, String outlineJson, String metricVersionsJson) {
         jdbc.update("UPDATE report_run SET status = 'RUNNING', phase = 'SPEC', outline_json = ?, "
                         + "metric_versions_json = ?, "
@@ -107,35 +123,56 @@ public class ReportRunRepository {
                 outlineJson, metricVersionsJson, approver, runId);
     }
 
-    /** ④ 后落已绑定的图表（重跑覆盖，幂等）。 */
+    /**
+     * 保存用户选定图表绑定关系。
+     * 重跑时该字段会重新覆盖，但不追加新行，因此设计为“幂等更新”而非“append-only”。
+     */
     public void saveCharts(long runId, String chartsJson) {
         jdbc.update("UPDATE report_run SET charts_json = ? WHERE run_id = ?", chartsJson, runId);
     }
 
+    /**
+     * 仅更新 status/phase 的通用入口。
+     * 用于“断点续跑”将运行放回某阶段继续执行时，不带副作用地修改运行态。
+     */
     public void setStatusPhase(long runId, String status, String phase) {
         jdbc.update("UPDATE report_run SET status = ?, phase = ? WHERE run_id = ?", status, phase, runId);
     }
 
-    /** 失败关闭：停止并留痕，等人。 */
+    /**
+     * 失败关闭写入口：统一落 status=BLOCKED。
+     * 约定要求 blocked_reason 必须可读且带前缀类型，便于运维/UI 区分策略性失败与异常失败。
+     */
     public void setBlocked(long runId, String phase, String reason) {
         jdbc.update("UPDATE report_run SET status = 'BLOCKED', phase = ?, blocked_reason = ? WHERE run_id = ?",
                 phase, reason, runId);
     }
 
-    /** ⑥ 审计通过：落终稿与审计包，进入 HITL 卡点2 等待。 */
+    /**
+     * 审计通过写库：落 report_md 与 audit_json。
+     * 同时把状态推进 AWAITING_PUBLISH_APPROVAL 与 phase=AUDIT，进入卡点2。
+     */
     public void saveReport(long runId, String reportMd, String auditJson) {
         jdbc.update("UPDATE report_run SET report_md = ?, audit_json = ?, "
                         + "status = 'AWAITING_PUBLISH_APPROVAL', phase = 'AUDIT', blocked_reason = NULL "
-                        + "WHERE run_id = ?",
+                + "WHERE run_id = ?",
                 reportMd, auditJson, runId);
     }
 
+    /**
+     * 人工签发通过：落签发人和签发时间。
+     * 一旦签发，报告进入 PUBLISHED，不再进入任何自动重算路径。
+     */
     public void publishApprove(long runId, String approver) {
         jdbc.update("UPDATE report_run SET status = 'PUBLISHED', "
                         + "publish_approved_by = ?, publish_approved_at = NOW() WHERE run_id = ?",
                 approver, runId);
     }
 
+    /**
+     * 人工签发驳回：转 REJECTED 并写入 reason 与签发人留痕。
+     * 驳回后可由上层按策略发起新轮运行，不会自动复用旧 run。
+     */
     public void publishReject(long runId, String approver, String reason) {
         jdbc.update("UPDATE report_run SET status = 'REJECTED', blocked_reason = ?, "
                         + "publish_approved_by = ?, publish_approved_at = NOW() WHERE run_id = ?",

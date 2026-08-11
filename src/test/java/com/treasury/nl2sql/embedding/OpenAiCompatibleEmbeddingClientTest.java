@@ -16,16 +16,25 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 
-/** LINK item 1：OpenAI 兼容 embedding 客户端协议正确性（离线，无需联网/key）。timeout 传 0 保住 mock requestFactory。 */
+/**
+ * OpenAI 兼容 embedding 客户端协议合规回归（纯本地 Mock，无需外网）：
+ * - 验证请求 URL、Header、payload 形态正确
+ * - verify 分片归并后按 index 重排，保证输出顺序稳定
+ * - 验证重试次数边界与失败放大策略
+ */
 class OpenAiCompatibleEmbeddingClientTest {
 
-    /** timeout=0（兼容 MockRestServiceServer）、retries、batchSize 可指定的被测对象。 */
+    /** timeout=0（兼容 MockRestServiceServer）、retries、batchSize 可指定的被测对象工厂。 */
     private static OpenAiCompatibleEmbeddingClient client(RestClient.Builder builder, int retries, int batchSize) {
         return new OpenAiCompatibleEmbeddingClient(
                 "https://dashscope.example.com", "test-key", "text-embedding-v4",
                 0, retries, batchSize, builder, new ObjectMapper());
     }
 
+    /**
+     * 输入：单条文本「营收」；
+     * 预期：发起兼容协议请求并正确解析返回向量，验证 contract 与字段名不被回归。
+     */
     @Test
     void embed_postsToEmbeddingsEndpoint_andParsesVector() {
         RestClient.Builder builder = RestClient.builder();
@@ -46,6 +55,10 @@ class OpenAiCompatibleEmbeddingClientTest {
         server.verify();
     }
 
+    /**
+     * 输入：12 条文本，batchSize 设为 10；
+     * 预期：分两批请求且按 data.index 重排后顺序恢复，兼容上游乱序返回。
+     */
     @Test
     void embedBatch_shardsByBatchSize_andRestoresOrderByIndex() {
         RestClient.Builder builder = RestClient.builder();
@@ -77,6 +90,10 @@ class OpenAiCompatibleEmbeddingClientTest {
         server.verify();
     }
 
+    /**
+     * 输入：首次失败触发重试；
+     * 预期：一次重试后成功返回，验证“失败放大”前提和重试闭包有效。
+     */
     @Test
     void embed_retriesOnceOnServerError_thenSucceeds() {
         RestClient.Builder builder = RestClient.builder();
@@ -92,6 +109,10 @@ class OpenAiCompatibleEmbeddingClientTest {
         server.verify();
     }
 
+    /**
+     * 输入：重复失败且 retries 达上限；
+     * 预期：抛出异常上抛，调用端可据此触发 fail-open 或熔断策略。
+     */
     @Test
     void embed_failsAfterRetriesExhausted() {
         RestClient.Builder builder = RestClient.builder();

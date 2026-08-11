@@ -26,6 +26,10 @@ public final class ReportMdRenderer {
     /** 行内片段：factRef=true 的片段是 [fact_xxx] 引用，导出时弱化排版（小号灰色上标）。 */
     public record Seg(String text, boolean bold, boolean factRef) {}
 
+    /**
+     * 轻量 markdown 解析：支持 heading/table/bullet/paragraph 4 类块，不支持嵌套列表与复杂表格；
+     * 遇到中断行（非列表/非表格）会 flush 当前累计块，保持导出稳定性。
+     */
     public static List<Block> parse(String md) {
         List<Block> blocks = new ArrayList<>();
         List<String> bullets = null;
@@ -54,6 +58,7 @@ public final class ReportMdRenderer {
         return blocks;
     }
 
+    /** 管道表格按竖线切分，保留空单元（导出层不做数值重排）。 */
     private static List<String> splitCells(String row) {
         String inner = row.substring(1, row.length() - 1);
         return Arrays.stream(inner.split("\\|", -1)).map(String::trim).toList();
@@ -67,7 +72,10 @@ public final class ReportMdRenderer {
     private static final Pattern FACT_REF = Pattern.compile("\\[(fact_[A-Za-z0-9_]+)\\]");
     private static final Pattern BOLD = Pattern.compile("\\*\\*([^*]+)\\*\\*");
 
-    /** 与前端 inline() 同构：先切 **粗体** 再切 [fact] 引用。 */
+    /**
+     * 行内解析：先粗体再 fact 引用，确保 [fact_xxx] 同时保留粗体语义；
+     * 输出 segments 用于 HTML/Docx 的富文本构造。
+     */
     public static List<Seg> segments(String text) {
         List<Seg> out = new ArrayList<>();
         Matcher b = BOLD.matcher(text);

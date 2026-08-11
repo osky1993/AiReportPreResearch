@@ -25,12 +25,20 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
-/** ①-5：编译/执行异常应优雅返回并触发自我修正，而非抛 HTTP 500；embedding 故障应降级而非失败。 */
+/**
+ * Nl2SqlService 主流程单测（含异常回退）。
+ * 验证编译/执行异常触发修正重试、unanswerable 直接拒答不重试、embedding 失败降级；
+ * 所有分支返回统一结果模型，不抛出 HTTP 异常。
+ */
 class Nl2SqlServiceTest {
 
     /** 离线向量化桩：固定返回单位向量。 */
     private static final EmbeddingClient EMB = q -> new float[]{1};
 
+    /**
+     * 输入：查询可被模型解析并编译，但执行异常。
+     * 预期：返回 success=false，保留执行错误并触发修正重试。
+     */
     @Test
     @SuppressWarnings("unchecked")
     void executionError_isGracefulAndRetried() {
@@ -75,6 +83,10 @@ class Nl2SqlServiceTest {
         verify(llm, times(2)).completeJson(any()); // 执行失败触发了自我修正重试
     }
 
+    /**
+     * 输入：模型判定 unanswerable。
+     * 预期：直接拒答，无 retry，validator/compiler 不被触发。
+     */
     @Test
     @SuppressWarnings("unchecked")
     void unanswerable_isRefusedWithoutRetry() {
@@ -109,7 +121,10 @@ class Nl2SqlServiceTest {
         verifyNoInteractions(compiler, dsl);
     }
 
-    /** embedding 故障：链路不失败，qv=null 传给各消费方各自降级，warnings 留痕。 */
+    /**
+     * 输入：embedding 抛异常。
+     * 预期：降级走 null qv，保留 warnings 并完成查询执行。
+     */
     @Test
     @SuppressWarnings("unchecked")
     void embeddingFailure_degradesGracefully() {

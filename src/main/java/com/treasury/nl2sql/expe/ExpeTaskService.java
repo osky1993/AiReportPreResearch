@@ -44,6 +44,13 @@ import java.util.zip.ZipOutputStream;
  * </pre>
  * 状态在内存 + meta.json 双写；重启后从 meta.json 恢复历史任务（执行中被打断的标记 INTERRUPTED）。
  * 失败的调用不重试、不删除、原样计入——挑样本与静默重试都会破坏实验可信度。
+ *
+ * <p>失败与一致性约束：
+ * <ul>
+ *   <li>任何异常只归入该任务调用记录，不回写系统状态为成功</li>
+ *   <li>每次调用生成与原始响应都落盘，后续可逐条复核</li>
+ *   <li>任务状态通过 meta.json 与内存双写恢复；重启不自动续跑防止实验半成品被误读</li>
+ * </ul>
  */
 @Service
 public class ExpeTaskService {
@@ -145,6 +152,14 @@ public class ExpeTaskService {
         this.mapper = mapper;
     }
 
+    /**
+     * 组件初始化：
+     * <ul>
+     *   <li>构建任务调度池（任务级并发）与 LLM 调用池（全局并发）</li>
+     *   <li>保证 runs 目录存在</li>
+     *   <li>重放 meta.json，恢复历史任务状态与失败标记</li>
+     * </ul>
+     */
     @PostConstruct
     void init() throws IOException {
         executor = Executors.newFixedThreadPool(Math.max(1, props.getWorkerThreads()), r -> {
@@ -161,13 +176,17 @@ public class ExpeTaskService {
         restoreFromDisk();
     }
 
+    /** 停机前关闭线程池，避免非 daemon 线程阻塞应用退出。 */
     @PreDestroy
     void shutdown() {
         if (executor != null) executor.shutdownNow();
         if (callExecutor != null) callExecutor.shutdownNow();
     }
 
-    /** 重启恢复：扫描 runs 目录下所有 meta.json；被打断的执行中任务标记 INTERRUPTED（不自动续跑） */
+    /**
+     * 重启恢复：扫描 runs 目录下所有 meta.json 恢复任务。
+     * <p>若历史状态是 RUNNING/QUEUED，则改为 INTERRUPTED 并保留证据，避免“未完成任务”被误判为已完成。
+     */
     private void restoreFromDisk() {
         try (var dirs = Files.list(Path.of(props.getRunsDir()))) {
             dirs.filter(Files::isDirectory).forEach(dir -> {
@@ -196,7 +215,10 @@ public class ExpeTaskService {
         }
     }
 
-    /** 公共数据包当前状态（页面展示 + 创建前校验） */
+    /**
+     * 查询公共数据包状态，用于“创建前自检”与页面展示（路径、是否存在、哈希、供应商配置）。
+     * 数据包不存在时返回 exists=false，不会抛异常以便前端给提示并阻断提交按钮。
+     */
     public Map<String, Object> dataPackInfo() {
         Path p = Path.of(props.getDataJsonPath());
         if (!Files.exists(p)) {
@@ -212,7 +234,14 @@ public class ExpeTaskService {
         }
     }
 
-    /** 创建并启动一批任务：每份提示词文件一个任务，立即提交线程池 */
+    /**
+     * 创建并启动一批任务：每个提示词文件对应一个实验任务。
+     * <ul>
+     *   <li>读取并冻结 data.json，记录输入哈希</li>
+     *   <li>预写 prompt/data/assembled_prompt，保证证据包可追溯</li>
+     *   <li>立即提交任务到 worker 池；任务内再按 iterations 扇出到 LLM 调用池</li>
+     * </ul>
+     */
     public List<TaskInfo> createTasks(List<UploadedPrompt> prompts, int iterations,
                                       double temperature, Integer maxTokens) throws IOException {
         Path dataPath = Path.of(props.getDataJsonPath());
@@ -270,6 +299,7 @@ public class ExpeTaskService {
             callExecutor.submit(() -> {
                 try {
                     if (!state.cancelRequested) {
+                        // 异步执行每次调用；通过 latch 确保一次任务全部迭代结束后再落 DONE。
                         runOneCall(state, dir, idx, assembledPrompt);
                         saveMeta(state);
                     }
@@ -288,7 +318,14 @@ public class ExpeTaskService {
         log.info("[expe] 任务 {} 结束，状态 {}", state.taskId, state.status);
     }
 
-    /** 单次生成：调用 → 结果/原始响应落盘 → 记录；异常不重试、原样计入 */
+    /**
+     * 单次生成调用：
+     * <ul>
+     *   <li>生成成功：写 result_NNN.md（纯文本）与 raw_NNN.json（原始响应），并记录 token 与延迟</li>
+     *   <li>生成失败：写失败占位文件，记录错误文本，不做重试</li>
+     *   <li>命中前缀缓存 token 非 0 时报警，提示 user_id 隔离策略失效</li>
+     * </ul>
+     */
     private void runOneCall(TaskState state, Path dir, int i, String assembledPrompt) {
         String userId = "expe-" + UUID.randomUUID();
         String startedAt = LocalDateTime.now().format(TS);
@@ -318,6 +355,7 @@ public class ExpeTaskService {
         }
     }
 
+    /** 列举所有任务快照：按创建时间倒序返回，供前端任务列表与状态页展示。 */
     public List<TaskInfo> listTasks() {
         return tasks.values().stream()
                 .map(TaskState::snapshot)
@@ -326,19 +364,28 @@ public class ExpeTaskService {
                 .toList();
     }
 
+    /**
+     * 获取任务快照（只读视图）。不存在直接抛 400 级异常，由上层 controller 映射为客户端错误。
+     */
     public TaskInfo getTask(String taskId) {
         TaskState s = tasks.get(taskId);
         if (s == null) throw new IllegalArgumentException("任务不存在: " + taskId);
         return s.snapshot();
     }
 
+    /**
+     * 软中止：不直接杀线程，而是打取消标志；正在进行的运行会在各自线程/循环内检查后退出。
+     */
     public void cancel(String taskId) {
         TaskState s = tasks.get(taskId);
         if (s == null) throw new IllegalArgumentException("任务不存在: " + taskId);
         s.cancelRequested = true;
     }
 
-    /** 读取第 N 次生成的结果（taskId 必须是已注册任务，index 由 controller 校验为数字——无路径穿越面） */
+    /**
+     * 读取第 N 次生成的结果。
+     * <p>返回路径按固定文件名读取，失败时自动兼容历史后缀，禁止路径穿越：taskId 已经做任务注册表匹配。
+     */
     public byte[] readResult(String taskId, int index) throws IOException {
         getTask(taskId);
         Path f = Path.of(props.getRunsDir(), taskId, resultFileName(index));
@@ -384,8 +431,12 @@ public class ExpeTaskService {
         }
     }
 
+    /**
+     * 每次 call 结束或状态变更后都会调用该方法；
+     * 单任务下会有多次异步写线程并发调用 saveMeta，必须用 state 锁串行化更新 meta.json，
+     * 否则快照交叉写回会造成任务恢复窗口状态错读。
+     */
     private void saveMeta(TaskState state) {
-        // 并行迭代会从多个线程触发落盘，用 state 锁串行化写文件避免交叠损坏
         synchronized (state) {
             try {
                 Path meta = Path.of(props.getRunsDir(), state.taskId, "meta.json");

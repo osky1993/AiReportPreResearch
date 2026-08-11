@@ -33,6 +33,7 @@ public class ExpeController {
 
     private final ExpeTaskService service;
 
+    /** 依赖注入。实验服务失败由本层统一映射为 400（除非是系统异常）。 */
     public ExpeController(ExpeTaskService service) {
         this.service = service;
     }
@@ -75,16 +76,19 @@ public class ExpeController {
         return service.createTasks(prompts, iterations, temperature, maxTokens);
     }
 
+    /** 列出全部任务（含运行中/完成/失败态），用于控制台轮询展示。 */
     @GetMapping("/tasks")
     public List<TaskInfo> listTasks() {
         return service.listTasks();
     }
 
+    /** 查询单任务详情；不存在时服务层抛 404/400 语义。 */
     @GetMapping("/tasks/{taskId}")
     public TaskInfo getTask(@PathVariable String taskId) {
         return service.getTask(taskId);
     }
 
+    /** 取消任务；已结束任务会快速幂等返回 ok=true。 */
     @PostMapping("/tasks/{taskId}/cancel")
     public Map<String, Object> cancel(@PathVariable String taskId) {
         service.cancel(taskId);
@@ -123,6 +127,10 @@ public class ExpeController {
         return new ResponseEntity<>(body, headers, org.springframework.http.HttpStatus.OK);
     }
 
+    /**
+     * 统一把实验任务链路中可预期参数/状态错误映射为 400，避免污染 500 指标与前端重试策略。
+     * 该方法只处理参数校验与状态非法类异常；系统异常仍交给默认异常处理让调用方看到明确 500。
+     */
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
     public ResponseEntity<Map<String, String>> badRequest(RuntimeException e) {
         return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

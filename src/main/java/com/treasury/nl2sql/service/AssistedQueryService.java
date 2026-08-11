@@ -18,10 +18,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 人在回路编排层：在纯生成引擎 {@link Nl2SqlService} 之上叠加「召回—(澄清)—生成—核验—沉淀」闭环。
+ * 人在回路编排层：在纯生成引擎 {@link Nl2SqlService} 之外，承担
+ * {@code 召回 → 澄清 → 生成 → 可选复用执行 → 核验沉淀} 的控制流。
  *
- * <p>关键分层：生成核心 {@code Nl2SqlService.query()} 与 {@code NlQueryResult} 保持纯净（评估契约），
- * 召回/命中短路只发生在本层，不污染金标准评估。
+ * <p>核心职责边界：
+ * <ul>
+ *   <li>核心生成/评估链路保持不变：所有模型生成仍由 {@code Nl2SqlService.query()} 出口化执行</li>
+ *   <li>口径复用只在本层完成，不改变底座的 {@code EvalService/NlQueryResult} 契约</li>
+ *   <li>一旦发生可疑情况，优先降级到纯生成，而不是把异常口径传播到下游</li>
+ * </ul>
+ * 失败模式：向量化失败、口径回放失败、复用执行失败都不应阻断查询主流程；失败时仅降级、记录告警并尝试下一条路径。
  */
 @Service
 public class AssistedQueryService {
@@ -53,12 +59,23 @@ public class AssistedQueryService {
         this.mapper = mapper;
     }
 
-    /** 核验采纳/驳回的结果。description=随资产固化的中文口径描述（生成失败为 null，不影响沉淀）。 */
+    /**
+     * 核验 API 的返回载体：仅用于口径资产沉淀是否成功。
+     * <p>说明：description 依赖反翻译说明，若生成失败可为 null，仍视为允许采纳但不显示中文口径。
+     */
     public record VerifyResult(boolean precipitated, Long assetId, String message, String description) {}
 
     /**
-     * 一次带人在回路的提问。
-     * @param bypassCaliber true=跳过口径召回、强制走 LLM 生成（人工判定「命中口径不符」后重生成用）。
+     * 一次带人在回路的提问入口。
+     * <p>流程：先尝试对问题向量化，然后按命中档位决定：
+     * <ul>
+     *   <li>HIT：做参数一致性比对，漂移则澄清</li>
+     *   <li>CANDIDATE：给用户确认候选口径是否可复用</li>
+     *   <li>MISS：直接走纯生成引擎</li>
+     * </ul>
+     *
+     * @param question 用户问题
+     * @param bypassCaliber true=跳过口径召回，直接走纯生成（用户声明“命中不符，需要重建口径”时使用）
      */
     public AssistedResponse ask(String question, boolean bypassCaliber) {
         // 请求内只 embed 一次：召回与生成链路(linking/few-shot/术语)共享同一个问题向量
@@ -93,7 +110,10 @@ public class AssistedQueryService {
         }
     }
 
-    /** 参数漂移澄清话术：把两侧独有数值摆出来，讲清「复用=按口径原参数出数」。 */
+    /**
+     * 生成参数漂移澄清话术。
+     * <p>通过对比口径存量问法与本次提问中抽取到的数值差异，避免“看似命中但参数不一致”导致静默错用历史口径。
+     */
     private static String driftPrompt(CaliberStore.Recall r, ParamDriftDetector.Drift drift) {
         StringBuilder sb = new StringBuilder("命中已核验口径「").append(r.matchedQuestion())
                 .append("」(相似度 ").append(String.format("%.3f", r.score())).append(")，但参数疑似不同：");
@@ -133,10 +153,9 @@ public class AssistedQueryService {
     }
 
     /**
-     * 核验闸门：采纳则沉淀为口径资产，驳回则丢弃（仅留痕）。
-     * 采纳时服务端重跑校验，绝不信任前端回传的 MQL。
-     * 采纳同时反翻译生成中文口径描述随资产固化（HIT/CANDIDATE 时零成本展示）；
-     * 描述是展示层辅助，生成失败只告警、不阻断沉淀（fail-open），此时列为 null。
+     * 核验闸门：采纳则沉淀新口径资产，驳回则仅留痕并不入库。
+     * <p>关键安全点：采纳时服务端重跑 {@link MqlValidator}，即使前端已经展示“通过”，也不信任客户端 MQL；
+     * 任何反翻译失败仅影响展示描述，不阻断资产写入（fail-open）。
      */
     public VerifyResult verify(String question, String mqlJson, boolean accept, String createdBy) {
         if (!accept) {
@@ -153,7 +172,7 @@ public class AssistedQueryService {
         }
     }
 
-    /** 反翻译生成口径描述；任何失败返回 null（描述缺失不阻断沉淀，前端回落到按需生成按钮）。 */
+    /** 反翻译生成口径描述；任何失败返回 null（描述缺失不阻断沉淀，前端回落到“按需生成”）。 */
     private String describeQuietly(String mqlJson) {
         try {
             return explainService.explain(mapper.readTree(mqlJson), MqlExplainService.Mode.AD_HOC).explanation();
@@ -198,6 +217,10 @@ public class AssistedQueryService {
     }
 
     // ---- 内部：走纯生成引擎，并按结果映射状态 ----
+    /**
+     * 纯生成回退支路：不改动口径索引、不读取历史资产。
+     * <p>返回值保留三态：clarify / generated / failed，供控制器在前端做不同交互。
+     */
     private AssistedResponse generate(String question, float[] qv) {
         NlQueryResult out = nl2sql.query(question, Double.POSITIVE_INFINITY, qv);
         if (out.clarifyReason() != null) {

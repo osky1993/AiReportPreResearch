@@ -20,7 +20,10 @@ public final class MetricDimensionRule {
 
     private MetricDimensionRule() {}
 
-    /** @param filledMql 已填充哨兵参数的 Mql（派生指标传 null） */
+    /**
+     * @param filledMql 已填充哨兵参数的 Mql（派生指标传 null）。
+     * 返回错误列表；返回空表示“该指标可按现有 MQL 形状落库”。
+     */
     public static List<String> check(MetricDefinition m, Mql filledMql) {
         List<String> errors = new ArrayList<>();
         List<String> dims = m.dimensions();

@@ -30,6 +30,10 @@ public final class PeriodResolver {
     /** 一个已解析的周期窗口（闭区间）。 */
     public record Window(String label, LocalDate start, LocalDate end) {}
 
+    /**
+     * 标签主解析入口。只返回可执行窗口，不允许返回 null。
+     * 失败时立即抛 PolicyException，统一由上层阻断，不给下游带“空窗口”。
+     */
     public static Window resolve(String label) {
         if (label == null) {
             throw new PolicyException("报告期标签缺失（期望如 2026-W26 / 2026-M06 / 2026-Q2）");
@@ -62,7 +66,10 @@ public final class PeriodResolver {
         throw new PolicyException("无法识别报告期标签「" + label + "」的周期粒度");
     }
 
-    /** 对比期 = 上一个同粒度周期（环比基期：W26→W25、M06→M05、Q2→Q1，跨年自然回退）。 */
+    /**
+     * 计算对比期窗口：上一个同粒度周期。
+     * 周期回退后不影响原始报告期定义，返回 label/start/end 三元组与原窗口同形态。
+     */
     public static Window previous(Window w) {
         return switch (granularity(w.label())) {
             case TYPE_WEEK -> {
@@ -85,6 +92,10 @@ public final class PeriodResolver {
         return resolve((year - 1) + label.substring(dash));
     }
 
+    /**
+     * 按 ISO 周解析，先用 year/week 定位，再做 round-trip 回验。
+     * round-trip 的目的是拦截一些年份无 W53 的边界输入。
+     */
     private static Window resolveWeek(String label, int year, int week) {
         LocalDate monday;
         try {
@@ -109,6 +120,9 @@ public final class PeriodResolver {
         return monthWindow(YearMonth.of(year, month));
     }
 
+    /**
+     * 按自然季输入定位三个月窗口。季度越界会直接拒绝，避免将非法值静默归一。
+     */
     private static Window resolveQuarter(String label, int year, int quarter) {
         if (quarter < 1 || quarter > 4) {
             throw new PolicyException("报告期标签「" + label + "」的季度不存在（合法范围 Q1~Q4）");
@@ -116,6 +130,7 @@ public final class PeriodResolver {
         return quarterWindow(LocalDate.of(year, (quarter - 1) * 3 + 1, 1));
     }
 
+    /** 月窗口生成器：月内 [首日, 末日] 且标签标准化为两位月份。 */
     private static Window monthWindow(YearMonth ym) {
         String label = ym.getYear() + "-M" + String.format("%02d", ym.getMonthValue());
         return new Window(label, ym.atDay(1), ym.atEndOfMonth());
@@ -128,6 +143,7 @@ public final class PeriodResolver {
         return new Window(anyDayInQuarter.getYear() + "-Q" + q, start, start.plusMonths(3).minusDays(1));
     }
 
+    /** 以周内任意一天反推 ISO 标签，用于窗口与外部标签闭环一致性校验。 */
     private static String weekLabelOf(LocalDate anyDayOfWeek) {
         int y = anyDayOfWeek.get(IsoFields.WEEK_BASED_YEAR);
         int w = anyDayOfWeek.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);

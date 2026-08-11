@@ -25,18 +25,27 @@ import java.util.Map;
 @Component
 public class ContributionStep {
 
+    /** 贡献拆解日志：只记录成功产出的 fact 数量与运行语义异常。 */
     private static final Logger log = LoggerFactory.getLogger(ContributionStep.class);
 
+    /** 维度取数 purpose：本期窗口（与主 compare/pure 基础 fact 一致，不复用业务约定后缀）。 */
     static final String PURPOSE_CONTRIB_CURRENT = "CONTRIB_CURRENT";
+    /** 维度取数 purpose：基期窗口；与 volatility 异常规则的 basis 一一映射。 */
     static final String PURPOSE_CONTRIB_BASE = "CONTRIB_BASE";
 
+    /** 走 ③ FetchStep，确保维度贡献依赖同等安全边界（白名单校验+哈希留痕）和幂等。 */
     private final FetchStep fetchStep;
 
+    /** 注入确定性取数组件；贡献拆解不允许引入 LLM 或随机行为。 */
     public ContributionStep(FetchStep fetchStep) {
         this.fetchStep = fetchStep;
     }
 
     /**
+     * 遍历可命中的波动型异动，为每个异动按维度值构建两类派生 fact：
+     * 贡献额 fact（value = 本期维度值 - 基期维度值）与贡献占比 fact（share=贡献额/总贡献额）。
+     * 约束：若总贡献额为 0，不生成占比，改记 note；每个维度值至少一个 fact，key suffix 自带防撞 slug。
+     *
      * @param current 本期窗口（run 的报告期）
      * @return 贡献 facts（额 + 占比）；notes 就地追加
      */
@@ -56,6 +65,7 @@ public class ContributionStep {
                         + rule.dimensionMetricId() + "」不存在或未声明维度（资产校验应已拦截）");
             }
             PeriodResolver.Window base = baseWindow(current, rule.basis());
+            // 同一异常沿用 ③ 的 4-5 秒级查询链路重取，保证本期/基期都满足同一条白名单与哈希落痕。
             Map<String, BigDecimal> curRows = fetchRows(dimDef, current, PURPOSE_CONTRIB_CURRENT, a, ++seq);
             Map<String, BigDecimal> baseRows = fetchRows(dimDef, base, PURPOSE_CONTRIB_BASE, a, ++seq);
 
@@ -76,17 +86,17 @@ public class ContributionStep {
             String dimBare = MetricDimensionRule.bareName(dimDef.dimensions().get(0));
             java.util.LinkedHashSet<String> usedSlugs = new java.util.LinkedHashSet<>();
             int idx = 0;
-            for (Map.Entry<String, BigDecimal> e : deltas.entrySet()) {
-                idx++;
-                String slug = slugOf(e.getKey(), idx, usedSlugs);
-                String key = a.fact().factKey() + "_" + slug + "_contrib";
-                out.add(new FactRecord(key, dimDef.metricId(), a.fact().metricVersion(),
-                        dimDef.name() + "（" + e.getKey() + "，变化贡献）", a.fact().chapterId(),
-                        FactRecord.TYPE_DERIVED, e.getValue(), dimDef.unit(),
-                        FactBuildStep.renderDisplay(e.getValue(), dimDef.unit()),
-                        current.label(), Map.of(dimBare, e.getKey()), null, null, null, null,
-                        a.fact().factKey(), FactRecord.QUALITY_PASSED,
-                        "contribution basis=" + rule.basis() + " base=" + base.label()));
+        for (Map.Entry<String, BigDecimal> e : deltas.entrySet()) {
+            idx++;
+            String slug = slugOf(e.getKey(), idx, usedSlugs);
+            String key = a.fact().factKey() + "_" + slug + "_contrib";
+            out.add(new FactRecord(key, dimDef.metricId(), a.fact().metricVersion(),
+                    dimDef.name() + "（" + e.getKey() + "，变化贡献）", a.fact().chapterId(),
+                    FactRecord.TYPE_DERIVED, e.getValue(), dimDef.unit(),
+                    FactBuildStep.renderDisplay(e.getValue(), dimDef.unit()),
+                    current.label(), Map.of(dimBare, e.getKey()), null, null, null, null,
+                    a.fact().factKey(), FactRecord.QUALITY_PASSED,
+                    "contribution basis=" + rule.basis() + " base=" + base.label()));
                 if (totalDelta.signum() != 0) {
                     BigDecimal share = e.getValue().multiply(BigDecimal.valueOf(100))
                             .divide(totalDelta, 1, RoundingMode.HALF_UP);
@@ -108,7 +118,8 @@ public class ContributionStep {
         return out;
     }
 
-    /** 经 ③ 确定性通路取维度行 → 维度值→数值（0 行 = 空 map，按 nullPolicy=ZERO 语义空拆解）。 */
+    /** 经 ③ 确定性通路取维度行 → 维度值映射数值。
+     * 设计目标：维度行 0 行不失败，返回空 map，交给 caller 在差额公式中按零值闭环。 */
     private Map<String, BigDecimal> fetchRows(MetricDefinition dimDef, PeriodResolver.Window w,
                                               String purpose, AnomalyDetector.Anomaly a, int seq) {
         MetricQuerySpec spec = new MetricQuerySpec("cs_" + String.format("%03d", seq),
@@ -130,6 +141,7 @@ public class ContributionStep {
         return "yoy".equals(basis) ? PeriodResolver.sameLastYear(current) : PeriodResolver.previous(current);
     }
 
+    /** 生成 fact key 后缀：优先稳定 slug，冲突/空值退化为 rNN，避免 facts 复用与审计不可追踪。 */
     private static String slugOf(String value, int idx, java.util.Set<String> used) {
         String fallback = String.format("r%02d", idx);
         if (value == null || !value.chars().allMatch(c -> c < 128)) {

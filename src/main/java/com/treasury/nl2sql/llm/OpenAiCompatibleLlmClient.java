@@ -12,8 +12,9 @@ import java.util.Map;
 
 /**
  * OpenAI 兼容协议（/chat/completions）的实现，覆盖 DeepSeek / 通义千问 / Moonshot / OpenAI 等。
- * 换供应商：改 application.yml 的 llm.base-url + llm.model + LLM_API_KEY 即可，无需改代码。
- * 若要接 Anthropic / Gemini 等非兼容协议，新增一个 LlmClient 实现替换本 Bean。
+ * 设计意图：把“对话构造、序列化、调用与解析”固化为单一实现，便于在运行参数变化时零改代码切换服务。
+ * 换供应商仅调整配置：llm.base-url / llm.model / LLM_API_KEY；对业务不产生侵入。
+ * <p>失败与观测边界：响应体解析失败会直接抛运行时异常并回滚到上层重试策略；usage 仅作为监控字段，不影响主流程。</p>
  */
 @Component
 public class OpenAiCompatibleLlmClient implements LlmClient {
@@ -35,12 +36,19 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
                 .build();
     }
 
+    /**
+     * 兼容旧调用约定的最小返回：仅返回 content 文本。
+     * 失败不会吞掉异常，交给上层的重试/降级链路统一处理。
+     */
     @Override
     public String completeJson(List<Message> messages) {
         return completeJsonDetail(messages).content();
     }
 
-    /** 在既有解析之上多取一段 usage（供应商省略 usage 时为 null）——completeJson 行为不变。 */
+    /**
+     * 在既有解析之上多取一段 usage（供应商省略 usage 时返回 null），供观测与计费留痕。
+     * 即便 usage 缺失也不影响主流程：completeJson 行为对上保持不变。
+     */
     @Override
     public LlmResult completeJsonDetail(List<Message> messages) {
         List<Map<String, String>> msgs = new ArrayList<>();

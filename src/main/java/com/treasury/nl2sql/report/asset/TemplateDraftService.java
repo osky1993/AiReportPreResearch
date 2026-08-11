@@ -48,6 +48,10 @@ public class TemplateDraftService {
         this.mapper = mapper;
     }
 
+    /**
+     * 模板草稿端到端处理：few-shot 检索 -> LLM 起草 -> 结构修复 -> 异常指标剔除 -> 规则复核 -> 入参返回。
+     * 任何环节失败都 fail-closed 到人工确认，不返回“猜测模板”。
+     */
     public DraftResult draft(String description) {
         // ⓪ 前置：过短描述不烧 token
         if (description == null || description.strip().length() < 10) {
@@ -69,6 +73,7 @@ public class TemplateDraftService {
         }
         ReportTemplateDef raw;
         try {
+            // 将 LLM JSON 先转成草稿类型，若字段缺失则在后续链路补充最小可运行结构（缺结构则直接拒绝）。
             raw = mapper.treeToValue(node.path("template"), ReportTemplateDef.class);
         } catch (Exception e) {
             throw new IllegalArgumentException("起草输出的模板结构无法解析: " + e.getMessage());
@@ -89,6 +94,7 @@ public class TemplateDraftService {
         int idx = 1;
         for (ReportTemplateDef.ChapterDef ch : raw.chapters()) {
             List<String> kept = new ArrayList<>();
+            // 去重并过滤不存在的指标：同一章节重复的 id 会造成 renderer 重复渲染，故在起草期先规整。
             for (String metricId : new LinkedHashSet<>(ch.metrics() == null ? List.<String>of() : ch.metrics())) {
                 if (catalog.containsKey(metricId)) {
                     kept.add(metricId);
@@ -120,6 +126,7 @@ public class TemplateDraftService {
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
+        // 统一校验通过即表示草案可直接进入编辑器保存流；unresolved 作为人工解释，不会阻断草案落盘（因为草案不落库）。
         log.info("[DRAFT] 起草成功: {} 「{}」 {} 章, unresolved={}", templateId, draft.name(),
                 chapters.size(), unresolved);
         return new DraftResult(draft, List.copyOf(new LinkedHashSet<>(unresolved)), notes);
@@ -127,13 +134,22 @@ public class TemplateDraftService {
 
     // ---------- few-shot 与 prompt ----------
 
+    /**
+     * few-shot 召回策略：优先语义匹配历史模板；无匹配回退固定样例，再无则取首条种子模板。
+     * 目的是“给写作风格锚点”，不用于业务事实约束。
+     */
     private ReportTemplateDef pickFewShot(String description) {
+        // few-shot 只服务生成风格，不参与事实正确性校验；最终结构与内容仍需服务端验证。
         return matcher.recall(description).stream().findFirst()
                 .flatMap(c -> assets.template(c.templateId()))
                 .or(() -> assets.template(FALLBACK_FEWSHOT))
                 .orElseGet(() -> assets.allTemplates().get(0));
     }
 
+    /**
+     * 系统提示词：强制“指标 id 约束 + 禁止发明 + 必写指标来源”
+     * + 空值判定（unanswerable）以减少幻觉，避免上线后大量 invalid template.
+     */
     private String systemPrompt(ReportTemplateDef fewShot) {
         String fewShotJson;
         try {
@@ -179,7 +195,10 @@ public class TemplateDraftService {
 
     // ---------- 工具 ----------
 
-    /** slugify（草案要人再编辑，不合规修正而非报错）+ 撞库后缀避让（编辑完点新建不至于才撞 400）。 */
+    /**
+     * 命名归一化策略：
+     * 先 slugify（小写+连字符+长度约束），再做撞库后缀 +1 直到唯一，确保新建不会与现有模板冲突。
+     */
     private String uniqueSlug(String rawId) {
         String s = rawId == null ? "" : rawId.toLowerCase().replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("^-+|-+$", "");
@@ -196,6 +215,10 @@ public class TemplateDraftService {
         return s;
     }
 
+    /**
+     * LLM 输出容错路径：首轮 JSON 解析失败，自动加“请只输出 JSON”重试一次；
+     * 二次失败即人工化成闭环，拒绝吞掉不结构化文本。
+     */
     private JsonNode completeWithOneRetry(List<LlmClient.Message> conversation) {
         String raw = llm.completeJson(conversation);
         log.info("[DRAFT] LLM 输出: {}", raw);

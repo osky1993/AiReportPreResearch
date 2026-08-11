@@ -21,10 +21,13 @@ public class EventMatcher {
 
     /** 每条异动的候选上限。 */
     static final int MAX_CANDIDATES = 5;
+    /** 事件描述展示截断长度；短于此长度直接保留，过长则切断避免 prompt 膨胀。 */
     private static final int DESC_TRUNCATE = 120;
 
+    /** 按时间段检索事件事实的仓储；仅依赖已持久化事件，不访问其他外部。 */
     private final EventRepository repo;
 
+    /** 注入事件仓储，保证可测试可替换数据源。 */
     public EventMatcher(EventRepository repo) {
         this.repo = repo;
     }
@@ -33,6 +36,10 @@ public class EventMatcher {
     public record Candidate(String ref, EventRecord event, int score) {}
 
     /**
+     * 先检索报告期与基期联合时间窗，再按“相关指标命中+当前期命中+top 维度交集”打分。
+     * 按 score 降序、事件日期降序取前 N；score≤0 的事件不返回，避免注入无关候选。
+     * 设计目标：输出“少量高置信候选”，零候选即可直接 observed + 待查，不允许凭空补数。
+     *
      * @param topContribDim 贡献拆解的最大贡献维度值（如 "CNY"；无贡献拆解传 null）
      * @param current 报告期窗口；base 该异动 basis 对应的基期窗口
      */
@@ -42,6 +49,8 @@ public class EventMatcher {
         LocalDate from = base.start().isBefore(current.start()) ? base.start() : current.start();
         LocalDate to = base.end().isAfter(current.end()) ? base.end() : current.end();
         List<Candidate> scored = new ArrayList<>();
+        // 事件检索在「报告期∪基期」联合窗内，避免只看本期导致同比解释断链；
+        // 本期内命中加权，避免用基期旧事解释本期异常。
         for (EventRecord e : repo.findActiveBetween(from, to)) {
             int score = 0;
             if (e.relatedMetrics() != null && e.relatedMetrics().contains(anomaly.fact().metricId())) {

@@ -17,12 +17,33 @@ import java.util.Set;
 @Component
 public class CurrencyGuard {
 
+    /**
+     * Schema 辅助器：用于判定主表/明细表是否具备 currency 列，决定是否存在跨币种聚合风险。
+     */
     private final SchemaService schema;
+    /**
+     * 开关：false 时整个检查短路返回空列表，确保历史兼容的场景可关闭提示。
+     */
     private final boolean enabled;
+    /**
+     * 需参与金额风控的字段集合（从配置注入）。
+     */
     private final Set<String> moneyFields;
+    /**
+     * 可视为汇率字段的名称集合，匹配乘法两侧任一字段。
+     */
     private final Set<String> rateFields;
+    /**
+     * 货币维度字段名，约定全量以 currency 为单一口径键。
+     */
     private static final String CURRENCY = "currency";
 
+    /**
+     * @param schema Schema 服务
+     * @param enabled 是否启用跨币种金额聚合护栏；关闭后返回空告警
+     * @param moneyFields 需要守护的金额字段，逗号分隔
+     * @param rateFields 可认定为已折算的汇率字段，逗号分隔
+     */
     public CurrencyGuard(SchemaService schema,
                          @Value("${guard.currency.enabled:true}") boolean enabled,
                          @Value("${guard.currency.money-fields:amount,balance}") String moneyFields,
@@ -33,6 +54,14 @@ public class CurrencyGuard {
         this.rateFields = Set.of(rateFields.split("\\s*,\\s*"));
     }
 
+    /**
+     * 检查 MQL 是否存在“跨币种金额聚合”风险。
+     * <p>规则：仅在开启开关、存在未折算货币聚合、且查询没有按 currency 分组/过滤时返回告警；否则返回空列表。
+     * 此方法不阻塞流程，仅作为 Warning，不改变查询执行结果。
+     *
+     * @param mql 当前待执行查询模型
+     * @return 警告文本列表；无风险返回空列表
+     */
     public List<String> check(Mql mql) {
         if (!enabled || mql == null) return List.of();
         if (!hasUnconvertedMoneyAggregation(mql)) return List.of(); // 无货币聚合，或全部已折算
@@ -42,7 +71,13 @@ public class CurrencyGuard {
                 + "建议按 " + CURRENCY + " 分组、过滤到单一币种，或用汇率折算成统一本位币。");
     }
 
-    /** 存在「未折算」的货币聚合：裸 sum/avg(amount)；fieldExpr 里乘了汇率字段的视为已折算 */
+    /**
+     * 检查是否存在「未折算」货币聚合。
+     * <ul>
+     *   <li>sum/avg 直接作用于金额字段；视作未折算。</li>
+     *   <li>表达式算子中只要任一操作数是金额字段且非乘汇率也视作未折算。</li>
+     * </ul>
+     */
     private boolean hasUnconvertedMoneyAggregation(Mql mql) {
         for (Mql.Metric m : nz(mql.metrics)) {
             if (isMoneyAgg(m) && !isConvertedAgg(m)) return true;
@@ -54,6 +89,11 @@ public class CurrencyGuard {
         return false;
     }
 
+    /**
+     * 判断 metric 是否为金额聚合。
+     * @param m 待判断 metric
+     * @return op 为 sum/avg 且字段或表达式操作数在 moneyFields 里时返回 true
+     */
     private boolean isMoneyAgg(Mql.Metric m) {
         if (m == null || m.op == null) return false;
         String op = m.op.toLowerCase();
@@ -67,13 +107,20 @@ public class CurrencyGuard {
         return false;
     }
 
-    /** 已折算判定：fieldExpr 为乘法且一侧是汇率字段（能过校验即说明汇率表在本查询作用域内） */
+    /**
+     * 判断是否为已折算金额表达式。
+     * 约定：表达式为乘法，且任一侧是 rateFields 时视作已折算。
+     * <p>同时假设字段引用通过校验阶段，说明汇率字段已存在于可访问字段范围内。
+     */
     private boolean isConvertedAgg(Mql.Metric m) {
         if (m == null || m.fieldExpr == null || !"*".equals(m.fieldExpr.arith)) return false;
         if (m.fieldExpr.left != null && rateFields.contains(unqualified(m.fieldExpr.left))) return true;
         return m.fieldExpr.right instanceof String s && rateFields.contains(unqualified(s));
     }
 
+    /**
+     * 是否有任一参与表含 currency 列（主表或 join 表）。
+     */
     private boolean anyTableHasCurrency(Mql mql) {
         if (schema.hasColumn(mql.table, CURRENCY)) return true;
         for (Mql.Join j : nz(mql.joins)) {
@@ -82,6 +129,9 @@ public class CurrencyGuard {
         return false;
     }
 
+    /**
+     * 是否在 groupBy 中显式引入 currency 分组键。
+     */
     private boolean groupByHasCurrency(Mql mql) {
         for (String g : nz(mql.groupBy)) {
             if (CURRENCY.equals(unqualified(g))) return true;
@@ -89,6 +139,9 @@ public class CurrencyGuard {
         return false;
     }
 
+    /**
+     * 条件是否命中 currency 过滤（全局 where 或指标 where），命中则降级为已限定币种。
+     */
     private boolean filterMentionsCurrency(Mql mql) {
         if (conditionsMentionCurrency(mql.filter)) return true;
         // 条件聚合里限定了币种也算（如 sum(amount where currency='CNY')）
@@ -102,6 +155,10 @@ public class CurrencyGuard {
         return false;
     }
 
+    /**
+     * 条件树扫描：递归检查 and/or 子句是否出现 currency 字段。
+     * 采用深度优先，任何命中即返回 true。
+     */
     private boolean conditionsMentionCurrency(List<Mql.Condition> conds) {
         for (Mql.Condition c : nz(conds)) {
             if (c == null) continue;
@@ -112,12 +169,18 @@ public class CurrencyGuard {
         return false;
     }
 
+    /**
+     * 去掉列的表前缀（如 table.field -> field），便于字段名集合匹配。
+     */
     private static String unqualified(String ref) {
         if (ref == null) return null;
         int dot = ref.indexOf('.');
         return dot >= 0 ? ref.substring(dot + 1) : ref;
     }
 
+    /**
+     * 空列表兜底，避免频繁的 null-check 分支。
+     */
     private static <T> List<T> nz(List<T> l) {
         return l == null ? List.of() : l;
     }

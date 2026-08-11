@@ -37,6 +37,10 @@ public class EvalService {
     /** case 并行度：1=串行；调大前先确认 LLM 供应商 QPS 配额（限流会把准确率打成假象）。 */
     private final int parallelism;
 
+    /**
+     * 构造器：注入执行器、解析器与阈值配置。
+     * parallelism 低于 1 时自动修正为 1，避免线程池异常。
+     */
     public EvalService(Nl2SqlService nl2sql, DSLContext dsl, ObjectMapper mapper,
                        @org.springframework.beans.factory.annotation.Value(
                                "${eval.fewshot-leakage-threshold:0.9}") double fewshotLeakageThreshold,

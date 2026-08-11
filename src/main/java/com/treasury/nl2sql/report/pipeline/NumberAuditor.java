@@ -47,6 +47,7 @@ public final class NumberAuditor {
                 violations.add("引用了未通过质量校验的事实: {{" + key + "}}");
             }
         }
+        // 先去掉占位符再去白名单，保证 {{fact_xxx}} 内的数字不会误报为裸数字违例。
         String stripped = WHITELIST.matcher(PLACEHOLDER.matcher(draft).replaceAll(" "))
                 .replaceAll(" ");
         Matcher n = BARE_NUMBER.matcher(stripped);
@@ -99,6 +100,7 @@ public final class NumberAuditor {
         List<AuditResult.NumberCheck> details = new ArrayList<>();
         List<String> violations = new ArrayList<>();
         Matcher m = RENDERED.matcher(rendered);
+        // 逐条校验 rendered: fact引用必须存在且金额回算误差不超过展示单位半个最小刻度。
         StringBuilder residualBuf = new StringBuilder();
         int last = 0;
         while (m.find()) {
@@ -143,6 +145,10 @@ public final class NumberAuditor {
         return new AuditResult(passed, total, matched, rewriteRounds, violations, details);
     }
 
+    /**
+     * 解析终稿中单个「数值[fact_xxx]」的反解析结果。
+     * value 为回算后的标准值，tolerance 为单位约束下的容差（与展示位数相关）。
+     */
     private record Parsed(BigDecimal value, BigDecimal tolerance) {}
 
     /** 展示串反解析回 fact 数值空间：千分位/万元×10000/百分号/符号；单位与 fact.unit 不相容 → null（判不一致）。 */
@@ -180,6 +186,10 @@ public final class NumberAuditor {
         return new Parsed(raw, new BigDecimal("0.5"));
     }
 
+    /**
+     * 取违规段落附近上下文片段（字符级）用于可读性更好的问题报告。
+     * 刻意保留最多 15 字前后，兼顾上下文充分性与日志长度可控。
+     */
     private static String context(String s, int from, int to) {
         int a = Math.max(0, from - 15);
         int b = Math.min(s.length(), to + 15);

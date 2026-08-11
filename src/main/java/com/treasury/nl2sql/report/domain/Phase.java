@@ -1,6 +1,10 @@
 package com.treasury.nl2sql.report.domain;
 
-/** 6 步流水线的步骤标识（report_run.phase / report_step.phase）。 */
+/**
+ * 6 步流水线的步骤标识（report_run.phase / report_step.phase）。
+ * 该枚举与状态机解耦：流程推进由 ReportPipeline 与服务层显式分支负责，
+ * 任何“跳步”都应在调用方做幂等检查后才能发生。
+ */
 public enum Phase {
     /** ① 需求 → 大纲（LLM，同步） */
     OUTLINE,

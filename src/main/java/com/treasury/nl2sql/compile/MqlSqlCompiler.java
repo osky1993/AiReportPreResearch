@@ -19,8 +19,9 @@ import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
 
 /**
- * 把 MQL(IR) 确定性地编译成 jOOQ 查询。
- * jOOQ 负责：方言适配（MySQL/PG/...）、标识符转义、参数绑定（防注入）。
+ * MQL(IR) 到 jOOQ 的确定性编译器。
+ * <p>职责是将验证通过的 AST 映射为可执行 SelectQuery：保留语义、固定参数化风格、统一方言适配。
+ * 与 validator 的关系是“后置映射、前置校验”——复杂语义边界先在校验器约束，编译器按固定规则渲染。</p>
  */
 @Component
 public class MqlSqlCompiler {
@@ -31,6 +32,10 @@ public class MqlSqlCompiler {
         this.dsl = dsl;
     }
 
+    /**
+     * 编译入口。主查询若存在 union，先逐段编译为子查询，再统一 wrap 一次进行外层 order/limit 注入，
+     * 这样既保证段内语义不被干扰，也保证最终分页/排序可被用户理解为“全局语义”。
+     */
     public SelectQuery<Record> compile(Mql mql) {
         if (safe(mql.union).isEmpty()) {
             return compileSegment(mql, true);
@@ -48,7 +53,10 @@ public class MqlSqlCompiler {
         return outer;
     }
 
-    /** 编译单段查询（union 各段 / 无 union 的整条）；includeOrderLimit=false 时顶层排序/限行交由外层处理 */
+    /**
+     * 编译单段查询（union 各段 / 无 union 的整条）。
+     * includeOrderLimit=false 时会把 orderBy/limit 留到上层统一注入，避免段内 orderBy/limit 影响 union 语义。
+     */
     private SelectQuery<Record> compileSegment(Mql mql, boolean includeOrderLimit) {
         SelectQuery<Record> q = dsl.selectQuery();
         q.addFrom(aliased(mql.table, mql.alias));
@@ -65,6 +73,7 @@ public class MqlSqlCompiler {
         }
 
         // ---- SELECT ----
+        // case/time 派生别名会被缓存到内存 Map，用于 groupBy 时“别名 -> 表达式”反查，避免重复构造导致表达式不一致。
         // case/time 派生维度按别名索引:groupBy 引用别名时,SELECT/GROUP BY 展开为同一表达式
         // (GROUP BY 不下放别名,确定性满足 ONLY_FULL_GROUP_BY)
         Map<String, Mql.CaseColumn> caseByAlias = new LinkedHashMap<>();
@@ -97,6 +106,7 @@ public class MqlSqlCompiler {
             }
         }
         // 聚合后开窗：窗口须作用于聚合结果，窗口列不进本层 SELECT（在外层派生表加）
+        // 这样做是为了保证窗口字段能看到“聚合产物”而不是明细行。
         boolean aggregated = !safe(mql.groupBy).isEmpty() || !safe(mql.metrics).isEmpty();
         boolean aggWindow = aggregated && !safe(mql.windows).isEmpty();
         if (!aggWindow) {
@@ -127,6 +137,7 @@ public class MqlSqlCompiler {
 
         // ---- 聚合后开窗：聚合内层 + 窗口外层（SELECT g.*, 窗口列 FROM (聚合) g） ----
         // 窗口引用的都是内层输出的裸名（groupBy 列/派生别名/metric 别名，校验器已保证）
+        // 该路径保证“先聚合再开窗”与“开窗再 qualify/分页”顺序正确。
         if (aggWindow) {
             SelectQuery<Record> win = dsl.selectQuery();
             win.addSelect(DSL.asterisk());
@@ -152,6 +163,10 @@ public class MqlSqlCompiler {
         return q;
     }
 
+    /**
+     * 统一处理排序分页的公共方法。
+     * 统一入口可以避免 UNION/QUALIFY 下出现重复语义注入，且保证方向字符串容错为 asc/desc（默认 asc）。
+     */
     private void addOrderAndLimit(SelectQuery<Record> q, List<Mql.Sort> orderBy, Integer limit) {
         List<OrderField<?>> orders = new ArrayList<>();
         for (Mql.Sort s : safe(orderBy)) {
@@ -162,12 +177,19 @@ public class MqlSqlCompiler {
         if (limit != null) q.addLimit(limit);
     }
 
-    /** 渲染成可读 SQL（值内联，便于展示/排查；执行仍走参数化的 query 对象） */
+    /**
+     * 渲染成可读 SQL（值内联），用于日志、问题排查与结果回溯；
+     * 实际执行依旧使用 SelectQuery 参数绑定，避免拼接风险。
+     */
     public String renderSql(SelectQuery<Record> query) {
         return dsl.renderInlined(query);
     }
 
-    /** 顶层聚合：派生表达式(expr) 或 单聚合(可含条件聚合 filter) */
+    /**
+     * 顶层聚合列构建：
+     * - expr 形态表示“聚合结果再算术组合”，在 SQL 层先聚合再做 + - * /；
+     * - 普通形态则构造单一 count/sum/avg/min/max。
+     */
     private Field<? extends Number> aggregate(Mql.Metric m) {
         if (m.expr != null) {
             Field<BigDecimal> l = aggregateLeaf(m.expr.left).cast(BigDecimal.class);
@@ -183,7 +205,12 @@ public class MqlSqlCompiler {
         return aggregateLeaf(m);
     }
 
-    /** 单个聚合；若带 filter 则编译为条件聚合 SUM(CASE WHEN cond THEN field END) */
+    /**
+     * 单个聚合构建。
+     * - count 支持 field 可空（count *）；
+     * - count distinct 走专用算子；
+     * - 其他聚合结合 filter 使用 CASE WHEN 封装为条件聚合。
+     */
     @SuppressWarnings("unchecked")
     private Field<? extends Number> aggregateLeaf(Mql.Metric m) {
         // Expr 操作数位的数字常量（如占比×100）：直接内联
@@ -216,7 +243,7 @@ public class MqlSqlCompiler {
         };
     }
 
-    /** 行级二元表达式：left arith right（right=列或数字常量；校验器已保证类型） */
+    /** 行级二元表达式（a op b）到字段映射，b 支持列名或数字常量。 */
     private Field<BigDecimal> fieldExprField(Mql.FieldExpr fe) {
         Field<BigDecimal> l = field(nm(fe.left), BigDecimal.class);
         Field<BigDecimal> r = (fe.right instanceof Number n)
@@ -231,7 +258,7 @@ public class MqlSqlCompiler {
         };
     }
 
-    /** 窗口函数列：排名（row_number/rank/dense_rank）、聚合开窗（sum/avg/count over）或偏移取值（lag/lead） */
+    /** 窗口函数映射：排名、聚合 over、lag/lead。 */
     private Field<?> windowField(Mql.WindowSpec w) {
         WindowSpecification spec = windowSpec(w);
         int offset = w.offset == null ? 1 : w.offset;
@@ -249,7 +276,10 @@ public class MqlSqlCompiler {
         };
     }
 
-    /** OVER(...) 规格：partitionBy / orderBy 至少一项（校验器已保证） */
+    /**
+     * OVER 规格映射：若提供 partition 且无 order，则走 PARTITION BY；
+     * 若仅有 order，则保留纯 orderBy。
+     */
     private WindowSpecification windowSpec(Mql.WindowSpec w) {
         List<Field<?>> parts = new ArrayList<>();
         for (String p : safe(w.partitionBy)) parts.add(fld(p));
@@ -263,7 +293,10 @@ public class MqlSqlCompiler {
         return DSL.orderBy(ords);
     }
 
-    /** groupBy 项：case/time 派生别名 → 展开为表达式（带 as）；否则普通列 */
+    /**
+     * groupBy 映射：别名命中时展开派生表达式，否则按普通列。
+     * 该行为使 SELECT/GROUP BY 在 case/time 场景下一致引用，避免 SQL 层语义漂移。
+     */
     private SelectFieldOrAsterisk derivedOrPlain(String ref, Map<String, Mql.CaseColumn> caseByAlias,
                                                  Map<String, Mql.TimeColumn> timeByAlias) {
         Mql.CaseColumn cc = caseByAlias.get(ref);
@@ -274,9 +307,7 @@ public class MqlSqlCompiler {
     }
 
     /**
-     * 时间截断：统一渲染为字符串（跨年安全、可字典序排序）。
-     * date_format 为 MySQL 专用（多方言已在 LongTermTODO 正式放弃）；
-     * 函数名/格式串均出自本方法白名单常量，列名走 nm() 转义，无注入面。
+     * 时间函数映射为字符串维度，便于月份/季度等跨年可排序比较。
      */
     private Field<?> timeField(Mql.TimeColumn tc) {
         Field<Object> col = fld(tc.field);
@@ -292,7 +323,9 @@ public class MqlSqlCompiler {
         };
     }
 
-    /** CASE WHEN 派生维度：按序 WHEN，缺省 else 即 NULL；then/else 为常量（校验器已保证标量） */
+    /**
+     * CASE WHEN 的 DSL 构造。按 when 顺序拼接，缺省 else 不额外追加（jOOQ 表达式默认 NULL）。
+     */
     private Field<?> caseField(Mql.CaseColumn cc) {
         CaseConditionStep<Object> step = null;
         for (Mql.CaseWhen cw : cc.cases) {
@@ -303,13 +336,18 @@ public class MqlSqlCompiler {
         return cc.elseValue != null ? step.otherwise(DSL.val(cc.elseValue)) : step;
     }
 
-    /** 表源：有别名则取别名（自连接靠别名区分同一张表） */
+    /**
+     * 构建表引用：有别名直接作为 SQL alias 使用，避免同名表在自连接下混淆。
+     */
     private static Table<?> aliased(String tableName, String alias) {
         Table<?> t = table(name(tableName));
         return (alias == null || alias.isBlank()) ? t : t.as(alias);
     }
 
-    /** 连接条件：字段 op 字段（支持非等值），或字段 op 常量（LEFT JOIN 右表口径条件，参数绑定） */
+    /**
+     * 连接条件映射。字段-字段与字段-常量均走参数绑定，保证注入面可控；
+     * 同时支持非等值连接，便于表达业务口径差异条件。
+     */
     @SuppressWarnings("unchecked")
     private Condition joinCondition(Mql.On o) {
         Field<Object> l = fld(o.left);
@@ -337,7 +375,10 @@ public class MqlSqlCompiler {
         };
     }
 
-    /** 解析字段引用： "表名.列名" -> Name(表,列)； "列名" -> Name(列) */
+    /**
+     * 字段名语法归一化：表名.列名 与 单列名两种写法。
+     * 真正的表列存在性已在 validator 完成，这里只负责语法级映射。
+     */
     private static Name nm(String ref) {
         if (ref != null && ref.contains(".")) {
             String[] p = ref.split("\\.", 2);
@@ -346,10 +387,15 @@ public class MqlSqlCompiler {
         return name(ref);
     }
 
+    /** 通用字段包装：统一走 nm(ref) 做转义。 */
     private static Field<Object> fld(String ref) {
         return field(nm(ref));
     }
 
+    /**
+     * 条件树递归映射到 jOOQ Condition：
+     * 支持逻辑组（AND/OR）与叶子比较（字段/操作符/常量或 subquery）。
+     */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Condition toCondition(Mql.Condition c) {
         // 组节点：递归

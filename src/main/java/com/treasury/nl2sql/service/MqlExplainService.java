@@ -60,6 +60,17 @@ public class MqlExplainService {
         this.mapper = mapper;
     }
 
+    /**
+     * 将 MQL 反向翻译为可核对口径。
+     * 执行顺序：
+     * <ol>
+     *   <li>先做反序列化 + 白名单校验；失败则 400/业务拒绝，绝不调用 LLM。</li>
+     *   <li>命中 LRU 缓存直接返回，减少重复解释开销。</li>
+     *   <li>构造系统提示 + 原始 MQL，单次重试一次并清洗 markdown fence。</li>
+     *   <li>解析 description/caveats，失败则抛出说明性异常。</li>
+     * </ol>
+     * 失败关闭策略：只对成功解析并通过校验的输入生成解释；解释失败不会写数据库，不产生副作用。
+     */
     public Explanation explain(JsonNode mqlNode, Mode mode) {
         // 确定性前置闸：垃圾输入不烧 token；也是对前端回传 MQL 的服务端重校验
         Mql mql;
@@ -103,6 +114,7 @@ public class MqlExplainService {
         return result;
     }
 
+    /** 根据口径语境组装系统提示词，限定只描述 MQL 可见语义，禁止臆测结果。 */
     private String systemPrompt(JsonNode mqlNode, Mode mode) {
         Set<String> tables = new LinkedHashSet<>();
         collectTables(mqlNode, tables);
@@ -141,7 +153,7 @@ public class MqlExplainService {
             """.formatted(intro, schema.assemble(tables), modeRules);
     }
 
-    /** 递归收集 MQL 里出现的全部表名（顶层/joins/subquery/union）。 */
+    /** 递归收集 MQL 里出现的全部表名（顶层/joins/subquery/union）；用于拼装 schema 辅助上下文。 */
     private static void collectTables(JsonNode node, Set<String> out) {
         if (node == null) return;
         if (node.isObject()) {
@@ -153,6 +165,10 @@ public class MqlExplainService {
         }
     }
 
+    /**
+     * LLM 调用带一次修复重试：首轮若非合法 JSON，追加“只输出 JSON”的纠错提示再尝试一次。
+     * 二次仍失败则抛出业务拒绝（避免吞掉模型漂移噪音）。
+     */
     private JsonNode completeWithOneRetry(List<LlmClient.Message> conversation) {
         String raw = llm.completeJson(conversation);
         try {
@@ -169,6 +185,7 @@ public class MqlExplainService {
         }
     }
 
+    /** 去除可能出现的 markdown fence（```json）后 trim，避免反序列化污染。 */
     private static String stripFence(String s) {
         if (s == null) return "";
         String t = s.trim();

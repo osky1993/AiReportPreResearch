@@ -29,18 +29,26 @@ import java.util.Set;
 @Component
 public class AttributionStep {
 
+    /** 归因日志：记录 LLM 原始输出与降级/补齐事件，支撑审计可追溯。 */
     private static final Logger log = LoggerFactory.getLogger(AttributionStep.class);
+    /** 归因叙述硬上限，超限直接 fail-closed，避免无证据长文本被接受。 */
     private static final int NARRATIVE_MAX = 200;
 
+    /** LLM 只用于 11 号纪律“归因措辞重写”，主规则仍由服务端和 ⑥ 审计兜底。 */
     private final LlmClient llm;
+    /** 反序列化/JSON 容错依赖（包含一次 fence 修复重试）。 */
     private final ObjectMapper mapper;
 
+    /** 通过构造注入；当前步骤没有内部状态，不涉及数据库副作用。 */
     public AttributionStep(LlmClient llm, ObjectMapper mapper) {
         this.llm = llm;
         this.mapper = mapper;
     }
 
-    /** @param candidatesByAnomaly 异动 factKey → EVT 候选（程序生成） */
+    /**
+     * 归因主流程：按 11 号纪律要求，对每条异动强制 1:1 产出 claim（缺失时回填 observed）。
+     * 每条 claim 仅能从候选证据集中选择 refs，并经过服务端 gate；无效引用或非法等级立即 POLICY 失败。
+     */
     public List<ClaimRecord> run(List<AnomalyDetector.Anomaly> anomalies,
                                  List<FactRecord> contributionFacts,
                                  Map<String, List<EventMatcher.Candidate>> candidatesByAnomaly,
@@ -62,6 +70,7 @@ public class AttributionStep {
                 throw new PolicyException("归因引用了不存在的异动事实「" + anomalyKey + "」（候选制被绕过，失败关闭）");
             }
             if (byAnomaly.containsKey(anomalyKey)) continue;   // 每异动一条，多余的忽略
+            // 同一异动多条输出时只保留首条，避免 LLM 重复返回导致 claim 维度被后写覆盖。
             byAnomaly.put(anomalyKey, gate(c, anomaly, contributionFacts,
                     candidatesByAnomaly.getOrDefault(anomalyKey, List.of()), ++seq, notes));
         }
@@ -79,7 +88,14 @@ public class AttributionStep {
         return claims;
     }
 
-    /** 服务端把关：证据越界失败关闭；等级越权降级；长度与裸数字约束。 */
+    /**
+     * 服务端把关：
+     * <ul>
+     *   <li>evidenceRefs 必须在允许集合内，否则直接失败（防止 prompt 幻觉注入）；</li>
+     *   <li>等级超上限只降级，不立即失败，保证有证据就先保留可读归因链路；</li>
+     *   <li>叙述长度与禁数字约束在此硬性拦截。</li>
+     * </ul>
+     */
     private ClaimRecord gate(JsonNode c, AnomalyDetector.Anomaly anomaly, List<FactRecord> contributionFacts,
                              List<EventMatcher.Candidate> candidates, int seq, List<String> notes) {
         String anomalyKey = anomaly.fact().factKey();
@@ -113,6 +129,7 @@ public class AttributionStep {
                 ClaimRecord.LEVEL_HYPOTHESIS).contains(level)) {
             throw new PolicyException("归因等级非法「" + level + "」（confirmed 仅卡点2 人工勾选可达）");
         }
+        // narrative 不能走空白和超长路径：空叙述会让后续 ⑤ 与 ⑥ 失去可解释性。
         String narrative = c.path("narrative").asText("").trim();
         if (narrative.isBlank() || narrative.length() > NARRATIVE_MAX) {
             throw new PolicyException("归因叙述为空或超长（≤" + NARRATIVE_MAX + " 字）: " + anomalyKey);
@@ -129,6 +146,7 @@ public class AttributionStep {
         };
     }
 
+    /** 缺失归因回补，固定使用 observed + single fact + 待查口径，保证异常完整性。 */
     private static ClaimRecord fallbackClaim(AnomalyDetector.Anomaly a, int seq) {
         return new ClaimRecord(String.format("cl_%03d", seq), a.fact().factKey(),
                 ClaimRecord.LEVEL_OBSERVED, List.of(a.fact().factKey()),
@@ -200,6 +218,7 @@ public class AttributionStep {
         }
     }
 
+    /** 去除 LLM 代码围栏；失败场景仍保留文本用于日志和重试。 */
     private static String stripFence(String s) {
         if (s == null) return "";
         String t = s.trim();

@@ -10,8 +10,9 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * ⑤ prompt 组装单测（P4-T1）：章节 stylePrompt 只进 user 段材料并声明服从铁律；
- * system 铁律段与模板资产完全解耦、不被任何用户可编辑内容污染。
+ * WriteStep prompt 组装单测（⑤ 对接 LLM 前置保护）。
+ * 验证 stylePrompt 仅进入 user 文本、system 铁律不受模板污染；
+ * 事实按章节分组、序列 fact 隐藏、维度 fact 仅加表格提示，不泄漏不应出现的图表细节。
  */
 class WriteStepPromptTest {
 
@@ -24,6 +25,10 @@ class WriteStepPromptTest {
                 List.of());
     }
 
+    /**
+     * 输入：两章 stylePrompt 都有内容。
+     * 预期：二者都注入 user prompt，并附“冲突以铁律为准”说明。
+     */
     @Test
     void stylePromptIsInjectedPerChapterInUserPrompt() {
         String user = step.userPrompt(outline("电报式短句", "多用长句铺陈"), List.of(), List.of());
@@ -35,12 +40,20 @@ class WriteStepPromptTest {
         assertTrue(user.contains("指引一") && user.contains("指引二"));
     }
 
+    /**
+     * 输入：某章 stylePrompt 为空。
+     * 预期：不出现风格要求字段，prompt 生成对空样式保持干净。
+     */
     @Test
     void blankOrNullStylePromptAddsNothing() {
         String user = step.userPrompt(outline(null, "  "), List.of(), List.of());
         assertFalse(user.contains("风格要求"), "无 stylePrompt 的章节不应出现风格段");
     }
 
+    /**
+     * 输入：读取 systemPrompt。
+     * 预期：常量铁律不混入模板内容，证明 system 与 user 语境隔离。
+     */
     @Test
     void systemPromptIsNotPollutedByStylePrompt() {
         String system = step.systemPrompt();
@@ -51,6 +64,10 @@ class WriteStepPromptTest {
         // run() 的对话组装里 system 也必须与模板无关——systemPrompt() 无参本身就是证明
     }
 
+    /**
+     * 输入：章节 fact 存在。
+     * 预期：同章聚合并按 chapter 过滤，不混入其他章节数据。
+     */
     @Test
     void factsStillGroupedPerChapter() {
         FactRecord f1 = new FactRecord("fact_001", "m1", 1, "指标一", "c1", "BASE",
@@ -59,6 +76,10 @@ class WriteStepPromptTest {
         assertTrue(user.contains("fact_001"));
     }
 
+    /**
+     * 输入：包含 CHART_SERIES + CURRENT 同时存在。
+     * 预期：仅 CURRENT 类 fact 进入 prompt，图表序列 fact 被排除。
+     */
     @Test
     void chartSeriesFactsAreExcludedFromPrompt() {
         // 序列 fact（spec purpose=CHART_SERIES）不进 ⑤ 的章节 facts JSON——LLM 零接触图表数据
@@ -73,6 +94,10 @@ class WriteStepPromptTest {
         assertFalse(user.contains("fact_c01_s1"), "序列 fact 不得出现在 prompt");
     }
 
+    /**
+     * 输入：仅维度 fact 出现在某章节。
+     * 预期：仅该章节附加 markdown 表格展示提示，且 dimensions 信息在 JSON 中可见。
+     */
     @Test
     void dimensionalFactsTriggerTableGuidanceOnlyInTheirChapter() {
         FactRecord dim = new FactRecord("fact_001_usd", "m1", 1, "指标一（USD）", "c1", "BASE",

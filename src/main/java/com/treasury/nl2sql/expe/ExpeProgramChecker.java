@@ -33,6 +33,11 @@ public class ExpeProgramChecker {
      * wholeText=JSON 时 title+summary+全部章节正文，Markdown 时为原文全文。
      */
     public record ParsedOutput(JsonNode root, boolean usedFence, boolean fromMarkdown, String wholeText, String raw) {
+        /**
+         * 解析是否成功。
+         * <p>
+         * 成功与否是 RULE 组装前的基础闸门：parse 失败直接走 FAIL，避免下游规则基于空结构作误判。
+         */
         public boolean parsed() { return root != null; }
     }
 
@@ -50,7 +55,11 @@ public class ExpeProgramChecker {
         this.mapper = mapper;
     }
 
-    /** 解析被评输出：先按 JSON 解析（含剥围栏），失败再按 Markdown 结构解析；均失败则仅保留纯文本 */
+    /**
+     * 解析被评输出。
+     * <p>顺序：先尝试纯 JSON，再尝试剥离代码围栏后的 JSON；都失败则 fallback 到 Markdown。
+     * 任一解析失败都不会抛异常，返回结构中的失败信息交给各规则继续判定。
+     */
     public ParsedOutput parse(String content) {
         String trimmed = content == null ? "" : content.trim();
         JsonNode root = tryParse(trimmed);
@@ -84,7 +93,11 @@ public class ExpeProgramChecker {
         }
     }
 
-    /** Markdown 结构化：# → title，## → sections（name 去序号前缀，content 至下一个 ≤2 级标题，evidence=正文方括号标识）。无任何标题时返回 null */
+    /**
+     * Markdown 结构化解析。
+     * 规则：# 为 title，## 为 section，三级标题作为当前 section 正文的一部分，遇到下一个 section 前都归并；
+     * section title 先做前缀归一化（去掉编号），并抽取正文内证据 token。
+     */
     private JsonNode parseMarkdown(String text) {
         String title = null;
         List<String[]> sections = new ArrayList<>();   // [name, content]
@@ -139,7 +152,10 @@ public class ExpeProgramChecker {
         return tokens;
     }
 
-    /** 执行单条 PROGRAM 规则；validEvidenceIds/dataRoot 来自该生成任务冻结的 data.json */
+    /**
+     * 执行单条 PROGRAM 规则。
+     * <p>所有规则通过 `checker` 分发：未知 checker 直接返回 ERROR；任何异常统一转 ERROR，避免规则 bug 影响全量评估。
+     */
     public RuleVerdict check(Rule rule, ParsedOutput out, Set<String> validEvidenceIds, JsonNode dataRoot) {
         try {
             JsonNode spec = rule.checkSpec();
@@ -169,6 +185,7 @@ public class ExpeProgramChecker {
 
     // ---------- 各校验器 ----------
 
+    /** JSON 载体结构检查：title/summary/sections 三元约束 + evidence 数组约束。 */
     private RuleVerdict jsonSchema(Rule rule, ParsedOutput out, JsonNode p) {
         if (!out.parsed() || out.fromMarkdown()) return fail(rule, null, "输出无法解析为 JSON 对象");
         boolean allowFence = !p.hasNonNull("allow_fence") || p.get("allow_fence").asBoolean();
@@ -225,6 +242,7 @@ public class ExpeProgramChecker {
         return names;
     }
 
+    /** 要求 section 名称序列与预期完全一致（顺序+长度都要一致）。 */
     private RuleVerdict sectionNamesEquals(Rule rule, ParsedOutput out, JsonNode p) {
         if (!out.parsed()) return fail(rule, null, "输出无结构，无法定位章节");
         List<String> actual = sectionNames(out);
@@ -410,7 +428,10 @@ public class ExpeProgramChecker {
 
     private static final Pattern SECTION_BY_NAME = Pattern.compile("\\$\\.sections\\[\\?name='(.+?)'\\]\\.content");
 
-    /** 返回 null=需要结构但不可解析；返回空列表=结构可解析但目标缺失。章节名按归一化后比对 */
+    /**
+     * 按 target 语法定位待检查字段。
+     * 返回 null 表示输出结构不可解析；返回空列表表示结构可解析但字段缺失。支持整文、title、summary、sections 内容、按章名定位。
+     */
     List<String> resolveTarget(String target, ParsedOutput out) {
         if ("whole_text".equals(target)) return List.of(out.wholeText());
         if (!out.parsed()) return null;

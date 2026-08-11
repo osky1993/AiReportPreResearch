@@ -18,10 +18,13 @@ import java.util.Map;
  */
 public final class ChartAuditor {
 
+    /** 防止实例化，统一静态工具风格。 */
     private ChartAuditor() {}
 
+    /** 绑定核对结果：chartId 绑定索引便于日志和发布失败聚合。 */
     public record ChartCheck(String chartId, boolean ok, String detail) {}
 
+    /** 批量核对入口：对每张图执行逐点核验，返回可汇总的审计明细。 */
     public static List<ChartCheck> audit(ObjectMapper mapper, List<ChartRecord> charts,
                                          Map<String, FactRecord> factsByKey) {
         List<ChartCheck> checks = new ArrayList<>();
@@ -35,10 +38,12 @@ public final class ChartAuditor {
         return checks.stream().allMatch(ChartCheck::ok);
     }
 
+    /** 单图核对：解析 option，校验点数、fact 引用存在性与数值严格相等。任一失败立即返回细节。 */
     private static ChartCheck auditOne(ObjectMapper mapper, ChartRecord chart,
                                        Map<String, FactRecord> factsByKey) {
         List<BigDecimal> data;
         try {
+            // option 解析失败直接 fail-closed，阻止把“配置错误”掩盖成内容通过。
             data = seriesData(mapper.readTree(chart.optionJson()));
         } catch (Exception e) {
             return new ChartCheck(chart.chartId(), false, "option JSON 无法解析: " + e.getMessage());
@@ -53,9 +58,10 @@ public final class ChartAuditor {
             if (fact == null) {
                 return new ChartCheck(chart.chartId(), false, "第 " + (i + 1) + " 点引用了不存在的事实: " + key);
             }
+            // 绑定关系可追溯、值域一致是“图表不歪曲事实”的核心约束；不做近似比较，确保回放可重算。
             if (fact.value() == null || data.get(i).compareTo(fact.value()) != 0) {
                 return new ChartCheck(chart.chartId(), false, "第 " + (i + 1) + " 点数值 " + data.get(i)
-                        + " ≠ 事实 " + key + " 的值 " + fact.value() + "（严格相等）");
+                    + " ≠ 事实 " + key + " 的值 " + fact.value() + "（严格相等）");
             }
         }
         return new ChartCheck(chart.chartId(), true, data.size() + " 点逐点核对一致");

@@ -12,9 +12,10 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * ② 语义解析纯逻辑单测（Phase03 多比较管线）。
- * 特征测试（护 47 条评测基线）：旧单窗口签名与新 Map 窗口签名对周报输入的输出必须逐条相等——
- * spec 编号（qs_%03d）是 fact 编号的地基，漂移即打碎全部既有期望值。
+ * SpecResolveStep 语义拆解单测（纯逻辑）。重点校验：
+ * 周/月/季周期下 comparison 的 spec 生成顺序、legacy 与 map 窗口签名兼容、
+ * 图表序列 spec 的去重与排序，以及缺窗口时 fail-closed 行为。
+ * specId 序列是后续 fact 编号的稳定边界，漂移会影响大量回放用例。
  */
 class SpecResolveStepTest {
 
@@ -36,6 +37,10 @@ class SpecResolveStepTest {
     private static final PeriodResolver.Window W26 = PeriodResolver.resolve("2026-W26");
     private static final PeriodResolver.Window M06 = PeriodResolver.resolve("2026-M06");
 
+    /**
+     * 输入：legacy 周报 comparison 与 map 入参。
+     * 预期：两种签名下输出完全一致，且 qs 编号顺序稳定。
+     */
     @Test
     void legacyWeeklyOutputIsIdenticalAcrossSignatures() {
         // 周报形态：ch1 环比章（m1 可比、m2 不可比、m3 快照），ch2 无比较章（m4）
@@ -61,6 +66,10 @@ class SpecResolveStepTest {
         assertEquals("m1", legacy.get(4).metricId());
     }
 
+    /**
+     * 输入：月报同时声明 MOM 与 YOY。
+     * 预期：按 CURRENT -> COMPARE -> COMPARE_YOY 阶段化顺序产出，方便下游执行分块。
+     */
     @Test
     void yoySpecsAreEmittedAfterCompareBlock() {
         Outline outline = new Outline("tpl", "2026-M06", List.of(
@@ -84,6 +93,10 @@ class SpecResolveStepTest {
         assertEquals("2025-06-30", specs.get(4).periodEnd());
     }
 
+    /**
+     * 输入：派生指标（如 net= in-out）声明同比。
+     * 预期：除派生本身，还要为 operands 生成 compare-YOY 取数 spec。
+     */
     @Test
     void derivedMetricOperandsGetYoySpecsToo() {
         MetricDefinition derived = new MetricDefinition("net", "净流入", "CNY", true, true, null, "ZERO",
@@ -103,6 +116,10 @@ class SpecResolveStepTest {
                 specs.stream().map(MetricQuerySpec::purpose).toList());
     }
 
+    /**
+     * 输入：缺少 required compare window。
+     * 预期：抛异常，避免 silent 漏报导致空数据。
+     */
     @Test
     void missingWindowForDeclaredComparisonFailsClosed() {
         Outline outline = new Outline("tpl", "2026-M06", List.of(
@@ -120,6 +137,10 @@ class SpecResolveStepTest {
         return new Outline.OutlineChapter(id, "章" + id, List.of(metricIds), null, null, "g", null, List.of(chart));
     }
 
+    /**
+     * 输入：包含趋势图定义 + 历史周期。
+     * 预期：产出当前值 + CHART_SERIES（历史旧到新）并去重。
+     */
     @Test
     void chartSeriesSpecsAreEmittedLastOldestFirst() {
         Outline outline = new Outline("tpl", "2026-W26", List.of(

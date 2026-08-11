@@ -4,6 +4,7 @@ package com.treasury.nl2sql.report.domain;
  * 报告运行状态（刻意不做状态机类，编排器里 if/switch 推进）。
  * 主线：AWAITING_OUTLINE_APPROVAL → RUNNING → AWAITING_PUBLISH_APPROVAL → PUBLISHED。
  * 任一步失败关闭 → BLOCKED（blocked_reason 前缀 [POLICY]=业务性停止 / [EXCEPTION]=意外异常）。
+ * 除 REJECTED 外均有恢复路径，但 BLOCKED 没有自动重试（人工复核+任务重提为恢复机制）。
  */
 public enum RunStatus {
     /** ① 大纲已生成，等待人工确认口径（HITL 卡点1） */

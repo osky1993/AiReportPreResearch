@@ -8,9 +8,23 @@ import java.util.List;
  */
 public interface LlmClient {
 
+    /**
+     * 通用消息载体，使用 OpenAI 风格对话角色。
+     */
     record Message(String role, String content) {
+        /**
+         * 构造系统指令消息；该角色内容优先级最高，用于约束输出格式与失败关闭边界。
+         */
         public static Message system(String c) { return new Message("system", c); }
+
+        /**
+         * 构造用户消息；通常承载原始问题、补充说明、以及“重试时的纠偏指令”。
+         */
         public static Message user(String c)   { return new Message("user", c); }
+
+        /**
+         * 构造已完成轮次的模型输出；用于把错误上下文追加到同一轮对话，提升下一次修复成功率。
+         */
         public static Message assistant(String c) { return new Message("assistant", c); }
     }
 
@@ -19,7 +33,10 @@ public interface LlmClient {
      */
     String completeJson(List<Message> messages);
 
-    /** token 用量（P6 观测；供应商不返回 usage 时字段为 null）。 */
+    /**
+     * token 用量（P6 观测；供应商不返回 usage 时字段为 null）。
+     * null 与 0 有语义差异：前者表示未上报，后者表示上报为 0。
+     */
     record Usage(Integer promptTokens, Integer completionTokens) {}
 
     /** 补全结果 + 用量明细（usage 可为 null——观测层必须把「未计量」与 0 区分开）。 */

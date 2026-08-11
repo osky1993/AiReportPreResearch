@@ -43,6 +43,15 @@ public class LineageService {
     private final TemplateAssetRepository templateRepo;
     private final ObjectMapper mapper;
 
+    /**
+     * @param runRepo 运行主表
+     * @param factRepo 事实表
+     * @param claimRepo 归因事实表
+     * @param eventRepo 事件维表
+     * @param metricRepo 指标资产仓库
+     * @param templateRepo 模板资产仓库
+     * @param mapper JSON 映射器
+     */
     public LineageService(ReportRunRepository runRepo, ReportFactRepository factRepo,
                           ClaimRepository claimRepo, EventRepository eventRepo,
                           MetricAssetRepository metricRepo, TemplateAssetRepository templateRepo,
@@ -56,6 +65,10 @@ public class LineageService {
         this.mapper = mapper;
     }
 
+    /**
+     * 组装单次运行血缘文档：读取 run/fact/claim/chart/events，不做二次计算。
+     * 任何实体断链抛 IllegalStateException；设计上保证 fail-closed——血缘要么完整可追溯，要么明确失败。
+     */
     public LineageAssembler.LineageDoc export(long runId) {
         ReportRun run = runRepo.findById(runId)
                 .orElseThrow(() -> new IllegalArgumentException("运行不存在: " + runId));
@@ -68,7 +81,10 @@ public class LineageService {
         return LineageAssembler.assemble(mapper, run, templateName, facts, claims, charts, events, metrics);
     }
 
-    /** 模板名按 run 固化版本取（版本行缺失 = 断链）；无版本号则回退 assetId。 */
+    /**
+     * 模板名按 run 固化版本取（版本行缺失 = 断链）。
+     * 若模板版本快照缺失是历史老数据（合法 absent）并由上层标注，不在这里硬失败。
+     */
     private String templateName(ReportRun run) {
         if (run.templateId() == null) return "";
         if (run.templateVersion() == null) return run.templateId();
@@ -80,6 +96,8 @@ public class LineageService {
 
     /** 按版本快照逐指标取定义并提取业务表；无快照返回 null（合法空 absent）。 */
     private List<LineageAssembler.MetricInput> metricInputs(ReportRun run) {
+        // 读取 run 固化快照，不读最新指标版本，确保可解释性的“快照可还原”；
+        // run.metricVersionsJson 缺失属于历史老数据，返回 null 交给装配器标记 absent。
         if (run.metricVersionsJson() == null || run.metricVersionsJson().isBlank()) return null;
         Map<String, Integer> snapshot;
         try {
@@ -117,6 +135,7 @@ public class LineageService {
         return new ArrayList<>(tables);
     }
 
+    /** 运行图表 JSON 解析失败即 fail-closed：血缘服务不允许静默吞掉结构漂移。 */
     private List<ChartRecord> parseCharts(String chartsJson) {
         if (chartsJson == null || chartsJson.isBlank()) return List.of();
         try {

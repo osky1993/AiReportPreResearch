@@ -28,6 +28,7 @@ public class EvalJobService {
     private volatile EvalService.EvalReport report;
     private volatile String error;
 
+    /** 状态仅有单槽执行器，注入执行服务后用于防并发起跑。 */
     public EvalJobService(EvalService evalService) {
         this.evalService = evalService;
     }
@@ -63,6 +64,9 @@ public class EvalJobService {
         return new StartResult(true, "评估任务已启动");
     }
 
+    /**
+     * 查询当前任务状态。运行中返回 done/total/currentQuestion，完成后带 report 或 error。
+     */
     public JobStatus status() {
         long elapsed = startedAt == 0 ? 0
                 : (finishedAt > 0 ? finishedAt : System.currentTimeMillis()) - startedAt;

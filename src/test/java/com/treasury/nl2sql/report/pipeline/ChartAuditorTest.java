@@ -12,8 +12,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * ⑥ 图表核对对抗单测（P4 契约2 三件，纪律 6 对抗先行）：
- * 篡改单点值 / 删点（点数不守恒）/ 幻引用（绑定不存在的 fact）逐条被拦；合法图零误伤。
+ * ⑥ ChartAuditor 稳定性对抗单测（纯逻辑）。验证图表 JSON 与 fact 绑定的一致性校验规则：
+ * 点位值必须等于绑定 fact 展开后的数值，点数量必须与绑定列表一一对应，引用必须存在，非法图表应失败关闭。
  */
 class ChartAuditorTest {
 
@@ -36,6 +36,10 @@ class ChartAuditorTest {
                 "{\"series\":[{\"type\":\"line\",\"data\":" + data + "}]}", keys);
     }
 
+    /**
+     * 输入：line/pie 两类合法图表（数据与 fact 对齐）。
+     * 预期：audit 检查通过，证明结构和聚合形态下的正常绑定路径正确。
+     */
     @Test
     void consistentChartPasses() {
         var checks = ChartAuditor.audit(mapper,
@@ -48,6 +52,10 @@ class ChartAuditorTest {
         assertTrue(ChartAuditor.passed(ChartAuditor.audit(mapper, List.of(pie), FACTS)));
     }
 
+    /**
+     * 输入：修改某点数值（fact_c01_s2 篡改）。
+     * 预期：该条图表失败，返回变更明细定位至异常点，保障数据可追溯闭环。
+     */
     @Test
     void tamperedPointValueIsCaught() {
         var checks = ChartAuditor.audit(mapper,
@@ -56,6 +64,10 @@ class ChartAuditorTest {
         assertTrue(checks.get(0).detail().contains("fact_c01_s2"));
     }
 
+    /**
+     * 输入：删减点数导致点位数量不足。
+     * 预期：被判定为“点数不守恒”，拒绝发布图表以避免视觉误导。
+     */
     @Test
     void removedPointBreaksConservation() {
         var checks = ChartAuditor.audit(mapper,
@@ -64,6 +76,10 @@ class ChartAuditorTest {
         assertTrue(checks.get(0).detail().contains("点数不守恒"));
     }
 
+    /**
+     * 输入：使用不存在的 fact 引用。
+     * 预期：直接失败，防止“幻影数据点”进入报告。
+     */
     @Test
     void ghostFactReferenceIsCaught() {
         var checks = ChartAuditor.audit(mapper,

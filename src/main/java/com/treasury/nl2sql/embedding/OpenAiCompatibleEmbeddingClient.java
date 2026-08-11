@@ -64,11 +64,18 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
         this.mapper = mapper;
     }
 
+    /**
+     * 对单条文本走批量入口，保持“单条=批量子集”语义，统一重试与解析逻辑。
+     */
     @Override
     public float[] embed(String text) {
         return embedBatch(List.of(text)).get(0);
     }
 
+    /**
+     * 分片调用 embeddings API 并拼接结果。失败重试只覆盖网络/5xx 异常（RestClientException），
+     * 解析失败直接抛出，避免在错误响应上重复重试导致超时放大。
+     */
     @Override
     public List<float[]> embedBatch(List<String> texts) {
         List<float[]> out = new ArrayList<>(texts.size());
@@ -78,7 +85,10 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
         return out;
     }
 
-    /** 单片请求（带重试）。只重试 RestClientException（网络/超时/5xx），解析失败视为非瞬时直接抛。 */
+    /**
+     * 单片请求（带重试）。只重试 RestClientException（网络/超时/5xx），解析失败视为非瞬时错误直接抛出。
+     * 这样可防止“上游偶发时延”与“模型侧格式异常”混为一谈。
+     */
     private List<float[]> requestChunk(List<String> chunk) {
         RestClientException last = null;
         for (int attempt = 0; attempt <= retries; attempt++) {
@@ -103,7 +113,10 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
         throw last;
     }
 
-    /** 解析响应并按 data[].index 归位——OpenAI 协议不保证 data 顺序与 input 一致。 */
+    /**
+     * 解析响应并按 data[].index 归位。
+     * OpenAI 兼容协议不保证 data 顺序一定与 input 一致，必须按 index 回填，避免顺序错位导致语义污染。
+     */
     private List<float[]> parse(String resp, int expected) {
         try {
             JsonNode data = mapper.readTree(resp).path("data");

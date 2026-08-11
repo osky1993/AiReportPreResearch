@@ -29,14 +29,22 @@ public class EventAdminService {
 
     private final EventRepository repo;
 
+    /**
+     * 依赖注入：事件仓储是唯一写入点；服务层不允许 null 注入，避免运行时空指针扩散。
+     */
     public EventAdminService(EventRepository repo) {
         this.repo = repo;
     }
 
+    /** 全量读取：管理页列表按事件日期倒序由仓储保证，不做分页和过滤（当前接口约束）。 */
     public List<EventRecord> list() {
         return repo.findAll();
     }
 
+    /**
+     * 新建事件：先校验完整性与安全字符，再入库；
+     * 任何非法输入直接抛 IllegalArgumentException（前端转 400），不写库。
+     */
     public long create(EventRecord e, String createdBy) {
         validateOrThrow(e);
         long id = repo.insert(withCreator(e, createdBy));
@@ -44,6 +52,7 @@ public class EventAdminService {
         return id;
     }
 
+    /** 更新事件：先存在性检查 + 全量校验，避免出现“更新到脏数据”与误更新空字段。 */
     public void update(long eventId, EventRecord e, String updatedBy) {
         repo.findById(eventId).orElseThrow(() -> new IllegalArgumentException("事件不存在: " + eventId));
         validateOrThrow(e);
@@ -51,19 +60,24 @@ public class EventAdminService {
         log.info("[EVENT-ADMIN] 修改事件 #{} by {}", eventId, updatedBy);
     }
 
+    /** 下架事件：仅更新状态，不做级联，便于事件引用失败时可见“历史证据”而非物理清理。 */
     public void deprecate(long eventId, String updatedBy) {
         repo.findById(eventId).orElseThrow(() -> new IllegalArgumentException("事件不存在: " + eventId));
         repo.updateStatus(eventId, EventRecord.STATUS_DEPRECATED, blankTo(updatedBy));
         log.info("[EVENT-ADMIN] 下架事件 #{} by {}", eventId, updatedBy);
     }
 
-    /** 校验规则（正反例固化在 EventAdminServiceTest）：逐条收集不首错即停。 */
+    /**
+     * 结构化校验入口（返回分项错误），不做抛错，便于 UI 做字段级提示。
+     * 所有约束都失败闭合并一次返回，避免“修一次错一次再提交”。
+     */
     public List<String> validate(EventRecord e) {
         List<String> errors = new ArrayList<>();
         if (e == null) {
             errors.add("事件体为空");
             return errors;
         }
+
         checkText(errors, "title", e.title(), 64, true);
         if (e.eventDate() == null) {
             errors.add("event_date 必填");
@@ -94,6 +108,10 @@ public class EventAdminService {
         return errors;
     }
 
+    /**
+     * 单字段校验工具。
+     * 仅输出文本性问题，长度与字符白名单一致；返回 false/throw 的统一做法见 validate/validateOrThrow。
+     */
     private static void checkText(List<String> errors, String field, String value, int maxLen, boolean required) {
         if (value == null || value.isBlank()) {
             if (required) errors.add(field + " 必填");

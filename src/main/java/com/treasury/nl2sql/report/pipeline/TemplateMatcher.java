@@ -22,7 +22,14 @@ import java.util.stream.Collectors;
 @Component
 public class TemplateMatcher {
 
-    /** @param score 展示用综合分（keywordHits + cosine），BLOCKED 候选清单里给人看 */
+    /**
+     * 候选模板。
+     * @param templateId 模板 ID
+     * @param name 模板名称
+     * @param keywordHits 关键词命中数量
+     * @param cosine 与请求文本的语义相似度
+     * @param score 展示用综合分（keywordHits + cosine）
+     */
     public record Candidate(String templateId, String name, int keywordHits, double cosine, double score) {}
 
     private final EmbeddingClient embedding;
@@ -32,11 +39,17 @@ public class TemplateMatcher {
     /** 模板向量缓存（注册表 reload 后由 {@link #refresh()} 整体失效重算）。 */
     private final Map<String, float[]> templateVectors = new ConcurrentHashMap<>();
 
-    /** 资产发布/下架导致注册表重载后失效向量缓存（下次 recall 按新模板画像重算）。 */
+    /**
+     * 资产发布/下架导致注册表重载后，先清理全量向量缓存（下次 recall 按新模板画像重算）。
+     * <p>必须全量清空而非按 templateId 逐条删，因为发布动作可能改变文本 token 分布和向量语义，旧向量会污染召回排序。
+     */
     public void refresh() {
         templateVectors.clear();
     }
 
+    /**
+     * @param tau 语义阈值
+     */
     public TemplateMatcher(EmbeddingClient embedding, ReportAssetService assets,
                            @Value("${report.match.tau:0.60}") double tau) {
         this.embedding = embedding;
@@ -44,12 +57,25 @@ public class TemplateMatcher {
         this.tau = tau;
     }
 
-    /** Spring 使用侧便捷入口：对注册表中全部 PUBLISHED 模板召回。 */
+    /**
+     * Spring 使用侧便捷入口：对注册表中全部 PUBLISHED 模板召回。
+     * 这条路径用于 ONLINE 召回（模板治理完成后可直接进入生产路由）。
+     */
     public List<Candidate> recall(String requestText) {
         return recall(requestText, assets.allTemplates());
     }
 
-    /** 核心召回（不依赖注册表状态，可离线单测）。 */
+    /**
+     * 核心召回（不依赖注册表状态，可离线单测）。
+     * <p>规则：
+     * <ul>
+     *   <li>keyword 只看模板文本直接 contains，命中数量大者优先</li>
+     *   <li>cosine 达阈值才兜底进入候选</li>
+     *   <li>同分时 keyword 优先，再 cosine 逆序</li>
+     * </ul>
+     * @param requestText 用户请求文本
+     * @param templates 召回输入集（测试可传定制列表）
+     */
     public List<Candidate> recall(String requestText, List<ReportTemplateDef> templates) {
         float[] query = embedding.embed(requestText);
         List<Candidate> out = new ArrayList<>();
@@ -60,18 +86,26 @@ public class TemplateMatcher {
                 out.add(new Candidate(tpl.templateId(), tpl.name(), hits, cos, hits + cos));
             }
         }
+        // 同分时 keyword 优先，可解释性优先于语义相似度：关键字命中意味着口径语义更确定；
+        // 相同命中的情况下再看 cosine，避免排序抖动，供人工复盘与测试复现。
         out.sort(Comparator.comparingInt(Candidate::keywordHits).reversed()
                 .thenComparing(Comparator.comparingDouble(Candidate::cosine).reversed()));
         return out;
     }
 
-    /** BLOCKED 时给人看的清单（无候选时列全部可用模板，有候选时列候选与分数）。 */
+    /**
+     * BLOCKED 时给人看的清单（无候选时给前端“候选集全部模板”用于定位失败原因，有候选时给“候选+分数”用于复盘）。
+     */
     public static String describe(List<Candidate> candidates) {
         return candidates.stream()
                 .map(c -> c.templateId() + "(" + c.name() + ", 分=" + String.format("%.2f", c.score()) + ")")
                 .collect(Collectors.joining("、"));
     }
 
+    /**
+     * 关键词匹配：区分大小写 contains，排除空关键字；高优先级第一段的硬约束之一。
+     * <p>空命中可继续靠 embedding；全部 0 且 cos<tau 会被过滤。
+     */
     private static int keywordHits(String requestText, ReportTemplateDef tpl) {
         if (tpl.keywords() == null) return 0;
         int n = 0;
@@ -81,6 +115,10 @@ public class TemplateMatcher {
         return n;
     }
 
+    /**
+     * 模板画像向量按 templateId 缓存；重复召回共享向量，减少 embedding 调用。
+     * @param tpl 目标模板
+     */
     private float[] vectorOf(ReportTemplateDef tpl) {
         return templateVectors.computeIfAbsent(tpl.templateId(), id -> embedding.embed(vectorText(tpl)));
     }

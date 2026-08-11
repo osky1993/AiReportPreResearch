@@ -23,6 +23,11 @@ public class MqlTrialExecutor {
     private final MqlSqlCompiler compiler;
     private final DSLContext dsl;
 
+    /**
+     * @param validator 白名单校验器
+     * @param compiler 编译器
+     * @param dsl 只读执行上下文
+     */
     public MqlTrialExecutor(MqlValidator validator, MqlSqlCompiler compiler, DSLContext dsl) {
         this.validator = validator;
         this.compiler = compiler;
@@ -34,7 +39,10 @@ public class MqlTrialExecutor {
         return validator.validate(mql);
     }
 
-    /** 校验 + 编译 + 只读执行，返回行集（供恰 1 行 1 值检查）。 */
+    /**
+     * 校验 + 编译 + 只读执行，返回行集（供恰 1 行 1 值检查）。
+     * 异常统一封装为 PolicyException，供上层统一 fail-closed。
+     */
     public List<Map<String, Object>> execute(Mql mql) {
         List<String> errors = validator.validate(mql);
         if (!errors.isEmpty()) {

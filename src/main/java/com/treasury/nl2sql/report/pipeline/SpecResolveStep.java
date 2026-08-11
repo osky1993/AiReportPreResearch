@@ -35,7 +35,11 @@ public class SpecResolveStep {
         return run(outline, current, Map.of(MetricQuerySpec.PURPOSE_COMPARE, compare), defs);
     }
 
-    /** @param compareWindows 比较用途 → 基期窗口（key 取 MetricQuerySpec.PURPOSE_COMPARE / PURPOSE_COMPARE_YOY） */
+    /**
+     * 将 outline 映射为可执行规约列表（幂等、可复现）。
+     * <p>处理原则：按本期→环比→同比输出顺序；章节引用去重；派生指标不直接取数、先补操作数。
+     * @param compareWindows 比较用途 → 基期窗口（key 取 MetricQuerySpec.PURPOSE_COMPARE / PURPOSE_COMPARE_YOY）
+     */
     public List<MetricQuerySpec> run(Outline outline, PeriodResolver.Window current,
                                      Map<String, PeriodResolver.Window> compareWindows,
                                      Map<String, MetricDefinition> defs) {
@@ -85,6 +89,7 @@ public class SpecResolveStep {
         for (Map.Entry<String, String> e : fetchMetrics.entrySet()) {
             MetricDefinition def = defs.get(e.getKey());
             boolean timeBound = def.timeBound();
+            // 时间型指标才绑定时间窗；非时间窗指标（如口径常量/静态配置）只做本期当前值，不生成 compare 重复窜扰。
             specs.add(new MetricQuerySpec(specId(++seq), e.getKey(), e.getValue(),
                     MetricQuerySpec.PURPOSE_CURRENT, current.label(),
                     timeBound ? current.start().toString() : null,
@@ -142,7 +147,12 @@ public class SpecResolveStep {
         return specs;
     }
 
-    /** 大纲声明的全部比较用途（purpose 集合）——调用方据此决定要不要算同比窗口。 */
+    /**
+     * 大纲声明的全部比较用途（purpose 集合）——调用方据此决定是否算同比窗口。
+     * <p>
+     * 只返回 token 已通过 `ComparisonType.require` 语义校验后的值，不在这里吞掉非法 token，
+     * 避免“解析阶段已阻断、执行阶段再次掩盖根因”。
+     */
     public static Set<String> requiredComparePurposes(Outline outline) {
         LinkedHashSet<String> purposes = new LinkedHashSet<>();
         for (Outline.OutlineChapter ch : outline.chapters()) {

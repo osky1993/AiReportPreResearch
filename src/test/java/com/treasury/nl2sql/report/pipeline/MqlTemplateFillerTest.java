@@ -9,7 +9,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** MQL 模板填充纯逻辑单测（无 DB/LLM）：确定性取数通路的第一环。 */
+/**
+ * MQL 模板填充单测（无 DB/LLM）。检查 phase03 模板占位符填充流程：
+ * 仅替换已识别占位符；任何未解析 token 必须 fail-closed；
+ * 无占位符快照模板直接透传，为 ③ 取数零-LLM 通路提供可复现输入。
+ */
 class MqlTemplateFillerTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -18,6 +22,10 @@ class MqlTemplateFillerTest {
         return mapper.readTree(s);
     }
 
+    /**
+     * 输入：含 period_start/period_end 占位符模板和完整参数映射。
+     * 预期：转成有效 Mql 对象且字段值正确替换。
+     */
     @Test
     void fillsPlaceholdersAndDeserializes() throws Exception {
         JsonNode tpl = json("""
@@ -34,6 +42,10 @@ class MqlTemplateFillerTest {
         assertEquals("cnt", mql.metrics.get(0).alias);
     }
 
+    /**
+     * 输入：拼写错误占位符。
+     * 预期：抛 PolicyException，不允许残留 placeholder 继续下游。
+     */
     @Test
     void residualPlaceholderFailsClosed() throws Exception {
         // 模板手误 {{period_strat}}：填充不掉 → 必须停下，绝不带占位符去撞校验器
@@ -48,6 +60,10 @@ class MqlTemplateFillerTest {
         assertTrue(e.getMessage().contains("未填充"));
     }
 
+    /**
+     * 输入：快照模板（无任何占位符）。
+     * 预期：透传表名与 metric；确认该路径不受参数化依赖影响。
+     */
     @Test
     void snapshotTemplateWithoutPlaceholdersPassesThrough() throws Exception {
         JsonNode tpl = json("""

@@ -20,11 +20,16 @@ import java.util.regex.Pattern;
  */
 public final class CausalityAuditor {
 
+    /** 因果措辞命中规则：命中后要求“段落内必须有 EVT-n”且可溯源。 */
     private static final Pattern CAUSAL = Pattern.compile("导致|由于|因为|引发|使得|造成|归因于");
+    /** 假设语气词：用于 claim 材料层缓和措辞校验。 */
     private static final Pattern HEDGE = Pattern.compile("可能|或与|待验证|有待|疑似|初步");
+    /** observed 级 claim 的强制语义兜底。 */
     private static final Pattern PENDING = Pattern.compile("待查|待核实|未见关联事件");
+    /** 事件证据引用约束：仅允许来自候选集与 claim.evidenceRefs。 */
     private static final Pattern EVT_REF = Pattern.compile("EVT-(\\d+)");
 
+    /** 工具类禁止实例化。 */
     private CausalityAuditor() {}
 
     /** 正文扫描（草稿与终稿同规则；占位符替换不改措辞，检查1 循环内拦截即覆盖终稿）。 */
@@ -63,6 +68,7 @@ public final class CausalityAuditor {
             if (ClaimRecord.LEVEL_HYPOTHESIS.equals(c.attributionLevel()) && !HEDGE.matcher(n).find()) {
                 violations.add("claim " + c.claimId() + "（hypothesis）叙述缺少缓和措辞（可能/或与/待验证…）");
             }
+            // 无事件证据时，只允许“待查/待核实”语义；一旦出现因果措辞，表示模型在编造因果链条，必须阻断。
             if (!c.hasEventEvidence()) {
                 Matcher causal = CAUSAL.matcher(n);
                 if (causal.find()) {
@@ -77,6 +83,7 @@ public final class CausalityAuditor {
         return violations;
     }
 
+    /** 报错上下文摘要（保留前后字符，便于快速定位“因果措辞”误报位置）。 */
     private static String context(String s, int at) {
         int a = Math.max(0, at - 15);
         int b = Math.min(s.length(), at + 20);

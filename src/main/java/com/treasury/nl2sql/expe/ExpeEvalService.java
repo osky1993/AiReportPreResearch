@@ -39,6 +39,13 @@ import java.util.concurrent.Executors;
  *
  * 落盘目录（{evals-dir}/{evalId}/）：rules.json 规则清单冻结副本、meta.json 全部判定明细、
  * judge_raw/ 每次 judge 调用的原始响应。评估只读生成任务目录，绝不修改原始生成证据。
+ *
+ * <p>设计约束：
+ * <ul>
+ *   <li>任何单份输出异常不阻断整次评估，异常分支记 ERROR 并可复评</li>
+ *   <li>HUMAN 规则不进自动汇总，仅保留可见明细</li>
+ *   <li>评分与规则执行的单一事实源为 meta.json 的逐条 verdict</li>
+ * </ul>
  */
 @Service
 public class ExpeEvalService {
@@ -56,7 +63,10 @@ public class ExpeEvalService {
     public record OutputEval(String taskId, int index, List<RuleVerdict> verdicts,
                              ExpeJudgeCaller.QualityScore quality, String judgeError) {}
 
-    /** 评估任务快照（meta.json 持久化结构 + API 返回结构） */
+    /**
+     * 评估任务快照（meta.json 持久化结构 + API 返回结构）。
+     * doneOutputs 直接由已输出判定条目数推导，用于任务进度与恢复。
+     */
     public record EvalInfo(String evalId, String createdAt, String finishedAt, String status,
                            String judgeModel, String rulesFileName, String rulesSha256, int ruleCount,
                            List<EvalTarget> targets, int totalOutputs, int doneOutputs,
@@ -151,6 +161,14 @@ public class ExpeEvalService {
         this.mapper = mapper;
     }
 
+    /**
+     * 组件初始化：
+     * <ul>
+     *   <li>创建评估任务调度池（固定 2 线程，防止过载）</li>
+     *   <li>创建 judge 调用池（并发受 expe.judge-concurrency 控制）</li>
+     *   <li>重建目录并扫描历史 meta，保障服务重启后可读状态</li>
+     * </ul>
+     */
     @PostConstruct
     void init() throws IOException {
         executor = Executors.newFixedThreadPool(2, r -> {
@@ -167,12 +185,17 @@ public class ExpeEvalService {
         restoreFromDisk();
     }
 
+    /** 关闭执行池，避免退出时留存未中断的非守护线程。 */
     @PreDestroy
     void shutdown() {
         if (executor != null) executor.shutdownNow();
         if (judgeExecutor != null) judgeExecutor.shutdownNow();
     }
 
+    /**
+     * 重启恢复：扫描 evals 目录下 meta.json；
+     * 运行中/排队中的历史任务会标记 INTERRUPTED，不自动继续执行，防止重复计数。
+     */
     private void restoreFromDisk() {
         try (var dirs = Files.list(Path.of(props.getEvalsDir()))) {
             dirs.filter(Files::isDirectory).forEach(dir -> {
@@ -195,7 +218,16 @@ public class ExpeEvalService {
         }
     }
 
-    /** 创建并启动评估；rulesBytes 为 null 时用默认规则清单（expe.rules-path） */
+    /**
+     * 创建并启动评估。
+     * <p>校验规则：
+     * <ul>
+     *   <li>待评任务不能为空</li>
+     *   <li>组别必须在合法集合内</li>
+     *   <li>任务不能重复选择</li>
+     *   <li>任务必须有成功输出，否则不能形成评估目标</li>
+     * </ul>
+     */
     public EvalInfo create(List<TargetSpec> targetSpecs, byte[] rulesBytes, String rulesFileName) throws IOException {
         if (targetSpecs == null || targetSpecs.isEmpty()) {
             throw new IllegalArgumentException("请至少选择一个待评的生成任务");
@@ -235,6 +267,11 @@ public class ExpeEvalService {
         return state.snapshot();
     }
 
+    /**
+     * 评估执行主循环。
+     * <p>每个目标先准备 data 根节点与可用 evidence 集合，再将所有「任务+输出序号」组装成 Job 后并发扇出；
+     * 全部判定完成后再统一落状态，避免中间态被前端误读为已完成。
+     */
     private void runEval(EvalState state, ExpeRuleSet ruleSet) {
         synchronized (state) {
             if (state.cancelRequested) { state.finish("CANCELLED", null); saveMeta(state); return; }
@@ -297,6 +334,11 @@ public class ExpeEvalService {
         log.info("[expe-eval] 评估 {} 结束，状态 {}", state.evalId, state.status);
     }
 
+    /**
+     * 执行单份输出（某 task 的某次输出）的完整判定：
+     * 1) PROGRAM/HUMAN 规则先本地确定性计算
+     * 2) AI 规则调用 judge（若启用），judge 异常不会抛给上游，改记 ERROR，整份继续入库
+     */
     private OutputEval evalOneOutput(EvalState state, Path dir, EvalTarget target, int index, String dataJson,
                                      Set<String> validIds, JsonNode dataRoot,
                                      List<Rule> applicable, List<Rule> aiRules) throws IOException {
@@ -335,7 +377,10 @@ public class ExpeEvalService {
         return new OutputEval(target.taskId(), index, ordered, quality, judgeError);
     }
 
-    /** 从冻结数据包收集合法证据 ID 全集（indicator_id/industry_id/subregion_id/risk_id 的所有取值） */
+    /**
+     * 从冻结 data.json 收集合法 evidence ID 全集（indicator_id/industry_id/subregion_id/risk_id）。
+     * 仅用于校验 PROGRAM 的 evidence 真实引用，不依赖实时数据库，保证每次评估可复现。
+     */
     static Set<String> collectEvidenceIds(String dataJson) {
         Set<String> ids = new HashSet<>();
         try {
@@ -347,6 +392,10 @@ public class ExpeEvalService {
         return ids;
     }
 
+    /**
+     * 深度扫描 data.json：对象与数组都递归，忽略其它结构和非文本值。
+     * 约束仅收集固定四类 key，避免把规则文本中的相似字段误识别为 evidence 引用。
+     */
     private static void collectIds(JsonNode node, Set<String> ids) {
         if (node.isObject()) {
             node.properties().forEach(e -> {
@@ -361,6 +410,7 @@ public class ExpeEvalService {
         }
     }
 
+    /** 列出当前内存中的评估快照（倒序展示），返回值不直接依赖磁盘扫描。 */
     public List<EvalInfo> list() {
         return evals.values().stream()
                 .map(EvalState::snapshot)
@@ -368,7 +418,10 @@ public class ExpeEvalService {
                 .toList();
     }
 
-    /** 明细 = 全量判定矩阵 + 规则行头 + 各组聚合指标（聚合按当前明细即时计算，单一事实源是 meta 里的逐条判定） */
+    /**
+     * 明细视图 = 全量判定矩阵 + 规则行头 + 各组聚合指标。
+     * 聚合使用当前快照内的所有明细计算，单一事实源为 meta 内存档（持久化副本）。
+     */
     public EvalDetail detail(String evalId) throws IOException {
         EvalState s = evals.get(evalId);
         if (s == null) throw new IllegalArgumentException("评估不存在: " + evalId);
@@ -386,6 +439,16 @@ public class ExpeEvalService {
         return new EvalDetail(info, rows, aggregates);
     }
 
+    /**
+     * 按目标（组）聚合：将该组所有输出按规则维度统计。
+     * <p>统计口径：
+     * <ul>
+     *   <li>ssrMean/ssrMedian：单份可自动评分得分均值与中位数</li>
+     *   <li>hsrRate：目标内（可评分）全部规则 PASS 的比例</li>
+     *   <li>coreWeightedMean/coreUnweightedMean：共享约束（shared）加权/不加权平均</li>
+     *   <li>judgeErrorOutputs：judge API 异常次数，用于快速排查可复评样本</li>
+     * </ul>
+     */
     private TargetAggregate aggregate(EvalTarget target, List<OutputEval> allOutputs, ExpeRuleSet ruleSet) {
         List<OutputEval> outputs = allOutputs.stream().filter(o -> o.taskId().equals(target.taskId())).toList();
         // 评分范围排除 HUMAN 规则（不可自动判定）；ERROR 计 0 分并单列 judgeErrorOutputs 提示
@@ -477,12 +540,14 @@ public class ExpeEvalService {
         return n % 2 == 1 ? sorted.get(n / 2) : (sorted.get(n / 2 - 1) + sorted.get(n / 2)) / 2;
     }
 
+    /** 请求取消：仅置位 cancelRequested，不做硬中断；各提交任务会在执行前/中检查标记。 */
     public void cancel(String evalId) {
         EvalState s = evals.get(evalId);
         if (s == null) throw new IllegalArgumentException("评估不存在: " + evalId);
         s.cancelRequested = true;
     }
 
+    /** 删除已结束的评估：清理内存登记 + 落盘目录；运行中状态需先取消。 */
     public void delete(String evalId) throws IOException {
         EvalState s = evals.get(evalId);
         if (s == null) throw new IllegalArgumentException("评估不存在: " + evalId);
@@ -502,8 +567,11 @@ public class ExpeEvalService {
         log.info("[expe-eval] 已删除评估 {} 及其落盘目录", evalId);
     }
 
+    /**
+     * 评估执行中的状态快照落盘点：每次 output 追加或状态推进后更新 meta.json。
+     * 采用状态对象锁同步，避免并发任务写 meta.json 时交错覆盖（元信息不幂等可否重放依赖它）。
+     */
     private void saveMeta(EvalState state) {
-        // 并行判定会从多个线程触发落盘，用 state 锁串行化写文件避免交叠损坏
         synchronized (state) {
             try {
                 Path meta = Path.of(props.getEvalsDir(), state.evalId, "meta.json");

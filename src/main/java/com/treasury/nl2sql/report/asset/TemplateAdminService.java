@@ -17,8 +17,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 模板资产管理服务（P2 契约的服务端实现，一切校验在此执行，前端只做展示与预检）。
- * 保存 = 校验通过才写新版本 DRAFT；行不可变，绝无 UPDATE body_json。
+ * 模板资产管理服务（P2 契约）。
+ *
+ * <p>约束：模板保存只允许新增版本，不做 UPDATE；每一次变更先完整校验通过后落库为 DRAFT。
+ * 发布动作会在同一事务中完成旧版本下线 + 新版本上线 + 匹配索引刷新，保证运行时匹配与查询面一致性。</p>
  */
 @Service
 public class TemplateAdminService {
@@ -65,14 +67,17 @@ public class TemplateAdminService {
 
     // ---------- 读 ----------
 
+    /** 列表接口：按版本号倒序聚合同一 templateId，前端主界面仅显示“最新版本 + 当前是否有 PUBLISHED”。 */
     public List<TemplateSummary> list() {
         Map<String, List<AssetRow>> grouped = new LinkedHashMap<>();
+        // findAll 已按版本倒序返回，分组后的第一条即当前最新版本；用于列表预览时不遗漏历史状态。
         for (AssetRow row : repo.findAll()) {
             grouped.computeIfAbsent(row.assetId(), k -> new ArrayList<>()).add(row);
         }
         List<TemplateSummary> out = new ArrayList<>();
         for (List<AssetRow> rows : grouped.values()) {
             AssetRow latest = rows.get(0);   // findAll 已按 version DESC
+            // 列表只需显示“当前是否已有可用发布态”，不在此处展开历史详情。
             Integer publishedVersion = rows.stream()
                     .filter(r -> "PUBLISHED".equals(r.status()))
                     .map(AssetRow::version).findFirst().orElse(null);
@@ -82,6 +87,10 @@ public class TemplateAdminService {
         return out;
     }
 
+    /**
+     * 明细接口：返回版本时间线 + 最新发布版本 + 当前最新版本（用于编辑器回显与发布/下架按钮显隐）。
+     * 空对象即非法查询，抛 NotFound 由控制层转 404。
+     */
     public TemplateDetail detail(String templateId) {
         List<AssetRow> rows = repo.findByAssetId(templateId);
         if (rows.isEmpty()) {
@@ -95,9 +104,11 @@ public class TemplateAdminService {
                 .filter(r -> "PUBLISHED".equals(r.status())).findFirst()
                 .map(this::parse).orElse(null);
         ReportTemplateDef latest = parse(rows.get(0));
+        // 设计上 detail 始终返回 latest 行为，以“未改动时自动回填最后编辑内容”作为编辑器默认值。
         return new TemplateDetail(templateId, versions, published, latest);
     }
 
+    /** 指定版本查询：版本历史页直接按版本号回放，不允许跨版本透传编辑内容。 */
     public VersionBody version(String templateId, int version) {
         AssetRow row = repo.findByIdAndVersion(templateId, version)
                 .orElseThrow(() -> new NotFoundException("模板版本不存在: " + templateId + " v" + version));
@@ -106,7 +117,10 @@ public class TemplateAdminService {
 
     // ---------- 写（校验通过才落库，全部 DRAFT） ----------
 
-    /** 新建：templateId 不得已存在，写 v1 DRAFT。 */
+    /**
+     * 新建模板：拒绝重名（保持模板 id 的单一创建语义），始终落 DRAFT 并触发全量校验；
+     * 失败关闭，不会污染版本历史。
+     */
     public SaveResult create(ReportTemplateDef tpl, String createdBy, String remark) {
         validateOrThrow(tpl);
         if (repo.existsById(tpl.templateId())) {
@@ -118,7 +132,10 @@ public class TemplateAdminService {
         return new SaveResult(tpl.templateId(), v, "DRAFT");
     }
 
-    /** 保存：已有模板写新版本 DRAFT（body 内 templateId 必须与路径一致）。 */
+    /**
+     * 保存新版本：只允许“已存在模板”的增量写入，body 内 templateId 必须与路径一致，
+     * 以防 URL 与内容不一致导致下游检索歧义。
+     */
     public SaveResult saveNewVersion(String pathTemplateId, ReportTemplateDef tpl, String createdBy, String remark) {
         if (tpl == null || !pathTemplateId.equals(tpl.templateId())) {
             throw new IllegalArgumentException("body 内 templateId 与路径不一致: "
@@ -128,6 +145,7 @@ public class TemplateAdminService {
             throw new NotFoundException("模板不存在（新建请走 POST）: " + pathTemplateId);
         }
         validateOrThrow(tpl);
+        // 路径一致性校验失败会直接拒绝，防止管理员在 URL 改 id 时 body 未改导致脏状态。
         int v = repo.insertNewVersion(tpl.templateId(), tpl.name(), toJson(tpl),
                 "DRAFT", "MANUAL", blankTo(createdBy), remark);
         log.info("[TPL-ADMIN] 保存模板 {} 新版本 v{} DRAFT by {}", tpl.templateId(), v, createdBy);
@@ -150,6 +168,7 @@ public class TemplateAdminService {
         repo.findByAssetId(templateId).stream()
                 .filter(r -> "PUBLISHED".equals(r.status()))
                 .forEach(r -> repo.updateStatus(templateId, r.version(), "DEPRECATED"));
+        // 刷新顺序：先下线历史状态，再置新版本发布，避免短时窗口出现双 PUBLISHED 。
         repo.updateStatus(templateId, version, "PUBLISHED");
         assets.reload();
         matcher.refresh();
@@ -170,6 +189,7 @@ public class TemplateAdminService {
         }
         repo.updateStatus(templateId, version, "DEPRECATED");
         if ("PUBLISHED".equals(row.status())) {
+            // 下线发布版会改变匹配源；只有发布版下线需要触发 reload/matcher 刷新，DRAFT 下线不改 match 集合。
             assets.reload();
             matcher.refresh();
         }
@@ -184,6 +204,7 @@ public class TemplateAdminService {
 
     /** 干跑校验（validate 端点：不写库，返回全部错误）。 */
     public List<ValidationError> validateOnly(ReportTemplateDef tpl) {
+        // 干跑用于前端按钮预检：不写库，返回完整错误列表，避免“保存后才知道失败”。
         return TemplateValidator.validate(tpl, assets.allMetrics());
     }
 

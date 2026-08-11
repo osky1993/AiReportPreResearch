@@ -15,11 +15,13 @@ import java.util.regex.Pattern;
  */
 public final class ChineseNumeralDetector {
 
+    /** 工具类禁止实例化。 */
     private ChineseNumeralDetector() {}
 
     /** 一处违规命中：text 为原文片段，start/end 为原文偏移（供审计文案带上下文摘录）。 */
     public record Hit(String text, int start, int end) {}
 
+    /** 中文数字字元范围：用于构建各类模糊量词和数值序列表达规则。 */
     private static final String NUM = "[零〇一二两三四五六七八九十百千万亿]";
 
     /**
@@ -46,7 +48,11 @@ public final class ChineseNumeralDetector {
     /** R4 金额省略单位形态：数词序列长度≥2 且含量级字（两千万、一百五十）。 */
     private static final Pattern NUM_SCALE = Pattern.compile(NUM + "{2,}");
 
-    /** 扫描文本中的中文数量表达；命中互不重叠（先命中的规则优先）。 */
+    /**
+     * 扫描文本中的中文数量表达，返回互不重叠命中集合。
+     * <p>扫描顺序固定为 R1→R2→R3→R4，先抓“高置信”量级与百分比，再补充一般数词；这样可避免
+     * 通用短词覆盖语义更强规则造成的误杀。</p>
+     */
     public static List<Hit> detect(String text) {
         if (text == null || text.isEmpty()) {
             return List.of();
@@ -58,13 +64,17 @@ public final class ChineseNumeralDetector {
         // R3/R4 排除「阿拉伯数字 + 中文量级单位」构型（如 6,570.00 万元）——
         // 那是合法渲染形态的单位部分，阿拉伯裸数字自有 NumberAuditor.BARE_NUMBER 负责
         collect(hits, NUM_UNIT.matcher(masked), text, m -> !followsArabicDigit(masked, m.start()));
+        // R4 只保留明确含“百千亿”等量级字的中文串，避免命中“单纯两位数字”这类非金额语义片段。
         collect(hits, NUM_SCALE.matcher(masked), text,
                 m -> m.group().matches(".*[百千万亿].*") && !followsArabicDigit(masked, m.start()));
         hits.sort((a, b) -> Integer.compare(a.start(), b.start()));
         return dropOverlaps(hits);
     }
 
-    /** 白名单词等长掩蔽（填充符不在任何数词/单位字符集内），保持原文偏移可回指。 */
+    /**
+     * 白名单替换成全角下划线，保留字符长度可回指原文偏移。
+     * <p>替换长度不变，才能在返回 hit 时稳定复用原文 index，支持日志、测试和人工复核的可定位性。</p>
+     */
     private static String mask(String text) {
         Matcher m = WHITELIST.matcher(text);
         StringBuilder sb = new StringBuilder(text);
@@ -76,7 +86,7 @@ public final class ChineseNumeralDetector {
         return sb.toString();
     }
 
-    /** 匹配起点前的首个非空白字符是否为阿拉伯数字（含千分位逗号/小数点）。 */
+    /** 检查量词前是否紧邻阿拉伯数字（含千分位逗号/小数点），“6,000 万元”不应二次触发中文检测。 */
     private static boolean followsArabicDigit(String text, int start) {
         for (int i = start - 1; i >= 0; i--) {
             char c = text.charAt(i);
@@ -86,8 +96,14 @@ public final class ChineseNumeralDetector {
         return false;
     }
 
+    /**
+     * 可选过滤器：规则扫描阶段按业务条件剔除“阿拉伯数字+中文单位”这类合法混写。
+     * <p>过滤器返回 false 即放弃当前命中，是为了把中文数字检测边界收紧到“纯中文数字表达”，
+     * 与 NumberAuditor 的阿拉伯裸数字检测形成补集。</p>
+     */
     private interface Filter { boolean accept(Matcher m); }
 
+    /** 执行一次带可选过滤器的收集，统一保留原文偏移，避免在掩蔽文本上复用 offset。 */
     private static void collect(List<Hit> hits, Matcher m, String original, Filter filter) {
         while (m.find()) {
             if (filter != null && !filter.accept(m)) {
@@ -97,6 +113,7 @@ public final class ChineseNumeralDetector {
         }
     }
 
+    /** 对命中进行去重叠并保序；遇重叠时保留先命中者，避免切裂。 */
     private static List<Hit> dropOverlaps(List<Hit> sorted) {
         List<Hit> result = new ArrayList<>();
         int lastEnd = -1;

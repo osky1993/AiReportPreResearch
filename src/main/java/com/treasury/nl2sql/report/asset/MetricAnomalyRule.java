@@ -18,7 +18,10 @@ public final class MetricAnomalyRule {
 
     private MetricAnomalyRule() {}
 
-    /** 形状校验（不含目录级：dimensionMetricId 的存在性/维度性由 checkMetric 追加）。 */
+    /**
+     * 形状校验（不含目录级：dimensionMetricId 的存在性/维度性在 ReportAssetService.checkMetric 追加）。
+     * 返回空列表表示规则形状正确，调用方可继续执行语义/运行时判定。
+     */
     public static List<String> check(MetricDefinition m) {
         List<String> errors = new ArrayList<>();
         if (m.anomalyRules() == null || m.anomalyRules().isEmpty()) return errors;

@@ -23,6 +23,12 @@ public class LinkingEvalService {
     private final int topK;
     private final ObjectMapper mapper = new ObjectMapper();
 
+    /**
+     * 构造器。
+     * @param schema schema 信息源
+     * @param vectorClient 当前运行配置下启用的 embedding 客户端
+     * @param topK Top-K 指标口径
+     */
     public LinkingEvalService(SchemaService schema, EmbeddingClient vectorClient,
                               @Value("${schema.linking.top-k:6}") int topK) {
         this.schema = schema;
@@ -36,16 +42,27 @@ public class LinkingEvalService {
     public record ModeReport(String mode, double hitRate, double avgInjectedChars, List<ProbeResult> probes) {}
     public record CompareReport(int topK, int probeCount, ModeReport lexical, ModeReport vector) {}
 
+    /**
+     * 使用默认探针文件执行一次评测，给运维快速判断链接器质量。
+     * 返回 hitRate=命中率、avgInjectedChars=注入 token 粗估（字符长度代理）。
+     */
     public CompareReport run() {
         return run(loadProbes());
     }
 
+    /**
+     * 指定探针批次评分。暴露为 package-private 便于单测。
+     */
     CompareReport run(List<Probe> probes) {
         ModeReport lex = score("lexical", lexicalClient, probes);
         ModeReport vec = score("vector", vectorClient, probes);
         return new CompareReport(topK, probes.size(), lex, vec);
     }
 
+    /**
+     * 单模式评分：计算每个 probe 的 expected 是否被召回（包含关系）。
+     * 结果用于对比 lexical 与 vector 两条链路的质量，不能单独作为上线阈值依据。
+     */
     private ModeReport score(String mode, EmbeddingClient client, List<Probe> probes) {
         // 一次性建表向量（按检索文本，批量请求）
         Map<String, float[]> tableVecs = new LinkedHashMap<>();
@@ -70,6 +87,10 @@ public class LinkingEvalService {
         return new ModeReport(mode, hitRate, avgChars, results);
     }
 
+    /**
+     * 基于表向量和问题向量取 TopK。
+     * 注意：若表向量与问题向量维度不一致，EmbeddingClient.cosine 当前按短边取长度，可能偏离严格几何意义。
+     */
     private List<String> topKTables(EmbeddingClient client, Map<String, float[]> tableVecs, String question) {
         float[] qv = client.embed(question);
         List<Map.Entry<String, Double>> scored = new ArrayList<>();
@@ -81,6 +102,10 @@ public class LinkingEvalService {
         return out;
     }
 
+    /**
+     * 从资源文件读取评测探针。
+     * 文件格式为 Probe 数组，加载失败直接抛异常让调用方处理（避免静默产出空报告）。
+     */
     List<Probe> loadProbes() {
         try (var in = new ClassPathResource("eval/linking-probes.json").getInputStream()) {
             return List.of(mapper.readValue(in, Probe[].class));

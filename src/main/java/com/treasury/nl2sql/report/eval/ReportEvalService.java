@@ -48,6 +48,10 @@ public class ReportEvalService {
     private final FetchStep fetchStep;
     private final FactBuildStep factStep;
 
+    /**
+     * 依赖注入。
+     * <p>注意：该服务是离线评测服务，不持久化 run_step/run 表，也不调用 ReportPipeline，避免影响线上流水线状态。</p>
+     */
     public ReportEvalService(ObjectMapper mapper, ReportAssetService assets, OutlineStep outlineStep,
                              SpecResolveStep specStep, FetchStep fetchStep, FactBuildStep factStep) {
         this.mapper = mapper;
@@ -65,6 +69,11 @@ public class ReportEvalService {
 
     // ---------- 确定性层：②③④ 取数等价率 ----------
 
+    /**
+     * 执行确定性评测（无 LLM 依赖）。
+     * <p>按 GOLDEN CASE 中 {@code FACTS} 类型执行「模板→Spec→Fetch→FactBuild」链路，逐项与手写 SQL 期望值比对。</p>
+     * <p>失败语义：任意用例出现执行异常、缺失事实、值不一致、额外事实时置为失败；最终报告返回通过/未通过统计。</p>
+     */
     public EvalReport runDeterministic() {
         List<CaseResult> results = new ArrayList<>();
         int expectationTotal = 0;
@@ -84,6 +93,12 @@ public class ReportEvalService {
         return new EvalReport("DETERMINISTIC", results.size(), casePassed, rates, results);
     }
 
+    /**
+     * FACTS 用例执行：
+     * 1) 依据模板与 period 运行 ②③④，沿用主链的窗口组装；
+     * 2) 抽取 BASE fact 与黄金期望逐条比对；
+     * 3) 允许的对齐键必须完全一致，额外产物视为回归失败，防止隐式输出。
+     */
     private CaseResult runFactsCase(JsonNode c) {
         String id = c.path("id").asText();
         String templateId = c.path("templateId").asText();
@@ -151,11 +166,11 @@ public class ReportEvalService {
     }
 
     /**
-     * 比对键：metricId|purpose[|k=v,...][|periodLabel]——维度取值排序后拼接、维度行一行一键（P3）；
-     * 图表序列（CHART_SERIES，P4）一期一键（期标签定位）。无维度无序列时与 Phase02 键逐字节相同。
+     * 期望比对主键：metricId|purpose|（排序后的维度）|（序列期，若有）；
+     * 与 ③/④ 输出约束一致，避免评测阶段和运行阶段采用不同序列化口径。
      */
     static String expectationKey(String metricId, String purpose, Map<String, String> dimensions,
-                                 String periodLabel) {
+                                String periodLabel) {
         StringBuilder sb = new StringBuilder(metricId).append('|').append(purpose);
         if (dimensions != null && !dimensions.isEmpty()) {
             sb.append('|').append(dimensions.entrySet().stream()
@@ -169,7 +184,10 @@ public class ReportEvalService {
         return sb.toString();
     }
 
-    /** 确定性大纲 = 模板全章节全指标（等价于卡点1 不做删减直接确认）。 */
+    /**
+     * 确定性评测大纲：不做模板裁剪，直接跑模板中全部章节（卡点1 人工全量确认语义）。
+     * 同时也可视为“模板约定大纲”，用于评测中保证固定口径复现。
+     */
     private static Outline outlineOf(ReportTemplateDef tpl, String periodLabel) {
         List<Outline.OutlineChapter> chapters = tpl.chapters().stream()
                 .map(ch -> new Outline.OutlineChapter(ch.chapterId(), ch.title(), ch.metrics(),
@@ -180,6 +198,18 @@ public class ReportEvalService {
 
     // ---------- LLM 层：① 匹配正确率 / 失败关闭正确率 ----------
 
+    /**
+     * 运行 LLM 层评测。
+     *
+     * <p>仅评估「模板匹配」与「失败关闭」语义，不触达数据库取数链路。
+     * 适合在无数据波动但模型版本/提示词变更时做回归。</p>
+     *
+     * <ul>
+     *   <li>MATCH：强校验 templateId/periodLabel 与黄金值一致；不检查文本风格以避免语义无关漂移。</li>
+     *   <li>BLOCKED：要求抛出 {@link PolicyException}，并用 reasonContains 检查关闭原因是否符合预期。</li>
+     * </ul>
+     * <p>该层失败会记入 blocked 率，不阻断系统可用性，但用于发布门禁时可直接判定回退到人工。</p>
+     */
     public EvalReport runLlm() {
         List<CaseResult> results = new ArrayList<>();
         int matchTotal = 0, matchPassed = 0, blockedTotal = 0, blockedPassed = 0;
@@ -202,6 +232,10 @@ public class ReportEvalService {
         return new EvalReport("LLM", results.size(), matchPassed + blockedPassed, rates, results);
     }
 
+    /**
+     * 匹配类用例：仅校验 LLM 输出的 templateId/periodLabel 与黄金值一致；
+     * 这里不检查文本质量，避免把语义正确但写法差异误判为错分。
+     */
     private CaseResult runMatchCase(JsonNode c) {
         String id = c.path("id").asText();
         String request = c.path("requestText").asText();
@@ -222,6 +256,10 @@ public class ReportEvalService {
         return new CaseResult(id, "MATCH", items.stream().allMatch(ItemResult::pass), items);
     }
 
+    /**
+     * 失败关闭类用例：要求抛出 PolicyException（业务性失败）；
+     * 通过 reasonContains 进行“错误原因”断言，避免把所有 BLOCKED 都算同质。
+     */
     private CaseResult runBlockedCase(JsonNode c) {
         String id = c.path("id").asText();
         String request = c.path("requestText").asText();
@@ -244,6 +282,10 @@ public class ReportEvalService {
 
     // ---------- 工具 ----------
 
+    /**
+     * 读取黄金用例文件并按 type 过滤。
+     * <p>失败（文件缺失/格式错误）将抛出 IllegalStateException，避免把评测失败静默处理为通过。</p>
+     */
     private List<JsonNode> goldenCases(String type) {
         try (var in = new ClassPathResource("report/eval/golden-set.json").getInputStream()) {
             List<JsonNode> out = new ArrayList<>();
@@ -256,11 +298,19 @@ public class ReportEvalService {
         }
     }
 
+    /**
+     * 生成通过率文本，统一保留一位小数。
+     * <p>当分母为 0 时返回 n/a，防止除零异常污染评测结果。</p>
+     */
     private static String rate(int passed, int total) {
         return total == 0 ? "n/a" : passed + "/" + total + " = "
                 + BigDecimal.valueOf(passed * 100.0 / total).setScale(1, java.math.RoundingMode.HALF_UP) + "%";
     }
 
+    /**
+     * sql_hash 摘要短显示（前端/日志可读）。
+     * <p>用于评测报告追溯，不用于逻辑决策；返回 12 字符以内片段，超长时截断避免日志污染。</p>
+     */
     private static String shortHash(String hash) {
         return hash == null ? "-" : hash.substring(0, Math.min(12, hash.length()));
     }

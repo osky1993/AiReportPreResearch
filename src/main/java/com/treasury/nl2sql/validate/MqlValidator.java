@@ -7,9 +7,15 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 /**
- * 确定性校验（非 LLM）：把幻觉表名/字段、非法运算符等挡在编译之前。
- * 返回的错误列表会回灌给 LLM 做自我修正。
- * 字段引用以「引用前缀」限定：前缀可以是表名，或（设了别名时）别名——支持自连接。
+ * 确定性校验闸门：约束 MQL 的可执行形态，避免“幻觉字段/非法算子/危险结构”进入编译-执行链路。
+ * <p>该类不执行 SQL，仅进行白名单与结构约束校验。校验通过后输出稳定为“可编译输入”，
+ * 失败后把错误列表回灌给 LLM，自助修正后重试。
+ * <p>关键失败边界：
+ * <ul>
+ *   <li>表/列不存在、别名冲突、连接条件/过滤器/窗口定义形状错误；</li>
+ *   <li>UNION/子查询不允许无限扩展，强制限制深度与每段形状；</li>
+ *   <li>聚合、窗口、qualify 的上下文约束不满足（避免可执行歧义）。</li>
+ * </ul>
  */
 @Component
 public class MqlValidator {
@@ -35,6 +41,9 @@ public class MqlValidator {
         this.schema = schema;
     }
 
+    /**
+     * 校验入口（顶层查询）。对外返回错误列表而非抛异常，便于上层实现“生成-自修正”循环。
+     */
     public List<String> validate(Mql mql) {
         return validate(mql, 0);
     }
@@ -42,6 +51,7 @@ public class MqlValidator {
     /**
      * @param depth 嵌套深度：0=顶层；1=子查询/union 段内部（其中不得再嵌子查询）。
      *              嵌套查询自成作用域（全新 ref2real），所有表/列仍全量白名单校验，零绕过。
+     *              depth>1 会直接失败返回，避免无限递归语义扩散。
      */
     private List<String> validate(Mql mql, int depth) {
         List<String> errors = new ArrayList<>();
@@ -59,7 +69,7 @@ public class MqlValidator {
             return errors;
         }
 
-        // 引用前缀(别名优先，否则表名) -> 真实表名
+        // 引用前缀(别名优先，否则表名) -> 真实表名；后续字段校验全部复用该映射做来源归一化。
         Map<String, String> ref2real = new LinkedHashMap<>();
         String mainRef = (mql.alias != null && !mql.alias.isBlank()) ? mql.alias : table;
         ref2real.put(mainRef, table);
@@ -103,6 +113,7 @@ public class MqlValidator {
         }
 
         // ---- 顶层 distinct：仅用于无聚合/无分组的列投影去重 ----
+        // 目的：防止 distinct 被混用到聚合分组语义中产生不可预期执行行为。
         if (Boolean.TRUE.equals(mql.distinct)) {
             if (!nz(mql.metrics).isEmpty() || !nz(mql.groupBy).isEmpty()) {
                 errors.add("顶层 distinct 仅用于无聚合/无分组的列去重；聚合去重请用 metrics 的 count+distinct");
@@ -113,6 +124,7 @@ public class MqlValidator {
         }
 
         // metric 别名集合（可被 having / orderBy 引用）
+        // 这里提前收集是为了后续在 HAVING/ORDER BY 时统一判断“字段或别名”两套命名空间。
         Set<String> aliases = new HashSet<>();
         for (Mql.Metric m : nz(mql.metrics)) {
             if (m.alias == null || m.alias.isBlank()) {
@@ -143,6 +155,7 @@ public class MqlValidator {
         }
 
         // ---- caseColumns：CASE WHEN 派生维度 ----
+        // 用途是可读性与复用性提升，但在有聚合/分组场景下，必须强制出现在 groupBy 中才生效。
         Set<String> caseAliases = new LinkedHashSet<>();
         for (Mql.CaseColumn cc : nz(mql.caseColumns)) {
             if (cc.alias == null || cc.alias.isBlank()) {
@@ -183,6 +196,7 @@ public class MqlValidator {
         }
 
         // ---- timeColumns：时间截断派生维度（校验模式与 caseColumns 平行） ----
+        // 时间维度通常用于按月/季度统计，禁止非时间类型列进入，防止产生错误聚合维度。
         Set<String> timeAliases = new LinkedHashSet<>();
         for (Mql.TimeColumn tc : nz(mql.timeColumns)) {
             if (tc.alias == null || tc.alias.isBlank()) {
@@ -217,6 +231,7 @@ public class MqlValidator {
         }
 
         // ---- windows / qualify：窗口函数（普通模式 / 聚合后开窗模式） ----
+        // 对于“聚合后开窗”，必须将窗口别名仅引用外层派生表可见字段，避免内层窗口引用不一致。
         Set<String> windowAliases = new LinkedHashSet<>();
         boolean aggWindow = !nz(mql.windows).isEmpty()
                 && (!nz(mql.groupBy).isEmpty() || !nz(mql.metrics).isEmpty());
@@ -355,6 +370,7 @@ public class MqlValidator {
         }
 
         // ---- union：多段合并 ----
+        // union 只允许“列结构一致且显式投影”，并要求分页/排序在最外层统一处理，保证可重现与并行解释性。
         if (!nz(mql.union).isEmpty()) {
             if (depth >= 1) {
                 errors.add("子查询/union 段内不得再嵌 union");
@@ -399,7 +415,11 @@ public class MqlValidator {
         return errors;
     }
 
-    /** 一段查询的输出列数：聚合段=groupBy+metrics；否则=columns+caseColumns+timeColumns（0=SELECT *，union 中非法） */
+    /**
+     * 计算单段 SELECT 的输出列数，用于 UNION 列一致性检查。
+     * 约定：聚合段以 groupBy+metrics 定义列数；非聚合段以 columns+caseColumns+timeColumns 计数。
+     * 若返回 0 表示 SELECT * 风格，在 UNION 上下文会被直接判定为非法。
+     */
     private static int projectionCount(Mql m) {
         if (!nz(m.metrics).isEmpty() || !nz(m.groupBy).isEmpty()) {
             return nz(m.groupBy).size() + nz(m.metrics).size();
@@ -407,7 +427,13 @@ public class MqlValidator {
         return nz(m.columns).size() + nz(m.caseColumns).size() + nz(m.timeColumns).size();
     }
 
-    /** 校验单个聚合规格（op + field/fieldExpr + 可选条件聚合 filter，或 Expr 操作数位的数字常量）；不校验 alias */
+    /**
+     * 校验单个指标表达式是否可编译：
+     * 1) 聚合函数白名单；
+     * 2) expr 与 fieldExpr 的形状互斥；
+     * 3) numeric/聚合类型约束（如 sum/avg 要求字段可做数值）；
+     * 4) 递归校验 filter 内条件树。
+     */
     private void checkAggSpec(Mql.Metric m, Map<String, String> ref2real, String mainTable,
                              boolean multiTable, int depth, List<String> errors) {
         // Expr 操作数位的常量形态：{"value": 数字}，其余属性必须全空
@@ -470,7 +496,10 @@ public class MqlValidator {
         }
     }
 
-    /** 校验表达式操作数：列须存在且为数值类型 */
+    /**
+     * 校验表达式中的字段操作数（用于 fieldExpr 的左右值）。先验：引用必须存在；
+     * 再验：若可定位到已知列，要求数值类型，避免后续编译阶段整形/浮点算术报错。
+     */
     private void checkNumericOperand(String ref, String role, Map<String, String> ref2real,
                                      String mainTable, boolean multiTable, List<String> errors) {
         checkField(ref, ref2real, mainTable, multiTable, role, errors);
@@ -481,7 +510,11 @@ public class MqlValidator {
         }
     }
 
-    /** 递归校验条件树：节点要么是 and/or 组、要么是叶子(field/op/value|subquery)，二者不可混 */
+    /**
+     * 递归校验条件树：
+     * 根必须是“纯树结构”，且叶子不允许同时携带 and/or 与 field/op/value。
+     * 这样能在树形遍历前把结构歧义一次性拉平，减少后续 toCondition 的容错风险。
+     */
     private void checkCondition(Mql.Condition c, Map<String, String> ref2real, String mainRealTable,
                                boolean multiTable, Set<String> aliases, boolean havingCtx, int depth,
                                List<String> errors) {
@@ -523,7 +556,10 @@ public class MqlValidator {
         }
     }
 
-    /** 子查询叶子：value/subquery 互斥、op 语义形状（标量=恰1指标 / in=恰1列）、深度限制、禁 orderBy/limit，再递归全量校验 */
+    /**
+     * 子查询叶子约束：禁止 value 与 subquery 共存，限定比较/IN 语义形状，禁止 orderBy/limit，限制递归深度。
+     * 这样可避免相关子查询和无限嵌套导致的复杂化，保证可解释可复现的统计语义。
+     */
     private void checkSubquery(Mql.Condition c, boolean havingCtx, int depth, List<String> errors) {
         if (c.value != null) {
             errors.add("条件叶子的 value 与 subquery 只能二选一: " + c.field);
@@ -566,7 +602,11 @@ public class MqlValidator {
         }
     }
 
-    /** 窗口引用分派：聚合后开窗模式只认外层派生表可见的名字；普通模式走 schema 白名单 */
+    /**
+     * 窗口字段引用分派：
+     * - aggWindow=true 时只允许 groupBy/metric 外层可见名；
+     * - false 时走 schema 白名单（含前缀列校验）。
+     */
     private void checkWindowRef(String ref, boolean aggWindow, Set<String> allowedRefs,
                                 Map<String, String> ref2real, String mainTable, boolean multiTable,
                                 String role, List<String> errors) {
@@ -580,7 +620,10 @@ public class MqlValidator {
         }
     }
 
-    /** 校验字段引用：多表时必须用 前缀.列名 限定；前缀须在本次查询中、列在其真实表里存在 */
+    /**
+     * 校验字段引用最核心的方法之一。
+     * 多表时禁止裸列（歧义风险），单表时允许裸列但必须确认为主表列。
+     */
     private void checkField(String ref, Map<String, String> ref2real, String mainRealTable,
                             boolean multiTable, String role, List<String> errors) {
         if (ref == null || ref.isBlank()) {
@@ -604,13 +647,20 @@ public class MqlValidator {
         }
     }
 
-    /** 解析字段引用所属的真实表：含前缀走 ref2real，否则取主表。 */
+    /**
+     * 解析字段引用所属的真实表：含前缀走 ref2real；否则默认主表。
+     * 该逻辑同样用于错误定位与跨字段引用合法性判断。
+     */
     private String resolveTable(String ref, Map<String, String> ref2real, String mainRealTable) {
         if (ref == null || ref.isBlank()) return null;
         if (ref.contains(".")) return ref2real.get(ref.split("\\.", 2)[0]);
         return mainRealTable;
     }
 
+    /**
+     * 辅助判断：在当前上下文中是否能作为“列名”直接存在。
+     * 注意：当前方法是“宽松预检”，不替代 {@link #checkField(String, Map, String, boolean, String, List)} 的报错逻辑。
+     */
     private boolean fieldExists(String ref, Map<String, String> ref2real, String mainRealTable, boolean multiTable) {
         if (ref == null || ref.isBlank()) return false;
         if (ref.contains(".")) {
@@ -621,6 +671,12 @@ public class MqlValidator {
         return !multiTable && schema.hasColumn(mainRealTable, ref);
     }
 
+    /**
+     * 统一检查操作符并做形状边界约束：
+     * - NULL/NOT NULL 不允许 value/subquery；
+     * - in / not in 的 value 仅允许非空数组；
+     * - 非法操作符会直接中断该条件分支。
+     */
     private void checkOp(Mql.Condition cond, List<String> errors) {
         String op = normOp(cond.op);
         if (op == null || !OPS.contains(op)) {

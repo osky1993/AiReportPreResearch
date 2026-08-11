@@ -22,8 +22,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 口径反翻译纯逻辑单测（mock 校验器/schema/LLM，零 DB/LLM）：
- * 前置闸失败关闭、fence 剥离、unanswerable 拒绝、坏 JSON 重试一次、同 MQL 缓存不重复调 LLM。
+ * MqlExplainService 口径反翻译单测（纯逻辑）。
+ * 校验：fence/无结构体直接 fail-close、unanswerable 快速拦截、非法 JSON 重试一次、同 MQL 同 mode 缓存复用，
+ * 并验证 schema 与 validator 在 fail-open 之前的门禁先行。
  */
 class MqlExplainServiceTest {
 
@@ -47,6 +48,10 @@ class MqlExplainServiceTest {
         when(schema.assemble(anyCollection())).thenReturn("(表结构)");
     }
 
+    /**
+     * 输入：正常 MQL 与规范化 schema。
+     * 预期：完成 fence 清洗后返回 explanation 与 caveats，满足 describe 生成链路。
+     */
     @Test
     void happyPath_stripsFence_andCollectsCaveats() {
         stubOk();
@@ -59,6 +64,10 @@ class MqlExplainServiceTest {
         assertEquals(List.of("amount 列含义未确认"), e.caveats());
     }
 
+    /**
+     * 输入：validator 返回错误。
+     * 预期：不调用 LLM，直接 fail-closed。
+     */
     @Test
     void validatorErrors_failClosed_withoutLlmCall() {
         when(validator.validate(any())).thenReturn(List.of("表 t1 不存在"));
@@ -68,6 +77,10 @@ class MqlExplainServiceTest {
         verify(llm, never()).completeJson(anyList());
     }
 
+    /**
+     * 输入：非结构化 JsonNode。
+     * 预期：不进入 LLM，避免把不合法结构交给模型解释。
+     */
     @Test
     void unstructuredInput_failClosed_withoutLlmCall() {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
@@ -76,6 +89,9 @@ class MqlExplainServiceTest {
         verify(llm, never()).completeJson(anyList());
     }
 
+    /**
+     * 验证模型返回 unanswerable 时直接 fail-closed，并透传 reason 供上游提示。
+     */
     @Test
     void unanswerable_rejectedWithReason() {
         stubOk();
@@ -86,6 +102,9 @@ class MqlExplainServiceTest {
         assertTrue(ex.getMessage().contains("结构过于复杂"));
     }
 
+    /**
+     * 验证非法 JSON 的重试策略：失败后只重试一次，成功后返回结果。
+     */
     @Test
     void badJson_retriedOnce_thenSucceeds() {
         stubOk();
@@ -97,6 +116,9 @@ class MqlExplainServiceTest {
         verify(llm, times(2)).completeJson(anyList());
     }
 
+    /**
+     * 验证缺少 description 语义字段直接 fail-closed，避免无意义 explanation 入库。
+     */
     @Test
     void missingDescription_failClosed() {
         stubOk();
@@ -105,6 +127,9 @@ class MqlExplainServiceTest {
                 () -> service.explain(mql("t1"), MqlExplainService.Mode.AD_HOC));
     }
 
+    /**
+     * 验证同一 mode 与同一 MQL 复用缓存，防止重复 LLM 调用放大成本。
+     */
     @Test
     void sameMqlSameMode_servedFromCache_singleLlmCall() {
         stubOk();
@@ -114,6 +139,9 @@ class MqlExplainServiceTest {
         verify(llm, times(1)).completeJson(anyList());
     }
 
+    /**
+     * 验证缓存键包含 mode 维度，避免不同上下文误用同一解释结果。
+     */
     @Test
     void cacheKey_distinguishesModeAndMql() {
         stubOk();

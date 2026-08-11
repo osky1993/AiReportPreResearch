@@ -11,6 +11,10 @@ import java.util.List;
  *
  * @param optionJson    ECharts option（程序模板化组装，series 数据纯数值）
  * @param boundFactKeys 每个数据点的来源 factKey（审计核对键，顺序对齐 series.data）
+ * @param chartId 图表实例唯一标识（chapter 中的 charts 快照）
+ * @param chapterId 归属章节 ID（用于失败归因与重放过滤）
+ * @param type 图表类型（line/bar/pie）
+ * @param title 图表标题（快照固化）
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ChartRecord(

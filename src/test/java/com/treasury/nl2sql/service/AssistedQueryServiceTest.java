@@ -24,8 +24,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 核验闸门沉淀链路的纯逻辑单测（mock 全部依赖，零 DB/LLM）：
- * 采纳时口径描述随资产固化；描述生成失败 fail-open（沉淀照常、描述为 null）；驳回不触发任何生成。
+ * AssistedQueryService 核验闸门与沉淀链路单测（纯逻辑，无 DB/LLM）。
+ * 覆盖 verify 接受/拒绝路径、LLM 描述失败的 fail-open 行为、参数漂移触发澄清降级与
+ * ask() 无状态时的执行行为，确保既保护安全又不影响资产复用闭环。
  */
 class AssistedQueryServiceTest {
 
@@ -41,6 +42,10 @@ class AssistedQueryServiceTest {
     private final AssistedQueryService service = new AssistedQueryService(
             store, nl2sql, embedding, validator, compiler, null, currencyGuard, explain, new ObjectMapper());
 
+    /**
+     * 输入：verify 同意采纳。
+     * 预期：生成资产沉淀并尝试写入口径描述，描述可为主诉求追溯语义。
+     */
     @Test
     void verifyAccept_precipitatesWithGeneratedDescription() {
         when(explain.explain(any(), eq(MqlExplainService.Mode.AD_HOC)))
@@ -55,6 +60,10 @@ class AssistedQueryServiceTest {
         verify(store).precipitate("问题", MQL, "统计 t1 全量", "张三");
     }
 
+    /**
+     * 输入：描述生成超时。
+     * 预期：沉淀仍应成功，描述置空，不影响资产落库（fail-open）。
+     */
     @Test
     void verifyAccept_explainFails_failOpenWithNullDescription() {
         when(explain.explain(any(), any())).thenThrow(new IllegalStateException("LLM 超时"));
@@ -68,6 +77,10 @@ class AssistedQueryServiceTest {
         verify(store).precipitate("问题", MQL, null, "张三");
     }
 
+    /**
+     * 输入：MQL 校验失败。
+     * 预期：不沉淀资产并返回失败提示，避免脏查询入库。
+     */
     @Test
     void verifyAccept_invalidMql_notPrecipitated() {
         when(explain.explain(any(), any())).thenThrow(new IllegalArgumentException("白名单不通过"));
@@ -81,6 +94,10 @@ class AssistedQueryServiceTest {
         assertTrue(r.message().contains("采纳失败"));
     }
 
+    /**
+     * 输入：疑似参数漂移问题。
+     * 预期：返回 CLARIFY 并禁止直接编译执行，交由用户确认。
+     */
     @Test
     void askHitWithParamDrift_downgradesToClarify_withoutExecution() {
         when(store.isEnabled()).thenReturn(true);
@@ -100,6 +117,10 @@ class AssistedQueryServiceTest {
         verify(compiler, never()).compile(any());
     }
 
+    /**
+     * 输入：用户明确拒绝采纳（verify=false）；
+     * 预期：仅返回不落库结果，不走 explain/trial，无副作用执行。
+     */
     @Test
     void verifyReject_noExplainNoPrecipitate() {
         AssistedQueryService.VerifyResult r = service.verify("问题", MQL, false, "张三");

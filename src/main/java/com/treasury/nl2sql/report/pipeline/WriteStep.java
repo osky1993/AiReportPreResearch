@@ -30,6 +30,10 @@ public class WriteStep {
     private final LlmClient llm;
     private final ObjectMapper mapper;
 
+    /**
+     * @param llm LLM client
+     * @param mapper JSON 解析器
+     */
     public WriteStep(LlmClient llm, ObjectMapper mapper) {
         this.llm = llm;
         this.mapper = mapper;
@@ -43,7 +47,13 @@ public class WriteStep {
         return run(outline, facts, notes, List.of());
     }
 
-    /** @param claims 归因材料（Phase05；仅注入 chapterId 前缀 anomaly_ 的「异动解读」章） */
+    /**
+     * 产出章节文本草稿。归因材料仅允许注入 chapterId 前缀 anomaly_ 的「异动解读」章；
+     * 该方法不做重试，只在 `completeAndParse` 内做一次重试并把上下文继续沿用。
+     *
+     * @param claims 归因材料（Phase05；仅注入 chapterId 前缀 anomaly_ 的「异动解读」章）
+     * @return 包含完整 report_md 与对话上下文，便于 ⑥ 重写续写
+     */
     public Draft run(Outline outline, List<FactRecord> facts, List<String> notes,
                      List<com.treasury.nl2sql.report.domain.ClaimRecord> claims) {
         List<LlmClient.Message> conversation = new ArrayList<>();
@@ -67,6 +77,7 @@ public class WriteStep {
         conversation.add(LlmClient.Message.assistant(raw));
         String md = tryParse(raw);
         if (md != null) return md;
+        // 输出不是合法 JSON 时不直接 fail-fast，而是二次提示“仅输出 JSON 对象”；这能把一次偶发格式漂移转为回写重试。
         conversation.add(LlmClient.Message.user(
                 "上面的输出不是合法的 {\"report_md\": \"...\"} JSON。请只输出该 JSON 对象。"));
         String retry = com.treasury.nl2sql.report.observe.LlmUsageTally.record(llm.completeJsonDetail(conversation));
@@ -76,6 +87,10 @@ public class WriteStep {
         throw new IllegalStateException("撰写输出解析失败（重试 1 次仍不是合法 report_md JSON）");
     }
 
+    /**
+     * report_md 提取器：取出 report_md 且非空才认为可用；
+     * 其余一律返回 null 触发重试，避免在非法输出上继续拼接上下文造成误导。
+     */
     private String tryParse(String raw) {
         try {
             var node = mapper.readTree(stripFence(raw));

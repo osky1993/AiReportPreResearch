@@ -8,8 +8,11 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * ⑥ 第三类检查对抗单测（Phase05 契约3，纪律 6 对抗先行）：
- * 「把关联说成因果」「编造事件引用」「hypothesis 缺缓和措辞」「无事件编原因」逐条被拦；合法语料零误伤。
+ * ⑥ 因果一致性审计对抗单测（纯逻辑）。验证文本与事实级 claim 在“事件证据”约束下的红线行为：
+ * 1) 无事实支撑的因果措辞必须拦截；
+ * 2) 未申明事件引用不能伪造事件号；
+ * 3) claim.level 与措辞/证据关系必须一致；
+ * 4) 合法文本不受白名单规则误伤。
  */
 class CausalityAuditorTest {
 
@@ -23,6 +26,10 @@ class CausalityAuditorTest {
 
     // ---------- 对抗语料（逐条命中） ----------
 
+    /**
+     * 输入：不带 EVT 引用的因果句式。
+     * 预期：每条匹配都会返回异常项，防止“拍脑袋”因果替代事实。
+     */
     @Test
     void causalWordingWithoutEventEvidenceIsCaught() {
         String[] payloads = {
@@ -39,6 +46,10 @@ class CausalityAuditorTest {
         }
     }
 
+    /**
+     * 输入：引用不存在事件编号、或文本层虚构事件。
+     * 预期：按事件白名单与 fact/EVT 映射规则拦截，阻断二次造假。
+     */
     @Test
     void fabricatedEventReferencesAreCaught() {
         // EVT-9 不在任何 claim 的证据集内——编造事件引用
@@ -46,6 +57,10 @@ class CausalityAuditorTest {
         assertFalse(CausalityAuditor.checkText("由于 EVT-42 的政策调整，交易大增。", CLAIMS).isEmpty());
     }
 
+    /**
+     * 输入：claim 的 level 与措辞、事实引用组合不一致（hypothesis/observed/confirmed）。
+     * 预期：多维度违规逐条收集，且允许复合违规一次性返回。
+     */
     @Test
     void claimLevelViolationsAreCaught() {
         // hypothesis 缺缓和措辞
@@ -69,6 +84,10 @@ class CausalityAuditorTest {
 
     // ---------- 合法语料（零误伤） ----------
 
+    /**
+     * 输入：合法 claim 与带 evidence 的文本。
+     * 预期：不应产生误伤，保障人工可用文本通过。
+     */
     @Test
     void legitimateTextPasses() {
         String[] ok = {
@@ -85,6 +104,10 @@ class CausalityAuditorTest {
         }
     }
 
+    /**
+     * 输入：合法 claim 的组合。
+     * 预期：只在确证/观察/假设规则满足时通过，输出空列表。
+     */
     @Test
     void legitimateClaimsPass() {
         assertTrue(CausalityAuditor.checkClaims(List.of(

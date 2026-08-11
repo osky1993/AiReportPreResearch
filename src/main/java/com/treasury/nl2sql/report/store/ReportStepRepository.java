@@ -57,16 +57,22 @@ public class ReportStepRepository {
         return key == null ? -1L : key.longValue();
     }
 
+    /** 标记一步完成：将状态改为 OK 并保存结构化输出，可被 AWAITING/PUBLISH 校验续跑读取。 */
     public void finishOk(long stepId, String outputJson) {
         jdbc.update("UPDATE report_step SET status = 'OK', output_json = ?, finished_at = NOW() WHERE step_id = ?",
                 outputJson, stepId);
     }
 
+    /**
+     * 标记一步失败：记录错误文本并结束时间。
+     * 采用阻断式失败，不重试在本表内做，重试策略由 ReportPipeline 按 phase 再次触发 step。
+     */
     public void finishBlocked(long stepId, String errorText) {
         jdbc.update("UPDATE report_step SET status = 'BLOCKED', error_text = ?, finished_at = NOW() WHERE step_id = ?",
                 errorText, stepId);
     }
 
+    /** 查询某个 run 的完整步骤追踪，按 step_id 稳定排序用于诊断追溯。 */
     public List<ReportStep> findByRun(long runId) {
         return jdbc.query("SELECT step_id, run_id, phase, attempt, status, input_json, output_json, error_text, "
                         + "started_at, finished_at FROM report_step WHERE run_id = ? ORDER BY step_id",

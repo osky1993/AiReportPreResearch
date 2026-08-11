@@ -26,6 +26,9 @@ public class VectorSchemaLinker implements SchemaLinker {
     private final int topK;
     private final int fkHops;
 
+    /**
+     * schema -> 向量的静态索引。构建顺序与 schema.tableNames() 一致。
+     */
     private final Map<String, float[]> tableVectors = new LinkedHashMap<>();
 
     public VectorSchemaLinker(SchemaService schema, EmbeddingClient embedding,
@@ -37,6 +40,9 @@ public class VectorSchemaLinker implements SchemaLinker {
         this.fkHops = fkHops;
     }
 
+    /**
+     * 启动阶段一次性建表向量索引。失败将抛异常，让上层服务决策是否重试或切回全量模式。
+     */
     @PostConstruct
     public void index() {
         tableVectors.clear();
@@ -48,6 +54,12 @@ public class VectorSchemaLinker implements SchemaLinker {
         log.info("向量索引完成: {} 张表, topK={}", tableVectors.size(), topK);
     }
 
+    /**
+     * 对外主要入口，优先做问题向量化。
+     * <p>
+     * 这里不直接抛出 embedding 异常：仅记录降级告警，交给重载方法统一走全量回退路径，
+     * 以保持「schema 取数不可因 embedding 短时抖动而阻塞」的可用性边界。
+     */
     @Override
     public LinkingResult select(String question) {
         float[] qv;
@@ -60,7 +72,10 @@ public class VectorSchemaLinker implements SchemaLinker {
         return select(question, qv);
     }
 
-    /** qv=null（embed 失败）→ 降级为全量注入（FullSchemaLinker 行为），链路不断。 */
+    /**
+     * qv=null（embed 失败）→ 降级为全量注入（FullSchemaLinker 行为），保证不阻断查询链路。
+     * 同时保留 scored 为空，便于观测此次降级发生路径。
+     */
     @Override
     public LinkingResult select(String question, float[] qv) {
         if (qv == null) {

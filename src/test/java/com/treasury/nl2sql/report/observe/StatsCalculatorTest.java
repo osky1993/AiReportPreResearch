@@ -9,7 +9,11 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 看板统计纯逻辑单测（P6 契约3）：固造行集逐值验证率/分位数/原因分组/用量汇总。 */
+/**
+ * 看板统计纯逻辑单测（P6 契约3）：
+ * 固造 StepRow 序列，校验成功/重试/阻断率、P50/P95 最近邻取值、
+ * blocked_reason 分组规则和 llmUsage 解析容错（脏 JSON 不中断）。
+ */
 class StatsCalculatorTest {
 
     private static final LocalDateTime T0 = LocalDateTime.of(2026, 7, 11, 10, 0, 0);
@@ -18,6 +22,9 @@ class StatsCalculatorTest {
         return new StatsCalculator.StepRow(phase, attempt, status, T0, T0.plusNanos(durMs * 1_000_000), null);
     }
 
+    /**
+     * 验证按 phase 聚合后的成功率/阻断率/重试率与 P50/P95 取值边界逻辑。
+     */
     @Test
     void phaseStatsRatesAndPercentiles() {
         List<StatsCalculator.StepRow> rows = new ArrayList<>();
@@ -43,6 +50,9 @@ class StatsCalculatorTest {
         assertNull(write.p50Ms(), "无完成步 → 分位数为 null 不冒充 0");
     }
 
+    /**
+     * 验证 blocked_reason 聚合时按原因前缀分桶、截断首句展示，兼容空值脏数据。
+     */
     @Test
     void blockedReasonsGroupByPrefixAndFirstSentence() {
         List<StatsCalculator.ReasonCount> top = StatsCalculator.blockedReasons(java.util.Arrays.asList(
@@ -56,6 +66,9 @@ class StatsCalculatorTest {
         assertEquals("[EXCEPTION] HTTP 响应提取错误", top.get(1).reason());
     }
 
+    /**
+     * 验证从 step.payload 解析 llmUsage 的容错策略：可用行累加、脏 JSON 跳过、无 usage 的历史行不影响结果。
+     */
     @Test
     void llmTotalsParseUsageSegmentAndSkipDirtyRows() {
         ObjectMapper m = new ObjectMapper();

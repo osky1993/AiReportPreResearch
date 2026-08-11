@@ -18,7 +18,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-/** 事件候选生成单测（repo 打桩）：三条件加权排序、上限 5、零候选不凑数、候选包转义（注入第二道闸）。 */
+/**
+ * 事件候选匹配器单测（repo 打桩）。
+ * 验证候选评分、排序、TopN 截断与输出转义：评分包含时间窗、维度、指标匹配三类条件；
+ * 分数 0 的候选不入选；候选文本必须编码且截断，进入 prompt 之前做安全降噪。
+ */
 @ExtendWith(MockitoExtension.class)
 class EventMatcherTest {
 
@@ -39,6 +43,10 @@ class EventMatcherTest {
                 new MetricDefinition.AnomalyRule("volatility", null, null, "wow", new BigDecimal("30"), null));
     }
 
+    /**
+     * 输入：多条事件中包含不同分值来源（时间、指标、维度）。
+     * 预期：按分值排序，零分被剔除，返回前 3 并校验首位分数。
+     */
     @Test
     void scoresAndOrdersByThreeConditions() {
         PeriodResolver.Window w26 = PeriodResolver.resolve("2026-W26");
@@ -58,6 +66,10 @@ class EventMatcherTest {
         assertEquals(4, out.get(0).score());
     }
 
+    /**
+     * 输入：超过 5 条高分事件。
+     * 预期：仅取 Top-5，避免将低相关候选带入上下文。
+     */
     @Test
     void capAtFiveCandidates() {
         PeriodResolver.Window w26 = PeriodResolver.resolve("2026-W26");
@@ -72,6 +84,10 @@ class EventMatcherTest {
                 PeriodResolver.previous(w26), null).size());
     }
 
+    /**
+     * 输入：两种币种贡献值方向不同（正负）。
+     * 预期：top contribution 以绝对值最大选择，供原因链路引用。
+     */
     @Test
     void topContributionDimPicksLargestAbsoluteDelta() {
         FactRecord cny = new FactRecord("fact_002_anom_cny_contrib", "by_ccy", 1, "贡献", "ch1",
@@ -86,6 +102,10 @@ class EventMatcherTest {
         assertNull(EventMatcher.topContributionDim(List.of()));
     }
 
+    /**
+     * 输入：标题含模板字符、描述含代码围栏等脏数据。
+     * 预期：输出包对关键字符转义并截断，防止 prompt 注入。
+     */
     @Test
     void candidatePackIsSanitizedAndTruncated() {
         // 第二道闸独立于录入校验：即便脏文本入了库（历史数据/直改库），进 prompt 前仍被转义

@@ -12,12 +12,18 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** LINK item 5：lexical vs vector 对比报告结构与命中率计算（合成 23 表，无 DB/网络）。 */
+/**
+ * LINK item 5 召回评测单测（无 DB/网络）。
+ * 比较 lexical 与 vector 两类命中路径的 Probe 报告结构、命中率与回退行为，检验 schema 搜索质量指标是否可被消费。
+ */
 class LinkingEvalServiceTest {
 
     private final SchemaService schema = mock(SchemaService.class);
 
-    /** 构造 23 张合成表：每张表检索文本含一个独特中文关键词，便于 lexical 字面命中。 */
+    /**
+     * 构造 23 张合成表：每张表检索文本含唯一关键词，便于 lexical 的字面检验。
+     * 仅用于验证命中率与报告结构，不依赖真实数据库。
+     */
     private void mockSchema() {
         Set<String> names = new LinkedHashSet<>();
         for (int i = 1; i <= 23; i++) {
@@ -31,6 +37,10 @@ class LinkingEvalServiceTest {
                 .thenAnswer(inv -> String.join(",", (java.util.Collection<String>) inv.getArgument(0)));
     }
 
+    /**
+     * 输入：两个 query 均可被 lexical 精确命中。
+     * 预期：topK=3 时命中率为 1.0，且每条 probe 返回长度为 topK 的召回列表。
+     */
     @Test
     void report_hasBothModes_andComputesHitRate() {
         mockSchema();
@@ -59,6 +69,10 @@ class LinkingEvalServiceTest {
         }
     }
 
+    /**
+     * 输入：存在目标关键词但召回集合不含目标表。
+     * 预期：命中率降为 0，probe.hit=false，覆盖 miss 分支。
+     */
     @Test
     void miss_isCountedAsZeroHit() {
         mockSchema();

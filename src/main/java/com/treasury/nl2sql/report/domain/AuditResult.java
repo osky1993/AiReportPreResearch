@@ -23,6 +23,7 @@ public record AuditResult(
             BigDecimal parsed,
             boolean ok) {}
 
+    /** 成功率=matched/total；total=0 视为 100%，避免空报告误判失败（前置已在其他步阻断）。 */
     public double consistencyRate() {
         return totalNumbers == 0 ? 1.0 : (double) matchedNumbers / totalNumbers;
     }

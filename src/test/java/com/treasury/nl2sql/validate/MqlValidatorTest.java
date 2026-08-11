@@ -12,12 +12,20 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** N5：MqlValidator 三处加固 + 合法 MQL 回归。纯逻辑，mock SchemaService。 */
+/**
+ * MqlValidator 全量规则回归单测（纯逻辑，mock SchemaService）。
+ * 覆盖聚合约束、IN/NOT IN 空数组、columns+groupBy 冲突、distinct 限制、caseColumn、fieldExpr、timeColumn、JOIN 条件、
+ * 子查询与窗口函数等关键校验路径；用于保证 ①-5 安全边界不会被上游 query 重构绕过。
+ */
 class MqlValidatorTest {
 
     private final SchemaService schema = mock(SchemaService.class);
     private MqlValidator validator;
 
+    /**
+     * 使用单表 cash_transaction 约定常量列特性搭建可重复验证语境。
+     * 覆盖数值/非数值、是否存在/时间列等最小 schema 事实集合。
+     */
     @BeforeEach
     void setup() {
         validator = new MqlValidator(schema);
@@ -35,6 +43,9 @@ class MqlValidatorTest {
         lenient().when(schema.isTemporalColumn("cash_transaction", "txn_date")).thenReturn(true);
     }
 
+    /**
+     * 构造基础 MQL（cash_transaction）。测试函数复用，避免重复设置产生噪声。
+     */
     private Mql base() {
         Mql m = new Mql();
         m.table = "cash_transaction";

@@ -21,7 +21,14 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** 起草服务九步后处理链单测（P3-T1；FakeLlm 回放 + mock 资产服务，零 DB/LLM/Spring）。 */
+/**
+ * 起草服务九步后处理链单测（P3-T1；FakeLlm 回放 + mock 资产服务，零 DB/LLM/Spring）。
+ * 关注点：LLM 不是可信输入，重点验证
+ * 1) 非 JSON 重试修复、拒答回流控制
+ * 2) 幻觉指标剔除与章节清洗
+ * 3) 全幻觉拒绝及 slug/id 冲突兜底
+ * 4) 最终校验（keywords/chapterId/长度）与草案结构稳定性
+ */
 class TemplateDraftServiceTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -58,6 +65,9 @@ class TemplateDraftServiceTest {
           "chapters":[{"chapterId":"x9","title":"一、头寸","metrics":["cny_total_balance"],"comparison":null,"guidance":"指引"}]},
          "unresolved":[],"unanswerable":false}""";
 
+    /**
+     * 验证合法模型输出可直接过初审并生成可保存草稿（chapterId 已重排）。
+     */
     @Test
     void happyPathDraftPassesThrough() {
         DraftResult r = serviceWithLlm(GOOD_REPLY).draft("每周给资金部领导看的外汇风险报告");
@@ -66,6 +76,9 @@ class TemplateDraftServiceTest {
         assertTrue(r.unresolved().isEmpty());
     }
 
+    /**
+     * 验证第一轮非 JSON 回复会进入重试链并最终恢复，避免偶发格式抖动误杀 LLM。
+     */
     @Test
     void retryChainRecoversFromNonJsonFirstReply() {
         DraftResult r = serviceWithLlm("我觉得可以这样……不是 JSON", GOOD_REPLY)
@@ -73,6 +86,9 @@ class TemplateDraftServiceTest {
         assertEquals("fx-risk-weekly", r.draft().templateId());
     }
 
+    /**
+     * 验证 unanswerable=true 直接拒答，保留原因透传用于运营提示。
+     */
     @Test
     void unanswerableIsRejected() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
@@ -82,6 +98,9 @@ class TemplateDraftServiceTest {
         assertTrue(e.getMessage().contains("与资金领域无关"));
     }
 
+    /**
+     * 验证幻觉指标会被剔除到 unresolved，不影响有效章节继续生成。
+     */
     @Test
     void hallucinatedMetricGoesToUnresolvedAndChapterSurvives() {
         DraftResult r = serviceWithLlm("""
@@ -94,6 +113,9 @@ class TemplateDraftServiceTest {
         assertTrue(r.notes().stream().anyMatch(n -> n.contains("剔除")));
     }
 
+    /**
+     * 验证整章仅幻觉指标时，该章节会移除并写入 notes 便于人工核对。
+     */
     @Test
     void chapterWithOnlyHallucinationsIsRemoved() {
         DraftResult r = serviceWithLlm("""
@@ -106,6 +128,9 @@ class TemplateDraftServiceTest {
         assertTrue(r.notes().stream().anyMatch(n -> n.contains("二、衍生品") && n.contains("移除")));
     }
 
+    /**
+     * 验证全部指标幻觉的模板会整体拒绝，避免保存空洞草稿。
+     */
     @Test
     void allHallucinationsMeansRefusal() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
@@ -118,6 +143,9 @@ class TemplateDraftServiceTest {
         assertTrue(e.getMessage().contains("ghost1"));
     }
 
+    /**
+     * 验证中文 templateId 通过 slugify 兜底，确保可持久化 id 符合规范。
+     */
     @Test
     void chineseTemplateIdGetsSlugFallbackAndPassesFinalCheck() {
         DraftResult r = serviceWithLlm("""
@@ -129,6 +157,9 @@ class TemplateDraftServiceTest {
                 "slugify 兜底 id 须过保存同款正则: " + r.draft().templateId());
     }
 
+    /**
+     * 验证模板 ID 冲突时自动加后缀，不覆盖现有资产。
+     */
     @Test
     void idCollisionGetsSuffix() {
         when(repo.existsById("fx-risk-weekly")).thenReturn(true);
@@ -137,12 +168,18 @@ class TemplateDraftServiceTest {
         assertEquals("fx-risk-weekly-2", r.draft().templateId());
     }
 
+    /**
+     * 验证输入描述过短直接 fail-closed，不应触发不必要的 LLM 调用。
+     */
     @Test
     void tooShortDescriptionRejectedWithoutLlmCall() {
         TemplateDraftService svc = serviceWithLlm();   // 队列为空——若调 LLM 会炸，证明未调用
         assertThrows(IllegalArgumentException.class, () -> svc.draft("周报"));
     }
 
+    /**
+     * 验证终检规则（keywords/chapterId/长度）不满足时抛出可解释的字段定位错误。
+     */
     @Test
     void invalidDraftFailsFinalValidation() {
         // keywords 为空 → 终检 ValidationFailedException（details 带 location）

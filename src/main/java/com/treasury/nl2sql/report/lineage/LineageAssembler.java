@@ -66,8 +66,17 @@ public final class LineageAssembler {
     private LineageAssembler() {}
 
     /**
-     * @param metrics 指标输入清单；null = run 无版本快照（Phase02 前存量），合法空标 absent
-     * @param eventsById 已解析的事件实体（claims 引用的 EVT-id 必须都在，缺 = 断链）
+     * 将 run 的主线索引（outline/spec/fact/chart/claim）拼成可读血缘图对象。
+     * 规则：任何引用缺失抛 IllegalStateException（断链），拒绝产出半张血缘；缺指标快照/图表等视为合法 absent。
+     *
+     * @param mapper Jackson 对象映射器。
+     * @param run 当前报告运行实例。
+     * @param templateName 模板名；空值回退成 placeholder。
+     * @param facts 凭证明细，若为空表示 ③~⑥ 未产出事实。
+     * @param claims 归因与审计主张，可能为空集合。
+     * @param charts 图表清单。
+     * @param eventsById 已解析事件实体映射（claims 中的 EVT-id 必须存在，否则 fail-closed）。
+     * @param metrics 指标输入清单；null 表示 run 无版本快照（Phase02 前存量），以 {@link #ABSENT} 标注输出端。
      */
     public static LineageDoc assemble(ObjectMapper mapper, ReportRun run, String templateName,
                                       List<FactRecord> facts, List<ClaimRecord> claims,
@@ -305,6 +314,7 @@ public final class LineageAssembler {
         }
     }
 
+    /** Event 引用必须是 EVT-123 数字后缀，失败视为血缘断链，防止脏引用污染报告。 */
     private static long parseEventId(String claimId, String ref) {
         try {
             return Long.parseLong(ref.substring("EVT-".length()));
@@ -319,13 +329,16 @@ public final class LineageAssembler {
         return m;
     }
 
+    /** 处理空值的统一工具：让 facets / 节点字段生成时不出现 NPE。 */
     private static String nz(String s) { return s == null ? "" : s; }
 
+    /** 安全截断：长字符串用于节点标签时只保留前缀，避免 lineage JSON 爆长。 */
     private static String truncate(String s, int max) {
         if (s == null) return "";
         return s.length() <= max ? s : s.substring(0, max) + "…";
     }
 
+    /** 哈希摘要短化，供 report 节点显示，用于人工快速检查而非完整校验。 */
     private static String shortHash(String hash) {
         return hash == null ? "" : (hash.length() <= 12 ? hash : hash.substring(0, 12));
     }

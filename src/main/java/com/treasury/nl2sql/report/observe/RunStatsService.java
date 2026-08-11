@@ -43,7 +43,15 @@ public class RunStatsService {
         this.pricePer1kOutput = pricePer1kOutput;
     }
 
-    /** from/to 为 ISO 日期（含当日）；均空 = 近 30 天；from=all 特殊值 = 全量。 */
+    /**
+     * 按时间窗聚合运行观测数据：
+     * <ul>
+     *   <li>时间窗边界采用 [from, to) 左闭右开，to 支持当日语义。</li>
+     *   <li>from 为空默认最近 30 天；from=all 覆盖历史所有分片。</li>
+     *   <li>仅查询已持久化数据库状态，不进行在线重算。</li>
+     * </ul>
+     * from/to 格式为 ISO 日期，解析失败会抛出运行时解析异常（控制面需对外兜底 400）。
+     */
     public StatsResponse stats(String from, String to) {
         LocalDateTime end = (to == null || to.isBlank())
                 ? LocalDateTime.now() : LocalDate.parse(to).plusDays(1).atStartOfDay();
@@ -57,6 +65,7 @@ public class RunStatsService {
         }
 
         // ---- runs（状态分布 + BLOCKED 原因） ----
+        // 注意：不压缩去重，每条 run 都贡献一行；统计失败原因有利于区分业务阻断与执行异常。
         Map<String, Integer> byStatus = new LinkedHashMap<>();
         List<String> blockedReasons = new java.util.ArrayList<>();
         jdbc.query("SELECT status, blocked_reason FROM report_run WHERE created_at >= ? AND created_at < ?",
@@ -69,6 +78,7 @@ public class RunStatsService {
         RunsBlock runs = new RunsBlock(total, byStatus, StatsCalculator.blockedReasons(blockedReasons, 8));
 
         // ---- steps（元数据行，不取 output_json） ----
+        // 成功率/阻断率以每次 step 记录为口径，attempt>1 计入重试，未完成记录只计时缺失时不计入 p50/p95。
         List<StatsCalculator.StepRow> stepRows = jdbc.query(
                 "SELECT phase, attempt, status, started_at, finished_at FROM report_step "
                         + "WHERE started_at >= ? AND started_at < ? ORDER BY step_id",
@@ -79,6 +89,7 @@ public class RunStatsService {
                         null), start, end);
 
         // ---- llm（仅三个含 LLM 的 phase 才取 output_json 解析 llmUsage 段） ----
+        // 成本估算按可选配置进行，未配置价格时返回 token 总量与提示。
         List<StatsCalculator.StepRow> llmRows = jdbc.query(
                 "SELECT phase, attempt, status, output_json FROM report_step "
                         + "WHERE started_at >= ? AND started_at < ? AND phase IN (" + LLM_PHASES + ")",

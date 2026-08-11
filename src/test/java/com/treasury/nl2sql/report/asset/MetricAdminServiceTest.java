@@ -40,7 +40,7 @@ class MetricAdminServiceTest {
         }
     }
 
-    /** 合法期间指标（模板含占位符）。 */
+    /** 造一个合法期间指标（mqlTemplate 使用 {{period_start/end}}）。 */
     private MetricDefinition periodMetric() {
         return new MetricDefinition("invest_out_amount", "本期投资支出金额", "CNY", true, true,
                 "amt", "ZERO", List.of("NON_NEGATIVE"), null, null,
@@ -64,6 +64,9 @@ class MetricAdminServiceTest {
         return e.errors().stream().map(TemplateValidator.ValidationError::location).toList();
     }
 
+    /**
+     * 验证结构校验聚合为多错误项返回，确保 badId/name/unit/mqlTemplate 等问题不“首错即停”。
+     */
     @Test
     void structureViolationsAreCollected() {
         MetricDefinition bad = new MetricDefinition("Bad Id!", " ", null, false, true,
@@ -77,6 +80,9 @@ class MetricAdminServiceTest {
         assertTrue(e.errors().size() >= 8, "逐条收集而非首错即停，实际: " + e.errors());
     }
 
+    /**
+     * 验证同 ID 重复提交会阻断，避免新版本覆盖已有资产主键。
+     */
     @Test
     void duplicateMetricIdRejected() {
         when(repo.existsById("invest_out_amount")).thenReturn(true);
@@ -85,6 +91,9 @@ class MetricAdminServiceTest {
         assertTrue(e.errors().get(0).message().contains("已存在"));
     }
 
+    /**
+     * 验证 timeBound=true 时必须保留 period_start/end 占位符，死日期直接拒绝。
+     */
     @Test
     void timeBoundTrueRequiresPlaceholder() {
         MetricDefinition m = new MetricDefinition("m_x1", "x", "CNY", true, false, "amt", "ZERO", null, null, null,
@@ -97,6 +106,9 @@ class MetricAdminServiceTest {
         assertTrue(e.errors().get(0).message().contains("死日期"));
     }
 
+    /**
+     * 验证 timeBound=false 时不允许 period 占位符，避免时间范围外部注入。
+     */
     @Test
     void timeBoundFalseForbidsPlaceholder() {
         MetricDefinition m = new MetricDefinition("m_x2", "x", "CNY", false, false, "amt", "ZERO", null, null, null,
@@ -108,6 +120,9 @@ class MetricAdminServiceTest {
         assertEquals(List.of("PLACEHOLDER"), checksOf(e));
     }
 
+    /**
+     * 验证 MQL 语法校验失败会归类为 MQL_VALIDATION，失败路径可追溯。
+     */
     @Test
     void mqlValidationErrorsAreClassified() {
         when(trial.validate(any())).thenReturn(List.of("表不存在: ghost_table"));
@@ -116,6 +131,9 @@ class MetricAdminServiceTest {
         assertEquals(List.of("MQL_VALIDATION"), checksOf(e));
     }
 
+    /**
+     * 验证试执行异常会归类为 TRIAL_EXECUTION，不误记为语法校验成功。
+     */
     @Test
     void trialExecutionFailureIsClassified() {
         when(trial.validate(any())).thenReturn(List.of());
@@ -125,6 +143,9 @@ class MetricAdminServiceTest {
         assertEquals(List.of("TRIAL_EXECUTION"), checksOf(e));
     }
 
+    /**
+     * 验证执行结果多行会触发 RESULT_SHAPE 保护，防止指标落库时语义歧义。
+     */
     @Test
     void multiRowResultRejected() {
         when(trial.validate(any())).thenReturn(List.of());
@@ -135,6 +156,9 @@ class MetricAdminServiceTest {
         assertTrue(e.errors().get(0).message().contains("2 行"));
     }
 
+    /**
+     * 验证 trial 结果缺失 valueColumn 列时 fail-closed，避免空 fact 造成后续编译异常。
+     */
     @Test
     void missingValueColumnRejected() {
         when(trial.validate(any())).thenReturn(List.of());
@@ -145,6 +169,9 @@ class MetricAdminServiceTest {
         assertTrue(e.errors().get(0).message().contains("amt"));
     }
 
+    /**
+     * 验证通过试执行路径时会新建 DRAFT 版本并透传草稿说明，用于人工复核闭环。
+     */
     @Test
     void happyPathInsertsDraftWithTryQuestionRemark() {
         stubHappyTrial();
@@ -157,6 +184,9 @@ class MetricAdminServiceTest {
                 eq("DRAFT"), eq("MANUAL"), eq("wizard"), contains("本期投资支出总金额"));
     }
 
+    /**
+     * 验证仅 DRAFT 可发布，发布成功会更新状态并刷新注册表缓存。
+     */
     @Test
     void publishGuardsAndReloads() {
         when(repo.findByIdAndVersion("m_a", 1)).thenReturn(Optional.of(
@@ -173,6 +203,9 @@ class MetricAdminServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.publish("m_a", 2));
     }
 
+    /**
+     * 验证下架逻辑受模板引用约束：被引用的 PUBLISHED 阻断下架，未引用可正常 DEPRECATED。
+     */
     @Test
     void deprecatePublishedMetricIsBlockedWhenReferenced() {
         when(repo.findByIdAndVersion("m_used", 1)).thenReturn(Optional.of(

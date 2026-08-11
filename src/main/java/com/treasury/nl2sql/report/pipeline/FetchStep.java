@@ -38,6 +38,12 @@ public class FetchStep {
     private final MqlSqlCompiler compiler;
     private final DSLContext dsl;
 
+    /**
+     * @param mapper json 序列化器
+     * @param validator MQL 白名单校验器
+     * @param compiler MQL→SQL 编译器（JOOQ）
+     * @param dsl 只读执行上下文
+     */
     public FetchStep(ObjectMapper mapper, MqlValidator validator,
                      MqlSqlCompiler compiler, DSLContext dsl) {
         this.mapper = mapper;
@@ -90,6 +96,7 @@ public class FetchStep {
                         + " 超上限 " + MetricDimensionRule.MAX_DIMENSION_ROWS
                         + "（失败关闭转人工，请收窄口径或换单值指标）");
             }
+            // 行集保留原始列名和原始顺序，只用于 hash 对账；不做二次聚合，避免“等值不同”被静默归一化。
             String resultHash = sha256(canonicalRows(rows));
             log.info("[FETCH] {} {} → {} 行, sql_hash={}", spec.specId(), spec.metricId(), rows.size(),
                     sha256(sql).substring(0, 12));
@@ -98,6 +105,10 @@ public class FetchStep {
         return results;
     }
 
+    /**
+     * 结果行集标准化序列化，仅用于哈希。
+     * 约束：输入不复制，仅依赖 mapper 顺序和列名稳定性；列顺序变化将改变哈希。
+     */
     private String canonicalRows(List<Map<String, Object>> rows) {
         try {
             return mapper.writeValueAsString(rows);
@@ -115,6 +126,9 @@ public class FetchStep {
         }
     }
 
+    /**
+     * 取最底层异常消息，去空白以便日志入库稳定比对。
+     */
     private static String rootMessage(Throwable e) {
         Throwable c = e;
         while (c.getCause() != null && c.getCause() != c) c = c.getCause();

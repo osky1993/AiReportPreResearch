@@ -31,7 +31,14 @@ public final class StatsCalculator {
 
     private StatsCalculator() {}
 
-    /** 按 phase 聚合（保持传入行的 phase 首次出现顺序）。 */
+    /**
+     * 按 phase 聚合步骤执行统计。
+     * <ul>
+     *   <li>未完成 step（startedAt/finishedAt 任一为空）不计入时延分位数。</li>
+     *   <li>attempt&gt;1 的同一 phase 重试记录保留在同一聚合桶，重试率可用于阻塞前置识别。</li>
+     *   <li>success/retry/blocked 采用 step 记录计数而非 run 计数，适配失败后的重试回放。</li>
+     * </ul>
+     */
     public static List<PhaseStats> phaseStats(List<StepRow> rows) {
         Map<String, List<StepRow>> byPhase = new LinkedHashMap<>();
         for (StepRow r : rows) byPhase.computeIfAbsent(r.phase(), k -> new ArrayList<>()).add(r);
@@ -70,7 +77,10 @@ public final class StatsCalculator {
                 .toList();
     }
 
-    /** LLM 用量汇总：解析各步 output_json 的 llmUsage 段（无段/解析失败 = 该步无 LLM，跳过）。 */
+    /**
+     * LLM 用量汇总：解析各步 output_json 的 llmUsage 段（无段/解析失败 = 该步无有效 LLM 用量，跳过）。
+     * 解析失败是脏数据容错路径，观测层不应放大下游报错。
+     */
     public static LlmTotals llmTotals(ObjectMapper mapper, List<StepRow> rows) {
         int calls = 0, unmetered = 0;
         long prompt = 0, completion = 0;

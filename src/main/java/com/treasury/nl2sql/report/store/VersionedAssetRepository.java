@@ -20,6 +20,10 @@ abstract class VersionedAssetRepository {
     private final String idColumn;
     private final RowMapper<AssetRow> mapper;
 
+    /**
+     * 构造入库仓储时注入物理表名与业务主键列名。
+     * 该基类锁定“版本化 + 只追加版本 + 仅状态变更”的资产模型；行 Mapper 约定 status/source/bodyJson 列名。
+     */
     protected VersionedAssetRepository(JdbcTemplate jdbc, String table, String idColumn) {
         this.jdbc = jdbc;
         this.table = table;
@@ -43,6 +47,7 @@ abstract class VersionedAssetRepository {
      */
     public int insertNewVersion(String assetId, String name, String bodyJson,
                                 String status, String source, String createdBy, String remark) {
+        // 当前资产历史最大版本 +1，直接插入新版本；并发时靠唯一键 (asset_id,version) 形成写入串行化失败信号。
         Integer max = jdbc.queryForObject(
                 "SELECT COALESCE(MAX(version), 0) FROM " + table + " WHERE " + idColumn + " = ?",
                 Integer.class, assetId);
@@ -78,7 +83,10 @@ abstract class VersionedAssetRepository {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
 
-    /** 状态流转（DRAFT→PUBLISHED→DEPRECATED；流转守卫在服务层，本方法只执行）。 */
+    /**
+     * 状态流转（DRAFT→PUBLISHED→DEPRECATED）。
+     * 流转约束只在服务层做（避免非法跨阶段），本层仅持久化已校验的流转结果。
+     */
     public void updateStatus(String assetId, int version, String status) {
         jdbc.update("UPDATE " + table + " SET status = ? WHERE " + idColumn + " = ? AND version = ?",
                 status, assetId, version);
@@ -91,6 +99,7 @@ abstract class VersionedAssetRepository {
         return n != null && n > 0;
     }
 
+    /** Timestamp 工具转换，保持 null 安全，避免数据库 null 传播到 NPE。 */
     private static LocalDateTime toLdt(Timestamp ts) {
         return ts == null ? null : ts.toLocalDateTime();
     }

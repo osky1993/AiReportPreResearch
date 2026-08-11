@@ -34,6 +34,12 @@ public class OutlineStep {
     private final TemplateMatcher matcher;
     private final ObjectMapper mapper;
 
+    /**
+     * @param llm LLM client（请求一次：候选内单选 + JSON 抽取）
+     * @param assets 注册表服务
+     * @param matcher 模板召回器
+     * @param mapper JSON 反序列化器
+     */
     public OutlineStep(LlmClient llm, ReportAssetService assets, TemplateMatcher matcher, ObjectMapper mapper) {
         this.llm = llm;
         this.assets = assets;
@@ -41,7 +47,14 @@ public class OutlineStep {
         this.mapper = mapper;
     }
 
-    /** @param revisionNote HITL 卡点1 打回时带的修改意见（首次为 null）。 */
+    /**
+     * 解析一条需求到 `Outline`，包含召回、候选内单选、周期归一化和无效口径拒绝。
+     * <p>
+     * 分支目标：`candidates empty`、模板外 `templateId`、周期无法解析、模板周期类型不匹配这些都属于
+     * 可解释失败，统一转 `PolicyException` 进入 BLOCKED，不做任何默认补全。
+     *
+     * @param revisionNote HITL 卡点1 打回时带的修改意见（首次为 null）。
+     */
     public Outline run(String requestText, String revisionNote) {
         // 第一段：程序召回候选。给不出候选直接失败关闭，LLM 无从下手也不该猜。
         List<TemplateMatcher.Candidate> candidates = matcher.recall(requestText);
@@ -99,6 +112,11 @@ public class OutlineStep {
         return new Outline(templateId, window.label(), chapters, unresolved);
     }
 
+    /**
+     * LLM 输出重试一次：第一次解析失败仅给出「只要返回合法 JSON」的纠正提示。
+     * <p>
+     * 重试一次仍失败直接失败关闭，避免模型在非法 JSON 上反复漂移消耗资源。
+     */
     private JsonNode completeWithOneRetry(List<LlmClient.Message> conversation) {
         String raw = com.treasury.nl2sql.report.observe.LlmUsageTally.record(llm.completeJsonDetail(conversation));
         log.info("[OUTLINE] LLM 输出: {}", raw);
@@ -118,6 +136,12 @@ public class OutlineStep {
         }
     }
 
+    /**
+     * 构造系统提示词：
+     * 1）约束模型只能从候选模板中选 templateId
+     * 2）只输出 JSON，禁止解释性输出与 markdown 围栏
+     * 3）把 unresolved 明确化，防止模型主观补齐口径
+     */
     private String systemPrompt(List<TemplateMatcher.Candidate> candidates) {
         StringBuilder templateLines = new StringBuilder();
         for (TemplateMatcher.Candidate c : candidates) {
@@ -167,6 +191,10 @@ public class OutlineStep {
                 .collect(Collectors.joining("、"));
     }
 
+    /**
+     * 去掉可选的 markdown 围栏，防止 parse 失败。
+     * 兼容带或不带语言标识的围栏（```json ... ```）。
+     */
     private static String stripFence(String s) {
         if (s == null) return "";
         String t = s.trim();

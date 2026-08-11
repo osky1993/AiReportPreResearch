@@ -15,7 +15,11 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** 向量召回 Top-K + qv 复用/降级。纯逻辑，无 DB/网络。 */
+/**
+ * VectorSchemaLinker 单测（无 DB/网络）。
+ * 验证 qv 命中 Top-K、qv 空值降级为全量召回、embedding 异常时的容错路径；
+ * 与 schema assemble 一起确保返回表名、分数可消费。
+ */
 class VectorSchemaLinkerTest {
 
     private SchemaService mockSchema() {
@@ -29,6 +33,10 @@ class VectorSchemaLinkerTest {
         return schema;
     }
 
+    /**
+     * 输入：标准问题句与可检索语义表定义。
+     * 预期：Top-K 命中 account，返回 scores，说明默认向量检索可用。
+     */
     @Test
     void select_topK_hitsRelevantTable() {
         VectorSchemaLinker linker = new VectorSchemaLinker(mockSchema(), new LocalHashingEmbeddingClient(), 1, 1);
@@ -40,6 +48,10 @@ class VectorSchemaLinkerTest {
         assertFalse(r.scores().isEmpty(), "应返回全部表的相似度分数");
     }
 
+    /**
+     * 输入：qv 为空（embedding 失败后降级）。
+     * 预期：返回全部表名且无分数，保障系统可继续执行而不全量失败。
+     */
     @Test
     void select_withNullQv_degradesToAllTables() {
         VectorSchemaLinker linker = new VectorSchemaLinker(mockSchema(), new LocalHashingEmbeddingClient(), 1, 1);
@@ -52,6 +64,10 @@ class VectorSchemaLinkerTest {
         assertTrue(r.scores().isEmpty(), "降级路径无相似度分数");
     }
 
+    /**
+     * 输入：embedding 在查询阶段抛异常。
+     * 预期：不抛出异常，降级为全量注入路径。
+     */
     @Test
     void select_whenEmbedThrows_degradesInsteadOfFailing() {
         SchemaService schema = mockSchema();

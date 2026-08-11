@@ -26,9 +26,19 @@ import java.util.regex.Pattern;
 @Component
 public class MqlParameterizer {
 
-    /** @param placeholder null=不可勾选的提示项（reason 说明原因） */
+    /**
+     * 可参数化建议。
+     * @param path Json Pointer，定位叶子条件的 value 节点
+     * @param field 字段名
+     * @param op 运算符（>=/>/< 等）
+     * @param value 原始值字符串
+     * @param placeholder 建议替换占位符；不可勾选时为空
+     * @param reason 不可勾选原因（用于 UI 提示）
+     */
     public record Suggestion(String path, String field, String op, String value, String placeholder, String reason) {}
+    /** 扫描产物：建议清单 + 扫描备注。 */
     public record ScanResult(List<Suggestion> suggestions, List<String> notes) {}
+    /** apply 产物：替换后的 MQL、已应用 path、未被应用但可选建议。 */
     public record ApplyResult(JsonNode mqlTemplate, List<String> applied, List<Suggestion> remaining) {}
 
     public static final String PH_START = "{{period_start}}";
@@ -38,6 +48,7 @@ public class MqlParameterizer {
 
     private final SchemaService schema;
 
+    /** 依赖 schema 用于判断时间列，仅返回可构成期间参数化的时间条件。 */
     public MqlParameterizer(SchemaService schema) {
         this.schema = schema;
     }
@@ -79,6 +90,7 @@ public class MqlParameterizer {
             obj.put("value", s.placeholder());
             applied.add(path);
         }
+        // 未被勾选路径保留，供 UI 端回显“本次未参数化项”，避免误导用户已全部完成。
         List<Suggestion> remaining = scanned.suggestions().stream()
                 .filter(s -> !applied.contains(s.path())).toList();
         return new ApplyResult(work, applied, remaining);
@@ -86,9 +98,16 @@ public class MqlParameterizer {
 
     // ---------- 泛化 DFS ----------
 
-    /** 作用域：含 table 属性的 ObjectNode（顶层 / subquery / union 段）各自成域。 */
+    /**
+     * 作用域：记录当前节点所属“主表”和 alias->真实表映射（含 joins）。
+     * 以此区分裸字段归属与跨表字段解析。
+     */
     private record Scope(String mainRealTable, Map<String, String> ref2real) {}
 
+    /**
+     * 递归遍历 MQL JSON：无视嵌套层级（subquery/union/条件数组），在命中叶子条件时触发扫描。
+     * 失败分支通过 notes 留痕（当前实现 notes 主要为保留扩展位，便于后续审计）。
+     */
     private void walk(JsonNode node, String path, String parentField, Scope scope,
                       List<Suggestion> suggestions, List<String> notes) {
         if (node == null) return;
@@ -112,6 +131,10 @@ public class MqlParameterizer {
         }
     }
 
+    /**
+     * 构建字段归属作用域：
+     * 将主表与 joins 的 alias 映射到真实表，保障后续 column 归属与 schema 时间列检查正确。
+     */
     private static Scope buildScope(JsonNode mqlNode) {
         String table = mqlNode.path("table").asText();
         Map<String, String> ref2real = new LinkedHashMap<>();
@@ -127,11 +150,18 @@ public class MqlParameterizer {
         return new Scope(table, ref2real);
     }
 
-    /** 叶子条件三件套：field(textual) + op + value（且非 and/or 组节点）。 */
+    /**
+     * 叶子条件定义：必须同时具备 field/op/value 且不是逻辑树节点（field + op + value）。
+     */
     private static boolean isLeafCondition(JsonNode node) {
         return node.path("field").isTextual() && node.has("op") && node.has("value");
     }
 
+    /**
+     * 针对单个叶子条件判定可参数化。
+     * 可参数化条件特征：时间列 + 日期字面量 + 上下界比较（>=,>,<=,<）。
+     * "="、IN 日期视为不可参数化（保持不可猜补原则）。
+     */
     private void inspectLeaf(ObjectNode leaf, String path, Scope scope, List<Suggestion> suggestions) {
         if (scope == null) return;
         String field = leaf.path("field").asText();

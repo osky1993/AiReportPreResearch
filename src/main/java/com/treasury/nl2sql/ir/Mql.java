@@ -11,6 +11,13 @@ import java.util.List;
  * MQL —— 介于自然语言与 SQL 之间的结构化中间查询语言（IR）。
  * LLM 只需产出这个受约束的 JSON 对象，再由 {@code MqlSqlCompiler} 确定性地编译成方言 SQL。
  * MVP 版本支持：单表 + 过滤 + 分组 + 聚合指标 + having + 排序 + 限制。
+ *
+ * <p>关键约束：
+ * <ul>
+ *   <li>该模型可序列化到 JSON，作为 few-shot/审计/重放的统一载体。</li>
+ *   <li>字段语义固定：compiler/validator 按语义严格解释每个字段名与枚举值。</li>
+ *   <li>字段组合有互斥规则（如 windows 与 groupBy 的部分互斥），超约束会在校验阶段拒绝。</li>
+ * </ul>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)

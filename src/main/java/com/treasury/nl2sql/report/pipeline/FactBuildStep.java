@@ -39,13 +39,20 @@ public class FactBuildStep {
 
     public record FactBuildResult(List<FactRecord> facts, List<String> notes) {}
 
-    /** 纯逻辑单测入口（无版本快照：metricVersion 记 null）。 */
+    /**
+     * 纯逻辑单测入口（无版本快照：metricVersion 记 null）。
+     * 用于验证派生与限制策略，不受“已发布版本快照”影响。
+     */
     public FactBuildResult run(Outline outline, List<FetchStep.FetchResult> fetched,
                                Map<String, MetricDefinition> metricDefs) {
         return run(outline, fetched, metricDefs, null);
     }
 
-    /** @param metricVersions run 固化的指标版本快照（null=Phase02 前存量 run 未固化，fact 版本记 null） */
+    /**
+     * 阶段核心入口：从 Fetch 结果构建可写入 fact 阶段的事实集。
+     * @param metricVersions run 固化的指标版本快照（null=Phase02 前存量 run 未固化，fact 版本记 null）
+     * 失败模式：缺列、错数、比较缺失、质量规则不满足、fact 上限超限都会抛 PolicyException。
+     */
     public FactBuildResult run(Outline outline, List<FetchStep.FetchResult> fetched,
                                Map<String, MetricDefinition> metricDefs, Map<String, Integer> metricVersions) {
         List<FactRecord> facts = new ArrayList<>();
@@ -65,6 +72,7 @@ public class FactBuildStep {
                 continue;
             }
             if (def.isDimensional()) {
+                // 维度指标不复用 single-value 分支，先统一构造维度行/合计/占比并写入同一索引，保证派生与比较可复用。
                 buildDimensionalGroup(fr, def, versionOf(metricVersions, spec.metricId()),
                         facts, byMetric, notes, seq);
                 continue;
@@ -156,10 +164,15 @@ public class FactBuildStep {
         return new FactBuildResult(facts, notes);
     }
 
-    /** 章节 fact 数上限（含 BASE+DERIVED+维度行+占比）：触顶失败关闭，守 ⑤ 的占位符纪律。
-     *  T0 拍板 20；gk 首期放大至 30——苏州分县维度全列 10 县域需 2N+1=21（业务确认必须全列，不截断）。 */
+    /**
+     * 章节 fact 数上限（含 BASE+DERIVED+维度行+占比）：触顶失败关闭，守 ⑤ 的占位符纪律。
+     * T0 拍板 20；gk 首期放大至 30——苏州分县维度全列 10 县域需 2N+1=21（业务确认必须全列，不截断）。
+     */
     static final int CHAPTER_FACT_LIMIT = 30;
-    /** 图表序列独立配额（P4 契约2 裁定：序列 fact 不进 ⑤ prompt，故不占章 20 上限，独立管数据量）。 */
+    /**
+     * 图表序列独立配额。
+     * P4 契约2：序列 fact 不进 ⑤ prompt，故单独配额，不与章节正文 fact 共享阈值。
+     */
     static final int CHAPTER_CHART_SERIES_LIMIT = 24;
 
     /** 图表序列 fact 判定：按 spec 快照的 purpose 识别（不靠 key 模式——维度 slug 可能撞形）。 */
@@ -167,6 +180,10 @@ public class FactBuildStep {
         return f.specJson() != null && f.specJson().contains("\"" + MetricQuerySpec.PURPOSE_CHART_SERIES + "\"");
     }
 
+    /**
+     * 校验章节维度上的事实总量边界。
+     * 超上限直接 fail-closed，防止 prompt 生成面超过 LLM 处理上限。
+     */
     private static void assertChapterFactLimit(List<FactRecord> facts) {
         Map<String, Long> byChapter = new LinkedHashMap<>();
         Map<String, Long> chartByChapter = new LinkedHashMap<>();
@@ -192,9 +209,9 @@ public class FactBuildStep {
     }
 
     /**
-     * 图表序列 fact（Phase04 契约1「序列点即 fact」）：按 metricId 分组、periodLabel 升序
-     * （同粒度标签字典序即时间序），key = fact_NNN_sK（s1=最早期）。序列 fact 不进 byMetric 索引、
-     * 不进 ⑤ prompt、不进评测比对射程——只供 ChartBuildStep 绑定与 ⑥ 图表核对。
+     * 图表序列 fact（Phase04 契约1「序列点即 fact」）。
+     * 按 metricId 分组、按 periodLabel 升序后打上 fact_cxx_sy 的主键，只用于 chart 渲染绑定。
+     * 序列 fact 不进 byMetric 索引、不进 ⑤ prompt，不作为评测主链路可比对对象。
      */
     private void buildChartSeriesFacts(List<FetchStep.FetchResult> chartSeries,
                                        Map<String, MetricDefinition> metricDefs,
@@ -207,6 +224,8 @@ public class FactBuildStep {
         for (Map.Entry<String, List<FetchStep.FetchResult>> e : byMetricId.entrySet()) {
             MetricDefinition def = require(metricDefs, e.getKey());
             List<FetchStep.FetchResult> points = new ArrayList<>(e.getValue());
+            // 同一度量的历史点按 periodLabel 从旧到新排序，便于图表序列在 UI 里自然可读；
+            // 同时保持 fact_cNN_sK 的 K 与时间顺序一一对应，避免时序漂移。
             points.sort(java.util.Comparator.comparing(p -> p.spec().periodLabel()));
             // 序列组用「fact_c<NN>」前缀独立于主序列命名域——不动主序列 NNN 编号（既有基线稳定）
             String groupKey = String.format("fact_c%02d", chartGroupIndex(facts) + 1);
@@ -331,7 +350,10 @@ public class FactBuildStep {
         return s;
     }
 
-    /** 取数结果必须恰 1 行、含 valueColumn；NULL 按 nullPolicy 处置（ZERO=0 / BLOCK=失败关闭）。 */
+    /**
+     * 取数结果必须恰 1 行、含 valueColumn；NULL 按 nullPolicy 处置（ZERO=0 / BLOCK=失败关闭）。
+     * 该约束保证派生/比较阶段可直接按 key=purpose 取数，不再出现“隐式多行折叠”。
+     */
     private BigDecimal extractValue(MetricDefinition def, FetchStep.FetchResult fr) {
         if (fr.rows().size() != 1) {
             throw new PolicyException("指标「" + def.metricId() + "」取数结果应恰 1 行，实际 " + fr.rows().size() + " 行");
@@ -357,6 +379,10 @@ public class FactBuildStep {
         throw new PolicyException("指标「" + def.metricId() + "」取数值类型非数值: " + v.getClass().getSimpleName());
     }
 
+    /**
+     * 质量检查只做最小必要断言（目前支持 NON_NEGATIVE），失败即 policy-block；
+     * 目的在于把数据脏值挡在 ④，避免污染 ⑤ 的 prompt 输入与 ⑥ 的数字一致率校验。
+     */
     private void assertQuality(MetricDefinition def, BigDecimal value) {
         if (def.qualityChecks() == null) return;
         if (def.qualityChecks().contains(MetricDefinition.CHECK_NON_NEGATIVE) && value.signum() < 0) {
@@ -365,9 +391,9 @@ public class FactBuildStep {
     }
 
     /**
-     * 展示串一次性渲染（⑤ 替换与 ⑥ 回读都以此为准，格式变更必须与 NumberAuditor.RENDERED/parseBack 同步）：
-     * CNY 且 |值|≥1万 → "6,570.00 万元"；CNY → "1,234.56 元"；percent → "+12.5%"；
-     * 外币码（USD/EUR 等 3 位大写）→ "1,234.56 USD"（金额精度，不抹小数）；计数 → "4 笔"。
+     * 展示串一次性渲染（⑤ 替换与 ⑥ 回读都以此为准，格式变更必须与 NumberAuditor.RENDERED/parseBack 同步）。
+     * CNY 且 |值|≥1万 -> "6,570.00 万元"；CNY -> "1,234.56 元"；percent -> "+12.5%"；
+     * 外币码（USD/EUR 等 3 位大写）-> "1,234.56 USD"（金额精度，不抹小数）；计数 -> "4 笔"。
      */
     static String renderDisplay(BigDecimal value, String unit) {
         DecimalFormat money = new DecimalFormat("#,##0.00");
@@ -391,6 +417,10 @@ public class FactBuildStep {
         return value.setScale(0, RoundingMode.HALF_UP).toPlainString() + " " + unit;
     }
 
+    /**
+     * 事实编号器：基于序列号递增生产 fact_xxx 前缀。
+     * 与其他模块的 fact 引用约定一致，保证 replace/verify 全链路可解析。
+     */
     private static String nextKey(int[] seq) {
         return String.format("fact_%03d", ++seq[0]);
     }

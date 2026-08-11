@@ -37,13 +37,18 @@ public final class TemplateValidator {
 
     private TemplateValidator() {}
 
-    /** @param catalog 注册表中 PUBLISHED 指标（引用存在性与图表绑定合法性以此为准） */
+    /**
+     * 统一校验入口（模板保存/validate 接口 / 启动自检）。
+     * 返回 error 列表用于统一回放，不在此阶段抛异常（除非调用方决定立即 fail-closed）。
+     */
     public static List<ValidationError> validate(ReportTemplateDef tpl, Map<String, MetricDefinition> catalog) {
         List<ValidationError> errors = new ArrayList<>();
         if (tpl == null) {
             errors.add(new ValidationError("", "模板体为空"));
             return errors;
         }
+        // 这套校验是“拒绝式”：发现第一类错误不 early return；
+        // 这样可一次性回传多个修复点，减少编辑器往返。
         if (tpl.templateId() == null || !TEMPLATE_ID.matcher(tpl.templateId()).matches()) {
             errors.add(new ValidationError("templateId",
                     "templateId 必须匹配 ^[a-z][a-z0-9-]{2,63}$（当前: " + tpl.templateId() + "）"));
@@ -54,6 +59,7 @@ public final class TemplateValidator {
         if (tpl.keywords() == null || tpl.keywords().isEmpty()) {
             errors.add(new ValidationError("keywords", "keywords 不能为空（运行期匹配召回依赖，资产治理要求必填）"));
         } else {
+            // 关键词至少存在，允许内容后续有重复清洗，但不能是空串，否则 recall 全部穿透到 fallback。
             for (int i = 0; i < tpl.keywords().size(); i++) {
                 String kw = tpl.keywords().get(i);
                 if (kw == null || kw.isBlank()) {
@@ -95,6 +101,7 @@ public final class TemplateValidator {
             if (ch.title() == null || ch.title().isBlank()) {
                 errors.add(new ValidationError(at + ".title", "章节标题不能为空"));
             }
+            // 章节为空不允许，因为写作阶段需要至少一条事实映射；空章节会导致报告正文无法覆盖章节占位。
             if (ch.metrics() == null || ch.metrics().isEmpty()) {
                 errors.add(new ValidationError(at + ".metrics",
                         "每个章节至少要挂 1 个指标（空章节 ⑤ 撰写无事实可写）"));
@@ -178,6 +185,7 @@ public final class TemplateValidator {
                 errors.add(new ValidationError(loc, "图表声明为空"));
                 continue;
             }
+            // 图表不是单独事实源，必须追溯到本章指标；图表 id 仅在章节内可唯一，便于前端增删定位。
             if (chart.chartId() == null || !CHART_ID.matcher(chart.chartId()).matches()) {
                 errors.add(new ValidationError(loc + ".chartId",
                         "chartId 必须匹配 ^[a-z][a-z0-9_]{2,31}$（当前: " + chart.chartId() + "）"));
@@ -193,6 +201,7 @@ public final class TemplateValidator {
                         "binding.kind 只允许 series/dimension（当前: " + (b == null ? null : b.kind()) + "）"));
                 continue;
             }
+            // 绑定 kind 与 chart type 为约束矩阵关系，避免 series/bar 与 dimension/pie 类型组合导致前端渲染与数据形态不匹配。
             if (chart.type() == null || !CHART_KIND_TYPES.get(b.kind()).contains(chart.type())) {
                 errors.add(new ValidationError(loc + ".type", "图型与绑定不匹配（矩阵：series→line/bar；"
                         + "dimension→pie/bar；当前 kind=" + b.kind() + " type=" + chart.type() + "）"));
@@ -208,6 +217,7 @@ public final class TemplateValidator {
                         "图表绑定的指标必须同时挂在本章 metrics（图表不引入章外口径）: " + b.metricId()));
             }
             if (ChartDef.KIND_SERIES.equals(b.kind())) {
+                // series 强制绑定 period series 时序，故要求时间窗口指标且非维度/派生，且 periods 控制点数上限。
                 if (def.isDerivedMetric() || def.isDimensional() || !def.timeBound()) {
                     errors.add(new ValidationError(loc + ".binding.metricId",
                             "series 绑定要求期间型取数指标（timeBound=true、非派生、非维度）: " + b.metricId()));
@@ -218,6 +228,7 @@ public final class TemplateValidator {
                                     + "（当前: " + b.periods() + "）"));
                 }
             } else {
+                // dimension 图用于横向分布，不存在时序维度时 periods 无意义，必须使用声明 dimensions 的指标。
                 if (!def.isDimensional()) {
                     errors.add(new ValidationError(loc + ".binding.metricId",
                             "dimension 绑定要求声明了 dimensions 的指标: " + b.metricId()));

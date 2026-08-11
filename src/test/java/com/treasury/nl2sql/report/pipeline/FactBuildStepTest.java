@@ -14,7 +14,10 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** ④ 事实构建纯逻辑单测（无 DB/LLM）：取值断言、display 渲染、环比/同比与净流入派生。 */
+/**
+ * ④ FactBuildStep 纯逻辑单测（无 DB/LLM）。覆盖本期/比较取数、派生事实计算、展示格式化、
+ * 规则校验失败关闭、版本固化与边界场景（空值、行数异常、同比并行等）。
+ */
 class FactBuildStepTest {
 
     private final FactBuildStep step = new FactBuildStep(new ObjectMapper());
@@ -40,6 +43,10 @@ class FactBuildStepTest {
                 List.of());
     }
 
+    /**
+     * 输入：本期与环比基期两行，指标可比且空值策略为 ZERO。
+     * 预期：生成 base+compare+_wow，wow 为 (4-3)/3，并有正确派生来源链与占位位.
+     */
     @Test
     void buildsBaseFactAndWeekOverWeek() {
         Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "笔", true, "ZERO"));
@@ -56,6 +63,10 @@ class FactBuildStepTest {
         assertEquals("fact_001,fact_002", wow.derivedFrom());
     }
 
+    /**
+     * 输入：环比基期为 0 且 baseline policy 为 ZERO。
+     * 预期：不产出 _wow 派生事实，仅写入 note，避免除零污染。
+     */
     @Test
     void zeroBaselineSkipsWowWithNote() {
         Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "笔", true, "ZERO"));
@@ -67,6 +78,10 @@ class FactBuildStepTest {
         assertTrue(facts.notes().get(0).contains("基数为 0"));
     }
 
+    /**
+     * 输入：定义了 net 派生指标（in - out）。
+     * 预期：从两条 base 输入生成净流入派生，展示值走 CNY 单位逻辑，sqlText 为空。
+     */
     @Test
     void netInflowDerivedFromTwoBaseFacts() {
         Map<String, MetricDefinition> defs = Map.of(
@@ -85,6 +100,10 @@ class FactBuildStepTest {
         assertNull(net.sqlText());
     }
 
+    /**
+     * 输入：不同单位渲染。
+     * 预期：千元/元/百分比/整数维度展示符合规则，便于 ⑥ NumberAuditor 反解析。
+     */
     @Test
     void displayRendering() {
         assertEquals("6,570.00 万元", FactBuildStep.renderDisplay(new BigDecimal("65700000"), "CNY"));
@@ -96,6 +115,10 @@ class FactBuildStepTest {
         assertEquals("4 笔", FactBuildStep.renderDisplay(new BigDecimal("4"), "笔"));
     }
 
+    /**
+     * 输入：数值违规（负值 + NON_NEGATIVE）时。
+     * 预期：抛 PolicyException 并停止生成，避免脏事实下发。
+     */
     @Test
     void nonNegativeAssertionFailsClosed() {
         Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "CNY", false, "ZERO"));
@@ -105,6 +128,10 @@ class FactBuildStepTest {
         assertTrue(e.getMessage().contains("NON_NEGATIVE"));
     }
 
+    /**
+     * 输入：取数为 null、不同 nullPolicy 组合。
+     * 预期：ZERO policy 转换为 0，BLOCK policy 报错，验证参数化边界。
+     */
     @Test
     void nullValueHonorsNullPolicy() {
         Map<String, MetricDefinition> zeroDefs = Map.of("m1", metric("m1", "CNY", false, "ZERO"));
@@ -118,6 +145,10 @@ class FactBuildStepTest {
                         result(spec("qs1", "m1", "CURRENT", "2026-W26"), null)), blockDefs));
     }
 
+    /**
+     * 输入：指标版本 map 提供时。
+     * 预期：base/derived/wow 事实均回写 metricVersion；未传版本时应为空。
+     */
     @Test
     void metricVersionsPinnedIntoFacts() {
         // 带版本快照：BASE/派生/环比事实均记录各自指标的固化版本；无快照（3 参重载）则为 null
@@ -140,6 +171,10 @@ class FactBuildStepTest {
         assertNull(unpinned.facts().get(0).metricVersion());
     }
 
+    /**
+     * 输入：查询返回 0 行。
+     * 预期：抛 PolicyException，失败关闭；不允许将“查不到”静默当 0。
+     */
     @Test
     void wrongRowCountFailsClosed() {
         Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "笔", false, "ZERO"));
@@ -156,6 +191,10 @@ class FactBuildStepTest {
                 List.of());
     }
 
+    /**
+     * 输入：月度同时声明 MOM 与 YOY，两条对比基期均存在。
+     * 预期：facts 为本期+两个基期+两个衍生指标，顺序稳定。
+     */
     @Test
     void momAndYoyCoexistInOneChapter() {
         Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "笔", true, "ZERO"));
@@ -177,6 +216,10 @@ class FactBuildStepTest {
         assertEquals("fact_001,fact_003", yoy.derivedFrom());
     }
 
+    /**
+     * 输入：同比基期为 0。
+     * 预期：只产出 MOM，YOY 跳过并附带对比跳过 note。
+     */
     @Test
     void zeroYoyBaselineSkipsOnlyYoyWithDistinctNote() {
         Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "笔", true, "ZERO"));
@@ -192,6 +235,10 @@ class FactBuildStepTest {
         assertTrue(facts.notes().get(0).contains("跳过同比"));
     }
 
+    /**
+     * 输入：仅本期快照无同比基期。
+     * 预期：不报错、仅保留 base，兼容缺省基期场景。
+     */
     @Test
     void yoyWithoutYoyBaseFactIsSilentlyAbsent() {
         // 声明了同比但取数只有本期与环比基期（如快照指标）→ 不造 _yoy、不报错
@@ -219,6 +266,10 @@ class FactBuildStepTest {
         return new FetchStep.FetchResult(s, "select dim", "hash", rows, "rhash");
     }
 
+    /**
+     * 输入：多币种维度行 + 合计 + 占比需求。
+     * 预期：产出 row fact + total + share，且衍生顺序与 factKey 命名规则稳定。
+     */
     @Test
     void dimensionalRowsProduceRowTotalAndShareFacts() {
         Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));
@@ -246,6 +297,10 @@ class FactBuildStepTest {
         // 后续单值指标编号顺延不受影响
     }
 
+    /**
+     * 输入：维度 slug 非 ASCII 或与已存在 slug 冲突。
+     * 预期：按 slug 降级规则生成稳定且唯一的 factKey，避免覆盖。
+     */
     @Test
     void dimensionSlugFallsBackOnNonAsciiAndConflict() {
         Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));
@@ -259,6 +314,10 @@ class FactBuildStepTest {
         assertEquals(List.of("fact_001_r01", "fact_001_usd", "fact_001_r03"), keys);
     }
 
+    /**
+     * 输入：维度行数达到 13（> 12 限制）。
+     * 预期：直接 fail-closed，提示超上限，避免单指标产物膨胀。
+     */
     @Test
     void dimensionRowLimitFailsClosed() {
         Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));
@@ -270,6 +329,10 @@ class FactBuildStepTest {
         assertTrue(e.getMessage().contains("超上限"));
     }
 
+    /**
+     * 输入：两个维度指标各 10 行左右（章节聚合会超 30 条上限）。
+     * 预期：章节级 fail-closed，防止单章节事实爆炸。
+     */
     @Test
     void chapterFactLimitFailsClosed() {
         // 两个维度指标 ×（8 行+合计+8 占比）= 34 > 30 → 章节上限失败关闭
@@ -284,6 +347,10 @@ class FactBuildStepTest {
         assertTrue(e.getMessage().contains("超上限"));
     }
 
+    /**
+     * 输入：维度查询返回 0 行 + ZERO/BLOCK 两种 null 策略对比。
+     * 预期：ZERO 产出 0 合计；BLOCK 抛异常，保持策略一致性。
+     */
     @Test
     void emptyDimensionRowsHonorNullPolicy() {
         Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));
@@ -308,6 +375,10 @@ class FactBuildStepTest {
                 label, "2026-06-01", "2026-06-07");
     }
 
+    /**
+     * 输入：主序列 + 2 个图表序列点，序列标签乱序。
+     * 预期：图表 fact 独立命名空间，按时间由早到晚排序映射 s1/s2。
+     */
     @Test
     void chartSeriesFactsGetOwnNamespaceSortedOldestFirst() {
         Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "CNY", true, "ZERO"));
@@ -325,6 +396,10 @@ class FactBuildStepTest {
         assertFalse(FactBuildStep.isChartSeriesFact(built.facts().get(0)));
     }
 
+    /**
+     * 输入：序列点分别在 21 与 25 条边界。
+     * 预期：21 条通过，25 条触发图表序列配额关闭，不影响章节上限。
+     */
     @Test
     void chartSeriesQuotaFailsClosedButNotChapterLimit() {
         Map<String, MetricDefinition> defs = Map.of("m1", metric("m1", "CNY", true, "ZERO"));
@@ -341,6 +416,10 @@ class FactBuildStepTest {
         assertTrue(e.getMessage().contains("图表序列"));
     }
 
+    /**
+     * 输入：维度合计为 0 的场景。
+     * 预期：行 fact+total 有值，share 不生成并给出跳过占比说明。
+     */
     @Test
     void zeroTotalSkipsShareWithNote() {
         Map<String, MetricDefinition> defs = Map.of("m1", dimMetric("m1"));

@@ -5,11 +5,19 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** IR 的 Jackson 绑定回归：重点兜住 "else" 关键字（@JsonProperty 漏了会被 ignoreUnknown 静默吞掉）。 */
+/**
+ * IR 的 Jackson 绑定回归：
+ * 通过固定 JSON 用例兜底关键字段反序列化，防止字段名错配（如 else）静默失效。
+ * 覆盖 caseColumn、timeColumns、字段表达式、join 常量、窗口 offset、distinct flags 等。
+ */
 class MqlJsonTest {
 
     private final ObjectMapper om = new ObjectMapper();
 
+    /**
+     * 输入：json 使用 else 关键字；
+     * 预期：反序列化到 elseValue 字段而非丢弃或混淆到其他字段。
+     */
     @Test
     void caseColumn_elseKeyword_bindsToElseValue() throws Exception {
         String json = """
@@ -28,6 +36,10 @@ class MqlJsonTest {
         assertEquals("高", cc.cases.get(0).then);
     }
 
+    /**
+     * 输入：timeColumns 定义 month + ym；
+     * 预期：func/field/alias 全部命中映射，防止 schema 计算时字段名错位。
+     */
     @Test
     void timeColumns_bind() throws Exception {
         String json = """
@@ -43,6 +55,10 @@ class MqlJsonTest {
         assertEquals("ym", mql.timeColumns.get(0).alias);
     }
 
+    /**
+     * 输入：fieldExpr 和 expr 里有常量/表达式；
+     * 预期：表达式树（左、右、算子）完整反序列化到对象模型。
+     */
     @Test
     void fieldExprAndConstantOperand_bind() throws Exception {
         String json = """
@@ -58,6 +74,10 @@ class MqlJsonTest {
         assertEquals(100, mql.metrics.get(1).expr.right.value);
     }
 
+    /**
+     * 输入：join on 常量值、window offset；
+     * 预期：on.value 与 offset 正常落地，保证版本兼容与 SQL 渲染输入完整性。
+     */
     @Test
     void onValueAndWindowOffset_bind() throws Exception {
         String json = """
@@ -74,6 +94,10 @@ class MqlJsonTest {
         assertEquals(2, mql.windows.get(0).offset);
     }
 
+    /**
+     * 输入：distinct 与 metric distinct 同时为 true；
+     * 预期：双重布尔均保留，防止 JSON 键名错配导致聚合行为变化。
+     */
     @Test
     void distinctFlags_bind() throws Exception {
         String json = """

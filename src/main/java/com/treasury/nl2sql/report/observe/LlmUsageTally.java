@@ -20,6 +20,11 @@ public final class LlmUsageTally {
 
     private LlmUsageTally() {}
 
+    /**
+     * Step 内清账，避免一个线程内历史步用量污染下一步统计。
+     * 采用 ThreadLocal 是出于执行模型假设（单步在单线程同步执行）；若未来改为并发 step 执行，
+     * 必须切到显式上下文对象重写累加模型。
+     */
     public static void reset() {
         ACC.remove();
     }

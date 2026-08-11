@@ -9,7 +9,10 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 模板校验规则单测（纯逻辑，无 DB/Spring）——契约见 README「模板管理 API」。 */
+/**
+ * 模板校验规则单测（纯逻辑，无 DB/Spring）——契约见 README「模板管理 API」。
+ * 覆盖结构字段、comparison 矩阵、图表绑定矩阵与指标引用约束，保证模板发布前静态拒错是可解释的 fail-fast。
+ */
 class TemplateValidatorTest {
 
     private static MetricDefinition metricDef(String id, boolean timeBound, List<String> dims) {
@@ -33,11 +36,17 @@ class TemplateValidatorTest {
                         chapter("c2", "二、收支", List.of("m_inflow"), "week_over_week", null, "电报式短句")));
     }
 
+    /**
+     * 验证合法模板通过所有结构、章节和指标校验，作为正向基线。
+     */
     @Test
     void validTemplatePasses() {
         assertTrue(TemplateValidator.validate(okTemplate(), CATALOG).isEmpty());
     }
 
+    /**
+     * 验证模板结构异常可按字段维度精确上报，多处非法字段不被互斥覆盖。
+     */
     @Test
     void badStructureIsReportedPerField() {
         ReportTemplateDef bad = new ReportTemplateDef("FX weekly!", " ", List.of(" "), null,
@@ -52,6 +61,9 @@ class TemplateValidatorTest {
         assertTrue(errors.stream().anyMatch(e -> e.location().equals("chapters[0].comparison")));
     }
 
+    /**
+     * 验证模板引用不存在指标时返回精确路径，便于前端高亮错误字段。
+     */
     @Test
     void unknownMetricReferenceIsRejectedWithLocation() {
         ReportTemplateDef bad = new ReportTemplateDef("fx-weekly", "外汇周报", List.of("外汇"), null,
@@ -62,6 +74,9 @@ class TemplateValidatorTest {
         assertTrue(errors.get(0).message().contains("m_ghost"));
     }
 
+    /**
+     * 验证空模板和空章节触发独立错误，避免空结构进入发布链路。
+     */
     @Test
     void emptyTemplateAndEmptyChaptersAreRejected() {
         assertEquals("", TemplateValidator.validate(null, CATALOG).get(0).location());
@@ -70,6 +85,9 @@ class TemplateValidatorTest {
         assertTrue(errors.stream().anyMatch(e -> e.location().equals("chapters")));
     }
 
+    /**
+     * 验证章节 ID 重复可被检测，防止图谱/渲染阶段 ID 冲突。
+     */
     @Test
     void duplicateChapterIdIsRejected() {
         ReportTemplateDef dup = new ReportTemplateDef("fx-weekly", "外汇周报", List.of("外汇"), null,
@@ -80,6 +98,9 @@ class TemplateValidatorTest {
                 && e.message().contains("重复")));
     }
 
+    /**
+     * 验证指导语与样式提示长度上限，防止超长文本拖垮存储与上下文预算。
+     */
     @Test
     void overlongPromptsAreRejected() {
         String long1001 = "风".repeat(1001);
@@ -102,6 +123,9 @@ class TemplateValidatorTest {
                 null, comparisons, null, null, null);
     }
 
+    /**
+     * 验证 MONTH 模板可合法使用环比/同比组合（支持的对照集）。
+     */
     @Test
     void monthlyTemplateWithMomAndYoyPasses() {
         ReportTemplateDef tpl = withPeriodTypes(List.of("MONTH"),
@@ -109,6 +133,9 @@ class TemplateValidatorTest {
         assertTrue(TemplateValidator.validate(tpl, CATALOG).isEmpty());
     }
 
+    /**
+     * 验证 QUARTER 模板支持季度环比与同比，非月周组合不在此处拦截。
+     */
     @Test
     void quarterlyTemplateWithQoqAndYoyPasses() {
         ReportTemplateDef tpl = withPeriodTypes(List.of("QUARTER"),
@@ -116,6 +143,9 @@ class TemplateValidatorTest {
         assertTrue(TemplateValidator.validate(tpl, CATALOG).isEmpty());
     }
 
+    /**
+     * 验证 periodTypes 非空且合法、去重：空列表/非法值/重复值都应 fail-closed。
+     */
     @Test
     void periodTypeValuesAreValidated() {
         assertTrue(TemplateValidator.validate(withPeriodTypes(List.of(), chapterWithList(null)), CATALOG)
@@ -126,6 +156,9 @@ class TemplateValidatorTest {
                 .stream().anyMatch(e -> e.location().equals("periodTypes[1]")), "重复取值应被拦");
     }
 
+    /**
+     * 验证比较类型与 periodType 矩阵匹配，非法组合返回对应字段错误。
+     */
     @Test
     void comparisonMatrixRejectsMismatches() {
         // WEEK 模板（缺省）声明同比 → 矩阵拦截
@@ -139,6 +172,9 @@ class TemplateValidatorTest {
                 .anyMatch(e -> e.location().equals("chapters[0].comparisons[0]")));
     }
 
+    /**
+     * 验证新旧对比口径字段互斥、未知 token 和重复声明约束。
+     */
     @Test
     void comparisonFieldRulesAreEnforced() {
         // 新旧字段同时填 → 互斥拦截
@@ -170,6 +206,9 @@ class TemplateValidatorTest {
         return new ReportTemplateDef("fx-report", "外汇报告", List.of("外汇"), null, List.of(ch));
     }
 
+    /**
+     * 验证 series/dimension 两类图表绑定都合法时放行，作为绘图配置回归。
+     */
     @Test
     void validSeriesAndDimensionChartsPass() {
         ChartDef trend = new ChartDef("trend_inflow", "line", "近六周流入",
@@ -180,6 +219,9 @@ class TemplateValidatorTest {
                 tplOf(chapterWithCharts(List.of("m_inflow", "m_by_ccy"), trend, pie)), CATALOG).isEmpty());
     }
 
+    /**
+     * 验证图表类型与 binding type 矩阵：series 与 dimension 使用错误图表类型会 fail。
+     */
     @Test
     void chartTypeBindingMatrixIsEnforced() {
         // series→pie 不许；dimension→line 不许
@@ -191,6 +233,9 @@ class TemplateValidatorTest {
                 .stream().anyMatch(e -> e.location().endsWith(".type")));
     }
 
+    /**
+     * 验证图表绑定形状边界：时间序列/维度绑定参数范围与指标类型一致性。
+     */
     @Test
     void chartBindingShapeIsEnforced() {
         // series 绑快照指标 → 拦；periods 越界 → 拦；dimension 绑非维度指标 → 拦；dimension 带 periods → 拦
@@ -208,6 +253,9 @@ class TemplateValidatorTest {
                 .stream().anyMatch(e -> e.location().endsWith(".binding.periods")));
     }
 
+    /**
+     * 验证 chartId 全局唯一、图表引用指标必须在本章 metrics 中配置。
+     */
     @Test
     void chartMetricMustBeInChapterMetricsAndIdsUnique() {
         // 绑定指标未挂本章 metrics → 拦

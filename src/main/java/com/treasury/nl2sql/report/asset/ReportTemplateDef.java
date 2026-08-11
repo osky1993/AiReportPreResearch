@@ -21,7 +21,10 @@ public record ReportTemplateDef(
         List<String> periodTypes,
         List<ChapterDef> chapters) {
 
-    /** 归一化视图：旧资产（无 periodTypes 字段）缺省仅支持周报。全链路只准读这个。 */
+    /**
+     * 归一化视图：旧资产（无 periodTypes 字段）缺省仅支持周报。
+     * 全链路只准读这个方法返回值，避免逐处做缺省补齐导致行为分叉。
+     */
     public List<String> effectivePeriodTypes() {
         return (periodTypes == null || periodTypes.isEmpty()) ? List.of("WEEK") : List.copyOf(periodTypes);
     }

@@ -21,13 +21,23 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** 加载期校验：非法 few-shot 示例被剔除，合法保留。 */
+/**
+ * FewShotSelector 加载/召回路径回归：
+ * - filterValid 过滤非法示例（validator 不通过）
+ * - select 在 qv 可复用时避免重复 embed
+ * - 近重复过滤阈值控制示例泄漏与回显一致性
+ * 主要校验查询建议列表对输入问题的稳定性与降级策略。
+ */
 class FewShotSelectorTest {
 
     private final EmbeddingClient embedding = mock(EmbeddingClient.class);
     private final MqlValidator validator = mock(MqlValidator.class);
     private final ObjectMapper om = new ObjectMapper();
 
+    /**
+     * 输入：validator 报错项和合法项；
+     * 预期：filterValid 过滤非法示例并保留合法问题。
+     */
     @Test
     void invalidExample_isFilteredOut() {
         when(validator.validate(any())).thenReturn(List.of());
@@ -45,6 +55,10 @@ class FewShotSelectorTest {
         assertEquals("好示例", valid.get(0).question());
     }
 
+    /**
+     * 输入：与库中已有问题完全相同/高相似；
+     * 预期：未设置泄漏阈值时可命中，阈值到 0.99 时该条应被剔除。
+     */
     @Test
     void leakageExclusion_dropsNearDuplicateExample() {
         // 用真实示例库 + 本地哈希向量；validator 全放行
@@ -65,6 +79,10 @@ class FewShotSelectorTest {
                 "阈值排除后不应再含完全相同的示例");
     }
 
+    /**
+     * 输入：qv 为空（simulate embed 失败）；
+     * 预期：select 返回空集，formatBlock 返回空字符串，保证降级可控。
+     */
     @Test
     void select_withNullQv_returnsEmpty() {
         when(validator.validate(any())).thenReturn(List.of());
@@ -76,6 +94,10 @@ class FewShotSelectorTest {
         assertEquals("", sel.formatBlock("任意问题", Double.POSITIVE_INFINITY, null));
     }
 
+    /**
+     * 输入：传入已计算 qv；
+     * 预期：select 不重复 embed，避免重复耗时与潜在抖动。
+     */
     @Test
     void select_withProvidedQv_doesNotEmbedAgain() {
         when(validator.validate(any())).thenReturn(List.of());

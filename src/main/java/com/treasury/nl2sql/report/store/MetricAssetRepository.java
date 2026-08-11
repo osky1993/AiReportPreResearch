@@ -7,6 +7,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class MetricAssetRepository extends VersionedAssetRepository {
 
+    /**
+     * 把资产 id 字段映射到 report_metric.metric_id，其余版本、状态与幂等规则沿用基类。
+     */
     public MetricAssetRepository(JdbcTemplate jdbc) {
         super(jdbc, "report_metric", "metric_id");
     }

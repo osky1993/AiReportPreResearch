@@ -10,8 +10,9 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 口径召回双档判定的纯逻辑单测（无 DB/LLM）：
- * 用内联字符哈希 embedding + 覆写 repo，验证「命中直取 / 未命中生成」的分档。
+ * CaliberStore 口径召回单测（无 DB/LLM）。
+ * 校验命中/未命中分档、embedding 失效分支、qv 注入优化与 byId 命中语义；
+ * 重点验证 recall 与 recall(null qv) 的行为一致闭环。
  */
 class CaliberStoreTest {
 
@@ -33,6 +34,10 @@ class CaliberStoreTest {
         return store;
     }
 
+    /**
+     * 输入：问题与已存资产完全一致。
+     * 预期：命中 HIT，返回 assetId、原始 mqlJson、描述与高分阈值。
+     */
     @Test
     void hit_onIdenticalQuestion() {
         CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户，列出账户名称和余额", "{}", "按余额降序取前3个账户", "demo", null, "ACTIVE");
@@ -45,6 +50,10 @@ class CaliberStoreTest {
         assertTrue(r.score() >= 0.92);
     }
 
+    /**
+     * 输入：问题向量与资产无关。
+     * 预期：命中 MISS，避免错误复用资产。
+     */
     @Test
     void miss_onUnrelatedQuestion() {
         CaliberAsset a = new CaliberAsset(7, "余额最高的3个账户，列出账户名称和余额", "{}", "按余额降序取前3个账户", "demo", null, "ACTIVE");

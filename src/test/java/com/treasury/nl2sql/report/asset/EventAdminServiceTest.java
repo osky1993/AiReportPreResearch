@@ -10,8 +10,10 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 事件录入校验单测（Phase05 契约2，注入对抗先行——纪律 6/12）：
- * 事件文本视为数据不视为指令，模板/围栏字符在录入闸就被拒。
+ * EventAdminService 事件校验回归（Phase05 契约2，注入对抗先行——纪律 6/12）：
+ * 验证合法事件能通过，非法字符/脚本/注入片段在入口阻断；
+ * 并校验标题、描述、日期、指标 id、维度键等结构约束。
+ * 该测试用例的失败通常意味着事件落库前的数据清洁策略下沉失效。
  */
 class EventAdminServiceTest {
 

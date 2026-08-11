@@ -8,31 +8,39 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 
 /**
- * 运行时从 information_schema 反射目标库的表结构。
- * 作用：
- *  1) 给 LLM 提供 schema 描述（schema linking 的最简版：全量注入；表多时可换成向量召回）
- *  2) 给校验器提供「表/列白名单」，拦截幻觉字段
- * 换库换表零改代码——重启即重新反射。
+ * 运行时从 information_schema 反射目标库结构，提供两类共享事实源：
+ * <ul>
+ *   <li>给 LLM 的 schema prompt（用于 query 生成）；</li>
+ *   <li>给校验器的表列白名单（拦截幻觉字段）。</li>
+ * </ul>
+ * 换库换表零改代码：启动即重刷缓存。
  */
 @Service
 public class SchemaService {
 
     private final JdbcTemplate jdbc;
     private final String database;
-    /** 元数据表排除集（如口径资产表本身）：不进白名单、不进 prompt schema。 */
+    /** 元数据表排除集（如口径资产表本身）：不进白名单、不进 prompt schema，避免 LLM 自指和自循环。 */
     private final Set<String> excludeTables;
 
-    /** table -> (column -> 类型/注释) */
+    /** table -> (column -> 类型/注释)，加载后作为白名单和 schema 提示文本的单一事实来源。 */
     private final Map<String, LinkedHashMap<String, ColumnMeta>> tables = new LinkedHashMap<>();
 
-    /** table -> 表级注释（中文表名，语义召回的强信号） */
+    /**
+     * table -> 表级注释（中文表名、业务语义）
+     * 直接参与 schema linking 提示词，作为“业务语义检索信号”提升 LLM 关联命中率。
+     */
     private final Map<String, String> tableComments = new LinkedHashMap<>();
 
-    /** 外键关系（用于提示 LLM 可连接路径） */
+    /** 外键关系（用于提示 LLM 可连接路径）；也是 schemaLinker 与 snapshot 的关系图输入。 */
     private final List<ForeignKey> foreignKeys = new ArrayList<>();
 
     public record ForeignKey(String table, String column, String refTable, String refColumn) {}
 
+    /**
+     * 初始化 JDBC 与数据库名，并解析排除列表。
+     * exclude-tables 以逗号分隔，trim 后落盘。
+     */
     public SchemaService(JdbcTemplate jdbc, @Value("${schema.database}") String database,
                          @Value("${schema.exclude-tables:}") String excludeTablesCsv) {
         this.jdbc = jdbc;
@@ -49,6 +57,11 @@ public class SchemaService {
 
     public record ColumnMeta(String name, String dataType, String comment) {}
 
+    /**
+     * 启动时全量加载 metadata。
+     * <p>执行顺序：表名/注释 -> 列 -> 外键。任何 JDBC 失败会直接抛出，保证失败快速可见；
+     * 成功后 tables/tableComments/foreignKeys 为一致快照，供全链路共享。
+     */
     @PostConstruct
     public void load() {
         tables.clear();
@@ -90,16 +103,19 @@ public class SchemaService {
         }
     }
 
+    /** 兼容 information_schema 字段名大小写差异。 */
     private static String str(Map<String, Object> r, String key) {
         Object v = r.get(key.toUpperCase());
         if (v == null) v = r.get(key);
         return v == null ? null : v.toString();
     }
 
+    /** 表名存在性检查（白名单读）。 */
     public boolean hasTable(String table) {
         return table != null && tables.containsKey(table);
     }
 
+    /** 列名存在性检查（白名单读）。 */
     public boolean hasColumn(String table, String column) {
         LinkedHashMap<String, ColumnMeta> cols = tables.get(table);
         return cols != null && cols.containsKey(column);
@@ -118,6 +134,10 @@ public class SchemaService {
         return isNumericType(columnType(table, column));
     }
 
+    /**
+     * 类型归一化判断：以 data_type 的字符串片段识别可做数值聚合的类型集合。
+     * 用 contains 规则是工程化折中，目标是兼容更多数据库方言变种。
+     */
     static boolean isNumericType(String dataType) {
         if (dataType == null) return false;
         String t = dataType.toLowerCase();
@@ -131,21 +151,24 @@ public class SchemaService {
         return isTemporalType(columnType(table, column));
     }
 
+    /** 时间类型判断：date/timestamp/time 及其衍生写法都视作可时间维度。 */
     static boolean isTemporalType(String dataType) {
         if (dataType == null) return false;
         String t = dataType.toLowerCase();
         return t.contains("date") || t.contains("timestamp") || t.equals("time");
     }
 
+    /** 快照里的所有表，按加载顺序返回。 */
     public Set<String> tableNames() {
         return tables.keySet();
     }
 
+    /** 快照里的外键信息，不做深拷贝，调用方应避免写操作。 */
     public List<ForeignKey> foreignKeys() {
         return foreignKeys;
     }
 
-    /** 与给定表通过外键直接相连的表（双向） */
+    /** 与给定表通过外键直接相连的表（双向）。 */
     public Set<String> fkNeighbors(String table) {
         Set<String> n = new HashSet<>();
         for (ForeignKey fk : foreignKeys) {
@@ -163,7 +186,10 @@ public class SchemaService {
         return fkClosure(foreignKeys, seeds, maxHops);
     }
 
-    /** 纯函数版（便于脱离 DB 单测）：基于给定外键列表做多跳闭包 BFS。 */
+    /**
+     * 纯函数版（脱库单测友好）：基于给定外键列表做多跳闭包 BFS，不访问数据库连接。
+     * 便于验证 fkClosure 的可重复性与边界条件。
+     */
     static Set<String> fkClosure(List<ForeignKey> fks, Collection<String> seeds, int maxHops) {
         Set<String> visited = new LinkedHashSet<>(seeds);
         Set<String> frontier = new LinkedHashSet<>(seeds);
@@ -180,7 +206,7 @@ public class SchemaService {
         return visited;
     }
 
-    /** 单张表的检索文本（表名 + 表注释 + 列名/列注释），供 lexical/embedding 计算相关度 */
+    /** 单张表检索文本（表名 + 表注释 + 列名/列注释），用于 lexical/embedding 相关度计算。 */
     public String searchText(String table) {
         StringBuilder sb = new StringBuilder(table);
         String tc = tableComments.get(table);
@@ -195,7 +221,7 @@ public class SchemaService {
         return sb.toString();
     }
 
-    /** 单张表的结构描述块 */
+    /** 单张表结构文本块：表名/注释/列清单，用于 LLM schema prompt 的最小单位。 */
     public String tableBlock(String table) {
         StringBuilder sb = new StringBuilder("表 ").append(table);
         String tc = tableComments.get(table);
@@ -213,7 +239,10 @@ public class SchemaService {
         return sb.toString();
     }
 
-    /** 把给定若干张表组装成给 LLM 的 schema 描述（含这些表之间的外键关系） */
+    /**
+     * 组装 schema 描述文本：先拼表 block，再附带这组表之间的外键关系。
+     * 通过显式关系约束，减少模型在 JOIN 条件上“猜 join”的概率。
+     */
     public String assemble(Collection<String> selected) {
         Set<String> set = new LinkedHashSet<>(selected);
         StringBuilder sb = new StringBuilder();
@@ -231,14 +260,14 @@ public class SchemaService {
         return sb.toString();
     }
 
-    /** 整库描述（全量注入，full 模式） */
+    /** 整库描述（full 模式）；用于小库或 fallback 的全量 schema 注入。 */
     public String describeForPrompt() {
         return assemble(tables.keySet());
     }
 
     // ---- 结构快照（供前端 ER 图 / 表格视图使用） ----
 
-    /** 单列的展示信息：列名 / 类型 / 注释 / 是否主键 / 是否外键 */
+    /** 单列的展示信息：列名 / 类型 / 注释 / 是否主键 / 是否外键。 */
     public record ColumnInfo(String name, String dataType, String comment, boolean primaryKey, boolean foreignKey) {}
 
     /** 单表的展示信息：表名 / 表注释 / 列 */
@@ -247,7 +276,10 @@ public class SchemaService {
     /** 整库结构快照：库名 / 所有表 / 外键关系 */
     public record SchemaSnapshot(String database, List<TableInfo> tables, List<ForeignKey> foreignKeys) {}
 
-    /** 主键列集合（table -> 主键列名），从 information_schema 现取。 */
+    /**
+     * 主键列集合（table -> 主键列名），从 information_schema 实时抓取。
+     * 该信息用于 snapshot 展示与 ER 图标注，不参与编译器主链路判定。
+     */
     private Map<String, Set<String>> primaryKeys() {
         Map<String, Set<String>> pk = new HashMap<>();
         List<Map<String, Object>> rows = jdbc.queryForList(
@@ -261,7 +293,10 @@ public class SchemaService {
         return pk;
     }
 
-    /** 返回整库结构快照：给前端渲染 ER 图与表格视图。 */
+    /**
+     * 返回整库结构快照（数据库名、表信息、外键列表），给前端渲染 ER 图与表格视图。
+     * 为确保快照一致性，每次调用动态计算主键与外键标记。
+     */
     public SchemaSnapshot snapshot() {
         Map<String, Set<String>> pk = primaryKeys();
         Set<String> fkCols = new HashSet<>();

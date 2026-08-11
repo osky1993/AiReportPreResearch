@@ -14,7 +14,12 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 图表数据绑定单测（确定性程序零 LLM）：series 旧→新+本期收尾、dimension 行组、绑定产物过 ChartAuditor 自证。 */
+/**
+ * 图表构建步骤单测（纯逻辑，无 LLM）。验证图表定义转事实绑定时：
+ * 1) 趋势类按历史旧→新与本期闭口；
+ * 2) 维度类仅绑定行维度事实；
+ * 3) 无可绑定事实时只写 note 不中断全链路。
+ */
 class ChartBuildStepTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -48,6 +53,10 @@ class ChartBuildStepTest {
                 List.of());
     }
 
+    /**
+     * 输入：趋势图定义 + 一期当前值 + 两期历史值。
+     * 预期：绑定顺序是历史先行、本期收尾，并通过 ChartAuditor 自证校验。
+     */
     @Test
     void seriesChartBindsHistoryThenCurrentAndPassesAuditor() {
         ChartDef trend = new ChartDef("trend_x", "line", "近三周趋势",
@@ -67,6 +76,10 @@ class ChartBuildStepTest {
         assertTrue(ChartAuditor.passed(ChartAuditor.audit(mapper, charts, byKey)));
     }
 
+    /**
+     * 输入：dimension 图定义 + 三维度值行（含合计与占比派生行）.
+     * 预期：只选行 fact 作为数据源，剔除 DERIVED 产出后维持图表可解释性。
+     */
     @Test
     void dimensionChartBindsRowFactsOnly() {
         ChartDef pie = new ChartDef("mix_x", "pie", "币种构成",
@@ -83,6 +96,10 @@ class ChartBuildStepTest {
         assertTrue(charts.get(0).optionJson().contains("\"CNY\""));
     }
 
+    /**
+     * 输入：图定义存在但当前无可绑定事实。
+     * 预期：输出空列表并记录跳过说明，不抛异常。
+     */
     @Test
     void chartWithNoBindableFactsIsSkippedWithNote() {
         ChartDef trend = new ChartDef("trend_x", "line", "趋势", new ChartDef.Binding("series", "m1", 3));

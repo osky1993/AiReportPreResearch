@@ -27,12 +27,18 @@ public enum ComparisonType {
     YEAR_OVER_YEAR("year_over_year", MetricQuerySpec.PURPOSE_COMPARE_YOY, "_yoy", "同比",
             Set.of(PeriodResolver.TYPE_MONTH, PeriodResolver.TYPE_QUARTER));
 
+    /** 与配置 token 对齐的唯一英文标识。 */
     private final String token;
+    /** 取数用途（MetricQuerySpec purpose），决定 spec 生成与事实配对后缀。 */
     private final String purpose;
+    /** 派生比较 fact 的 key 后缀（如 _wow/_mom/_qoq/_yoy）。 */
     private final String factSuffix;
+    /** 人类可读措辞（环比/同比）用于 fact 名称与 prompt 文案。 */
     private final String label;
+    /** 允许的周期粒度集合，用于模板校验与运行期快速校验。 */
     private final Set<String> allowedPeriodTypes;
 
+    /** 内部集中定义，禁止调用方任意拼装：扩展比较类型必须同步更新事实配对与模板校验。 */
     ComparisonType(String token, String purpose, String factSuffix, String label, Set<String> allowedPeriodTypes) {
         this.token = token;
         this.purpose = purpose;

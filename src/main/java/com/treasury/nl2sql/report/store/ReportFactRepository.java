@@ -11,7 +11,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** report_fact 事实表持久层。dimensions（Phase03 起）真值读写：null/空 ↔ 落库 '{}'。 */
+/**
+ * report_fact 事实表持久层。
+ * 约定：
+ * - dimensions 作为事实分桶维度，写入时 null/空序列化为 {}，读出时再回转为 null；
+ * - 一个 run 的 facts 可被多次重算，写入前由上层执行 deleteByRun 达到幂等重建；
+ * - 同一 run 的 fact_key 由 FactBuildStep 保证唯一性，本表不做二次 dedupe。
+ */
 @Repository
 public class ReportFactRepository {
 
@@ -43,6 +49,11 @@ public class ReportFactRepository {
                 rs.getString("quality_note"));
     }
 
+    /**
+     * 批量落地阶段④产物。
+     * 这里不使用 UPSERT：上游在断点重跑前会先清空 run 数据，实现“重算覆盖”而非“更新覆盖”。
+     * 失败模式：任何一条失败会触发 batch 返回异常，上游事务应统一回滚，避免部分成功。
+     */
     public void batchInsert(long runId, List<FactRecord> facts) {
         jdbc.batchUpdate("INSERT INTO report_fact (run_id, fact_key, metric_id, metric_version, metric_name, chapter_id, fact_type, "
                         + "value_num, unit, display_value, period_label, dimensions_json, spec_json, "
@@ -71,6 +82,10 @@ public class ReportFactRepository {
                 });
     }
 
+    /**
+     * 依据 run_id 拉取全部事实，按入库主键排序保证渲染与审计稳定。
+     * 上游用于重跑恢复、审计核对、导出组装，顺序稳定可提升“同样输入一致输出”可追溯性。
+     */
     public List<FactRecord> findByRun(long runId) {
         return jdbc.query("SELECT fact_key, metric_id, metric_version, metric_name, chapter_id, fact_type, value_num, unit, "
                         + "display_value, period_label, dimensions_json, spec_json, sql_text, sql_hash, result_hash, derived_from, "
@@ -83,6 +98,7 @@ public class ReportFactRepository {
         jdbc.update("DELETE FROM report_fact WHERE run_id = ?", runId);
     }
 
+    /** dimensions 空集合规约为 {}，是为了和查询层“空集合”与“空值缺失”语义保持一致。 */
     private String renderDimensions(Map<String, String> dimensions) {
         if (dimensions == null || dimensions.isEmpty()) return "{}";
         try {

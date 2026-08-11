@@ -19,6 +19,16 @@ public final class MqlTemplateFiller {
 
     private MqlTemplateFiller() {}
 
+    /**
+     * 按参数替换占位符并反序列化为 Mql。
+     * <p>行为：
+     * <ul>
+     *   <li>template 为空直接失败</li>
+     *   <li>逐项替换 metricId 级占位符</li>
+     *   <li>剩余占位符存在即失败关闭（不允许带着占位符进入校验/编译）</li>
+     *   <li>反序列化失败直接失败关闭</li>
+     * </ul>
+     */
     public static Mql fill(ObjectMapper mapper, String metricId, JsonNode template, Map<String, String> params) {
         if (template == null) {
             throw new PolicyException("指标「" + metricId + "」没有 MQL 模板（派生指标不可直接取数）");
@@ -38,6 +48,11 @@ public final class MqlTemplateFiller {
         }
     }
 
+    /**
+     * 报错片段提取，避免日志刷屏只打印整个 SQL/JSON。
+     * @param json MQL 文本
+     * @param idx 未填充标记起始索引
+     */
     private static String snippetAround(String json, int idx) {
         int from = Math.max(0, idx - 20);
         int to = Math.min(json.length(), idx + 30);

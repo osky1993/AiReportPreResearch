@@ -15,12 +15,21 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** 加载期校验 + 术语相关性选取（G1）。纯逻辑，无 DB/LLM/网络。 */
+/**
+ * GlossaryService 术语库加载与召回策略回归（纯逻辑，无 DB/LLM/网络）：
+ * - unknownTableRefs 发现悬空表名
+ * - select/topN 命中率与短路行为
+ * - qv 缺失时的全量退化不丢信息
+ */
 class GlossaryServiceTest {
 
     private final ObjectMapper om = new ObjectMapper();
     private final SchemaService schema = mock(SchemaService.class);
 
+    /**
+     * 输入：包含已知/未知表名的术语定义；
+     * 预期：unknownTableRefs 仅返回悬空表引用，支撑术语库加载时 fail-fast 行为。
+     */
     @Test
     void unknownTableRef_isReported() {
         when(schema.hasTable("account")).thenReturn(true);
@@ -36,7 +45,10 @@ class GlossaryServiceTest {
         assertTrue(bad.get(0).contains("幽灵口径"), bad.toString());
     }
 
-    /** 真实 terms.json（12 条）+ 本地哈希向量：相关术语应进 Top-N。 */
+    /**
+     * 输入：真实 terms 与相关问题；
+     * 预期：Top-N 命中相关术语，防止检索退化。
+     */
     @Test
     void select_picksRelevantTerm() {
         when(schema.hasTable(any())).thenReturn(true);
@@ -50,7 +62,10 @@ class GlossaryServiceTest {
                 "Top-3 应含「国库库存」，实际: " + sel);
     }
 
-    /** 术语数 ≤ top-n 时全量短路：零 embed 调用，输出与旧全量行为一致。 */
+    /**
+     * 输入：term 数少于 top-n；
+     * 预期：全量短路，不触发 embed，保持旧有回退语义一致。
+     */
     @Test
     void shortCircuit_whenTermsNotExceedTopN() {
         when(schema.hasTable(any())).thenReturn(true);
@@ -68,7 +83,10 @@ class GlossaryServiceTest {
         }
     }
 
-    /** Top-N 生效：输出块只含 N 条术语。 */
+    /**
+     * 输入：top-n 配置为 2；
+     * 预期：返回块中术语数严格为 2，验证可控 token 预算。
+     */
     @Test
     void formatBlock_containsOnlyTopN() {
         when(schema.hasTable(any())).thenReturn(true);
@@ -81,7 +99,10 @@ class GlossaryServiceTest {
         assertEquals(2, count, "应只注入 2 条术语，实际:\n" + block);
     }
 
-    /** qv=null（上游 embed 失败）→ 降级为全量注入，口径信息零丢失。 */
+    /**
+     * 输入：qv 为空（embed 前置失败）；
+     * 预期：退化为全量术语注入，避免检索链路阻断。
+     */
     @Test
     void nullQv_degradesToFullInjection() {
         when(schema.hasTable(any())).thenReturn(true);

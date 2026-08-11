@@ -16,8 +16,23 @@ public final class ChartTableBuilder {
 
     private ChartTableBuilder() {}
 
+    /**
+     * 图表导出行；label 与图例/维度一一对应，displayValue 取 fact.display_value 直接回写，
+     * factKey 同步追踪到数字审计来源，禁止在构造层拼接裸数值。
+     */
     public record Row(String label, String displayValue, String factKey) {}
 
+    /**
+     * 按图表绑定的 factKey 组装导出行。
+     * <p>规则：</p>
+     * <ul>
+     *   <li>boundFactKeys 中每一项都必须在事实仓库命中，否则抛错并 BLOCKED。</li>
+     *   <li>维度行优先以 dimensions 拼接；无维度时退回 periodLabel，和图表渲染一致。</li>
+     *   <li>不允许直接解析 optionJson 中的数字或文本作为 y 轴值；避免双向口径污染。</li>
+     * </ul>
+     *
+     * @throws IllegalStateException 如果 chart 绑定的 factKey 在给定事实集中不存在
+     */
     public static List<Row> build(ChartRecord chart, Map<String, FactRecord> factsByKey) {
         List<Row> rows = new ArrayList<>();
         for (String key : chart.boundFactKeys() == null ? List.<String>of() : chart.boundFactKeys()) {

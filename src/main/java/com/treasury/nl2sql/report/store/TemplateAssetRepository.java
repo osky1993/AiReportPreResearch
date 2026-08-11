@@ -7,6 +7,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class TemplateAssetRepository extends VersionedAssetRepository {
 
+    /**
+     * 把资产 id 字段映射到 report_template.template_id，其余版本与状态策略沿用基类。
+     */
     public TemplateAssetRepository(JdbcTemplate jdbc) {
         super(jdbc, "report_template", "template_id");
     }

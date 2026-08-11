@@ -6,9 +6,16 @@ import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 周期解析纯逻辑单测：周/月/季标签 → 日期窗口（LLM 不产日期，窗口全靠这里）。 */
+/**
+ * PeriodResolver 周期解析单测（纯逻辑）。核验 W/M/Q 标签到日期窗口和上一期/同比基期的计算边界：
+ * 标签格式校验、周跨年、月天数、季度跨年、非法标签 fail-closed 都是报告取数可复现性关键前提。
+ */
 class PeriodResolverTest {
 
+    /**
+     * 输入：标准周标签 2026-W26。
+     * 预期：输出 ISO 周起止日与原标签，用于 ③/④/⑤ 稳定对齐。
+     */
     @Test
     void resolvesDemoWeek2026W26() {
         PeriodResolver.Window w = PeriodResolver.resolve("2026-W26");
@@ -17,6 +24,10 @@ class PeriodResolverTest {
         assertEquals("2026-W26", w.label());
     }
 
+    /**
+     * 输入：任意周与上一周计算。
+     * 预期：跨周链条递减，支持回查与同比匹配。
+     */
     @Test
     void previousWeekIsW25() {
         PeriodResolver.Window w26 = PeriodResolver.resolve("2026-W26");
@@ -48,6 +59,10 @@ class PeriodResolverTest {
         assertThrows(PolicyException.class, () -> PeriodResolver.resolve("2025-W53"));
     }
 
+    /**
+     * 输入：非法标签（格式错误/越界周次/空值）。
+     * 预期：统一抛 PolicyException，避免污染下游查询粒度。
+     */
     @Test
     void invalidLabelsFailClosed() {
         assertThrows(PolicyException.class, () -> PeriodResolver.resolve(null));
@@ -59,6 +74,10 @@ class PeriodResolverTest {
 
     // ---- Phase03：月 ----
 
+    /**
+     * 输入：月标签 2026-M06。
+     * 预期：日历起止日准确到月末，支持 13 周期和同比基期推导。
+     */
     @Test
     void resolvesMonth2026M06() {
         PeriodResolver.Window w = PeriodResolver.resolve("2026-M06");
@@ -98,6 +117,10 @@ class PeriodResolverTest {
         assertEquals(LocalDate.of(2026, 6, 30), w.end());
     }
 
+    /**
+     * 输入：季度标签并请求同比。
+     * 预期：Q1 上一年跨年至上一年度 Q4 或同月同期并保留时点正确性。
+     */
     @Test
     void previousQuarterOfQ1CrossesYear() {
         PeriodResolver.Window prev = PeriodResolver.previous(PeriodResolver.resolve("2026-Q1"));

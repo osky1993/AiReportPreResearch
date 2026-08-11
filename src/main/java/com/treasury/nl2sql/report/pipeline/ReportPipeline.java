@@ -43,25 +43,58 @@ public class ReportPipeline {
     /** RUNNING 但超过该时长无更新且不在本进程执行中 → 视为宕机遗留（stale），放开 resume。 */
     private static final Duration STALE_RUNNING = Duration.ofMinutes(2);
 
+    /** 运行主数据：保存每次请求、口径快照、状态机与审批痕迹。 */
     private final ReportRunRepository runRepo;
+    /** 步骤明细仓库：每一步落库输入输出和失败原因。 */
     private final ReportStepRepository stepRepo;
+    /** 事实仓库：每一步的事实与图表序列事实落盘，支撑续跑与审计回读。 */
     private final ReportFactRepository factRepo;
+    /** 资产服务：模板与指标注册表、版本快照。 */
     private final ReportAssetService assets;
+    /** ① 大纲节点。 */
     private final OutlineStep outlineStep;
+    /** ② 语义解析节点。 */
     private final SpecResolveStep specStep;
+    /** ③ 取数节点（零 LLM）。 */
     private final FetchStep fetchStep;
+    /** ④ 事实构建节点（零 LLM）。 */
     private final FactBuildStep factStep;
+    /** ④ 图表组装节点（零 LLM）。 */
     private final ChartBuildStep chartStep;
+    /** ⑤ 归因候选构建节点（零 LLM）。 */
     private final ContributionStep contributionStep;
+    /** 异常事件匹配器。 */
     private final EventMatcher eventMatcher;
+    /** ⑤ 归因措辞归口节点（LLM）。 */
     private final AttributionStep attributionStep;
+    /** 归因记录仓库：记录程序生成的异常解释。 */
     private final com.treasury.nl2sql.report.store.ClaimRepository claimRepo;
+    /** ⑤ 章节撰写节点（LLM）。 */
     private final WriteStep writeStep;
+    /** ⑥ 审计门禁节点（程序）。 */
     private final AuditStep auditStep;
     private final ObjectMapper mapper;
 
     private final ConcurrentHashMap<Long, Boolean> inFlight = new ConcurrentHashMap<>();
 
+    /**
+     * @param runRepo 运行主表仓库
+     * @param stepRepo 步骤仓库
+     * @param factRepo 事实仓库
+     * @param assets 报告资产服务
+     * @param outlineStep 大纲节点
+     * @param specStep 语义解析节点
+     * @param fetchStep 取数节点
+     * @param factStep 事实构建节点
+     * @param chartStep 图表组装节点
+     * @param contributionStep 贡献拆解节点
+     * @param eventMatcher 事件匹配器
+     * @param attributionStep 归因归口节点
+     * @param claimRepo 归因记录仓库
+     * @param writeStep 章节撰写节点
+     * @param auditStep 审计门禁节点
+     * @param mapper JSON 映射器
+     */
     public ReportPipeline(ReportRunRepository runRepo, ReportStepRepository stepRepo, ReportFactRepository factRepo,
                           ReportAssetService assets, OutlineStep outlineStep, SpecResolveStep specStep,
                           FetchStep fetchStep, FactBuildStep factStep, ChartBuildStep chartStep,
@@ -89,7 +122,12 @@ public class ReportPipeline {
 
     // ---------- ①（同步） + HITL 卡点1 ----------
 
-    /** 新建运行并同步跑 ①；返回 AWAITING_OUTLINE_APPROVAL（或 BLOCKED）态的 run。 */
+    /**
+     * 新建运行并同步跑 ①，输出始终先落 RUNNING 再进入 AWAITING_OUTLINE_APPROVAL 或 BLOCKED。
+     * <p>
+     * 设计目标：`createRun` 只负责把请求落库+做第一次口径建议，审批与执行控制在
+     * approveOutline/resume/runAsync 完成，以保证「首次建单不触达异步守护线程」。
+     */
     public ReportRun createRun(String requestText) {
         if (requestText == null || requestText.isBlank()) {
             throw new IllegalArgumentException("requestText 不能为空");
@@ -99,7 +137,12 @@ public class ReportPipeline {
         return require(runId);
     }
 
-    /** HITL 卡点1 打回：带修改意见重跑 ①（attempt+1 留痕）。 */
+    /**
+     * HITL 卡点1 打回重跑 ①。
+     * <p>
+     * 只有在 `AWAITING_OUTLINE_APPROVAL`（人正在看第一段）或 `BLOCKED`（第一段失败关闭后）可进入重跑，
+     * 避免用户在 ②~⑥ 运行过程中用打回语义误改口径。
+     */
     public ReportRun regenerateOutline(long runId, String revisedRequest) {
         ReportRun run = require(runId);
         assertStatus(run, "打回大纲", RunStatus.AWAITING_OUTLINE_APPROVAL, RunStatus.BLOCKED);
@@ -178,6 +221,10 @@ public class ReportPipeline {
 
     // ---------- ②~⑥（异步） ----------
 
+    /**
+     * 发起异步守护线程：同 runId 并发保护，失败或结束后清理 inFlight。
+     * 线程内执行 ②~⑥ 后可直接写状态，不借助外部队列框架。
+     */
     private void kick(long runId, Phase from) {
         if (inFlight.putIfAbsent(runId, Boolean.TRUE) != null) {
             throw new IllegalStateException("run " + runId + " 已在执行中");
@@ -193,6 +240,15 @@ public class ReportPipeline {
         t.start();
     }
 
+    /**
+     * 从给定 phase 执行编排主链路。
+     * <p>分支：
+     * <ul>
+     *   <li>from <= FACT：重算 ②~⑥（含 spec/fetch/fact/chart/write/audit）</li>
+     *   <li>from > FACT：复用 facts/charts，从 WRITE/AUDIT 续跑</li>
+     * </ul>
+     * <p>任何 RuntimeException 被分类到 POLICY/EXCEPTION 两类并转入 runRepo.setBlocked。
+     */
     private void runAsync(long runId, Phase from) {
         LlmUsageTally.reset();
         Phase phase = from;
@@ -222,6 +278,7 @@ public class ReportPipeline {
             List<AnomalyDetector.Anomaly> anomalies = List.of();
             List<FactRecord> contribFacts = List.of();
             if (from.ordinal() <= Phase.FACT.ordinal()) {
+                // 进入 from <= FACT：表示卡点未到 FACT，必须从语义解析开始重算，确保 ②~④ 不污染续跑结果。
                 // ② 语义解析
                 phase = Phase.SPEC;
                 runRepo.setStatusPhase(runId, RunStatus.RUNNING.name(), phase.name());
@@ -274,6 +331,7 @@ public class ReportPipeline {
                     throw e;
                 }
             } else {
+                // 进入 from > FACT：写作或审计失败停在后半段，事实仅作读放大，避免重复取数和变更口径。
                 // 断点续跑 WRITE/AUDIT：事实、notes 与图表从库读，不重取数不重绑定
                 facts = factRepo.findByRun(runId);
                 if (facts.isEmpty()) {
@@ -348,6 +406,8 @@ public class ReportPipeline {
                 && !inFlight.containsKey(runId)
                 && run.updatedAt() != null
                 && run.updatedAt().isBefore(LocalDateTime.now().minus(STALE_RUNNING));
+        // stale RUNNING 兜底条件：本进程未持有 inFlight + 长时间未更新，
+        // 等价于线程崩溃后遗留的 RUNNING；允许从该状态恢复避免运维手工清理。
         if (!RunStatus.BLOCKED.name().equals(run.status()) && !stale) {
             throw new IllegalStateException("仅 BLOCKED（或已停摆的 RUNNING）可断点续跑，当前状态: " + run.status());
         }
@@ -367,6 +427,7 @@ public class ReportPipeline {
             runOutline(runId, run.requestText(), null);
         } else {
             Phase entry = phase.ordinal() <= Phase.FACT.ordinal() ? Phase.SPEC : Phase.WRITE;
+            // 从 FACT 后续跑只重算书写与审计，不重复取数，保证“同一口径事实”前提下可快速恢复。
             runRepo.setStatusPhase(runId, RunStatus.RUNNING.name(), entry.name());
             kick(runId, entry);
         }
@@ -382,6 +443,7 @@ public class ReportPipeline {
         try {
             JsonNode audit = mapper.readTree(run.auditJson());
             if (!audit.path("passed").asBoolean(false)) {
+                // 审计不通过视为发布失败关闭：前端传入状态不可信，统一服务端复核。
                 throw new IllegalStateException("审计包不是通过状态，不允许发布");
             }
         } catch (IllegalStateException e) {
@@ -402,11 +464,13 @@ public class ReportPipeline {
 
     // ---------- 查询 ----------
 
+    /** 按 id 查询运行主记录；不存在时抛 IllegalArgumentException（便于 404 映射）。 */
     public ReportRun require(long runId) {
         return runRepo.findById(runId)
                 .orElseThrow(() -> new IllegalArgumentException("run " + runId + " 不存在"));
     }
 
+    /** 列出所有运行，返回顺序由仓库实现；控制层按业务场景二次排序。 */
     public List<ReportRun> list() {
         return runRepo.findAll();
     }
@@ -540,6 +604,7 @@ public class ReportPipeline {
             node.set("llmUsage", mapper.valueToTree(tally));
             return node.toString();
         } catch (Exception e) {
+            // 观测打点失败不影响主链路；统计失败不会成为发布阻断条件。
             return outputJson;
         }
     }

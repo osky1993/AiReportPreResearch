@@ -10,7 +10,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 图表数据表兜底单测：数值只取 display_value（与审计同源），boundFactKey 缺失失败关闭。 */
+/**
+ * ChartTableBuilder 兜底单测：
+ * 验证序列图使用 periodLabel，维度图使用维度拼接；
+ * 严格依赖 fact.boundFactKey，不存在时 fail-closed，避免前端静默丢值。
+ */
 class ChartTableBuilderTest {
 
     private static FactRecord fact(String key, String display, String periodLabel, Map<String, String> dims) {
@@ -19,6 +23,9 @@ class ChartTableBuilderTest {
                 dims, null, null, null, null, null, FactRecord.QUALITY_PASSED, null);
     }
 
+    /**
+     * 验证折线/序列图标签采用 periodLabel，显示值来自 fact.displayValue，且按输入顺序输出。
+     */
     @Test
     void seriesChartRowsUsePeriodLabelAndDisplayValue() {
         ChartRecord chart = new ChartRecord("trend", "summary", "line", "近两周趋势", "{}",
@@ -34,6 +41,9 @@ class ChartTableBuilderTest {
         assertEquals("385.14 万元", rows.get(1).displayValue());
     }
 
+    /**
+     * 验证维度类图表优先使用 first dimension 字段作为可视化标签。
+     */
     @Test
     void dimensionChartRowsUseDimensionValueAsLabel() {
         ChartRecord chart = new ChartRecord("mix", "by_currency", "pie", "币种构成", "{}",
@@ -44,6 +54,9 @@ class ChartTableBuilderTest {
         assertEquals("CNY", rows.get(0).label());
     }
 
+    /**
+     * 验证图表引用不存在 fact 时 fail-closed，错误日志应包含 factKey 与失败标签。
+     */
     @Test
     void missingBoundFactFailsClosed() {
         ChartRecord chart = new ChartRecord("trend", "summary", "line", "趋势", "{}", List.of("fact_gone"));

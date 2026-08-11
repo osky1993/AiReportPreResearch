@@ -7,7 +7,10 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 维度声明↔groupBy 一致性规则单测（启动自检与保存五重校验共用，正反例固化）。 */
+/**
+ * 维度声明与 groupBy 一致性规则单测（启动自检与保存五重校验共用，正反例固化）：
+ * 验证派生指标/可比较指标/多维限制等边界在静态校验期就失败。
+ */
 class MetricDimensionRuleTest {
 
     private static MetricDefinition metric(List<String> dimensions, boolean comparable) {
@@ -21,18 +24,30 @@ class MetricDimensionRuleTest {
         return mql;
     }
 
+    /**
+     * 输入：指标声明 dimensions 与 groupBy 一致；
+     * 预期：放行，维度约束在静态层面成立。
+     */
     @Test
     void dimensionalMetricWithMatchingGroupByPasses() {
         assertTrue(MetricDimensionRule.check(metric(List.of("currency"), false),
                 mqlWithGroupBy("currency")).isEmpty());
     }
 
+    /**
+     * 输入：非维度指标无 groupBy；
+     * 预期：可通过校验，避免对无维度指标的额外约束误杀。
+     */
     @Test
     void plainMetricWithoutGroupByPasses() {
         assertTrue(MetricDimensionRule.check(metric(null, true), new Mql()).isEmpty());
         assertTrue(MetricDimensionRule.check(metric(List.of(), true), new Mql()).isEmpty());
     }
 
+    /**
+     * 输入：非维度指标却带 groupBy；
+     * 预期：应拒绝，体现 groupBy 与维度契约的一一对应关系。
+     */
     @Test
     void plainMetricWithGroupByIsRejected() {
         List<String> errors = MetricDimensionRule.check(metric(null, false), mqlWithGroupBy("currency"));
@@ -40,6 +55,10 @@ class MetricDimensionRuleTest {
         assertTrue(errors.get(0).contains("不得含 groupBy"));
     }
 
+    /**
+     * 输入：指标 dimensions 与 groupBy 不一致；
+     * 预期：拒绝并返回错误，覆盖匹配失败与空维度两类失败路径。
+     */
     @Test
     void dimensionMismatchWithGroupByIsRejected() {
         assertFalse(MetricDimensionRule.check(metric(List.of("currency"), false),
@@ -47,6 +66,10 @@ class MetricDimensionRuleTest {
         assertFalse(MetricDimensionRule.check(metric(List.of("currency"), false), new Mql()).isEmpty());
     }
 
+    /**
+     * 输入：同一指标申明多于一个维度（MVP 约束）；
+     * 预期：拒绝并给出“至多”约束错误，防止维度爆炸。
+     */
     @Test
     void multiDimensionIsRejectedInMvp() {
         List<String> errors = MetricDimensionRule.check(metric(List.of("currency", "category"), false),
@@ -54,6 +77,10 @@ class MetricDimensionRuleTest {
         assertTrue(errors.stream().anyMatch(e -> e.contains("至多")));
     }
 
+    /**
+     * 输入：comparable 指标却带 dimensions；
+     * 预期：拒绝，保持 comparable 与维度规则的互斥约束。
+     */
     @Test
     void comparableDimensionalMetricIsRejected() {
         List<String> errors = MetricDimensionRule.check(metric(List.of("currency"), true),
@@ -61,6 +88,10 @@ class MetricDimensionRuleTest {
         assertTrue(errors.stream().anyMatch(e -> e.contains("comparable")));
     }
 
+    /**
+     * 输入：派生指标同时声明 dimensions；
+     * 预期：拒绝，并返回派生类维度约束错误。
+     */
     @Test
     void derivedMetricWithDimensionsIsRejected() {
         MetricDefinition derived = new MetricDefinition("net", "净流入", "CNY", true, false, null, "ZERO",

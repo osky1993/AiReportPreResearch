@@ -17,8 +17,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 参数化辅助识别单测（P5-T2，纯逻辑，mock SchemaService）。
- * temporal 列约定：cash_transaction.txn_date / currency_rate.rate_date；其余列非时间型。
+ * MqlParameterizer 单测（纯逻辑，mock SchemaService）。
+ * 核查 scan/apply 的可选参数化策略：仅可参数化合法时间字段与可比对路径；
+ * 已参数化 path 不重复建议，非建议 path 禁止 apply，失败路径返回明确提示。
  */
 class MqlParameterizerTest {
 
@@ -41,6 +42,10 @@ class MqlParameterizerTest {
         }
     }
 
+    /**
+     * 输入：同一日期字段出现 >= 与 <=。
+     * 预期：扫描返回两条可参数化建议且 placeholder 分别为 START/END。
+     */
     @Test
     void simpleDateRangeYieldsTwoSuggestionsWithCorrectPaths() {
         JsonNode mql = json("""
@@ -57,6 +62,10 @@ class MqlParameterizerTest {
         assertEquals(MqlParameterizer.PH_END, r.suggestions().get(1).placeholder());
     }
 
+    /**
+     * 输入：数值条件与普通文本。
+     * 预期：不命中，防止把非日期字符串误参数化导致查询语义改变。
+     */
     @Test
     void numericAndNonDateStringsAreNotTouched() {
         JsonNode mql = json("""
@@ -68,6 +77,10 @@ class MqlParameterizerTest {
         assertTrue(parameterizer.scan(mql).suggestions().isEmpty(), "数字与非日期串不得误伤");
     }
 
+    /**
+     * 输入：无日期占位符模板。
+     * 预期：scan 为空，参数化流程不改变模板。
+     */
     @Test
     void snapshotMqlYieldsZeroSuggestions() {
         JsonNode mql = json("""
@@ -76,6 +89,10 @@ class MqlParameterizerTest {
         assertTrue(parameterizer.scan(mql).suggestions().isEmpty());
     }
 
+    /**
+     * 输入：嵌套 OR/AND JSON 结构。
+     * 预期：扫描路径按树结构正确回溯，验证 JsonPath 定位精度。
+     */
     @Test
     void nestedOrAndPathsAreCorrect() {
         JsonNode mql = json("""
@@ -88,6 +105,10 @@ class MqlParameterizerTest {
         assertEquals("/filter/0/or/0/and/0/value", r.suggestions().get(0).path());
     }
 
+    /**
+     * 输入：带 join alias 的字段。
+     * 预期：按别名解析表名，避免把外表字段误分类或报错。
+     */
     @Test
     void qualifiedFieldViaJoinAliasResolvesTable() {
         JsonNode mql = json("""
@@ -105,6 +126,10 @@ class MqlParameterizerTest {
         assertEquals("r.rate_date", r.suggestions().get(1).field());
     }
 
+    /**
+     * 输入：subquery 作用域含日期过滤。
+     * 预期：仅扫描子查询内部路径，不误向外层扩散。
+     */
     @Test
     void subqueryHasOwnScope() {
         // 外层 account 无时间列；子查询作用域是 cash_transaction，其中的日期条件应命中
@@ -119,6 +144,10 @@ class MqlParameterizerTest {
         assertEquals("/filter/0/subquery/filter/0/value", r.suggestions().get(0).path());
     }
 
+    /**
+     * 输入：已有 placeholder 已替换过的条件。
+     * 预期：仅剩未替换项被 scan，保证幂等。
+     */
     @Test
     void alreadyParameterizedValueIsIdempotentlySkipped() {
         JsonNode mql = json("""
@@ -131,6 +160,10 @@ class MqlParameterizerTest {
         assertEquals("/filter/1/value", r.suggestions().get(0).path());
     }
 
+    /**
+     * 输入：等值日期条件。
+     * 预期：可扫描到但 placeholder 为空（提示态），用于前端呈现不可勾选。
+     */
     @Test
     void equalityDateBecomesNonAppliableHint() {
         JsonNode mql = json("""
@@ -142,6 +175,10 @@ class MqlParameterizerTest {
         assertNull(r.suggestions().get(0).placeholder(), "等值日期是提示项，不可勾选");
     }
 
+    /**
+     * 输入：指标级条件字段里有日期约束。
+     * 预期：扫描路径进入 metrics[*].filter 下，参数化可覆盖。
+     */
     @Test
     void conditionalAggregateFilterIsCovered() {
         JsonNode mql = json("""
@@ -153,6 +190,10 @@ class MqlParameterizerTest {
         assertEquals("/metrics/0/filter/0/value", r.suggestions().get(0).path());
     }
 
+    /**
+     * 输入：选择 start/end 两个合法路径 + 尝试非法 path。
+     * 预期：仅替换已扫描 path；非法 path 拒绝并抛可见异常。
+     */
     @Test
     void applyReplacesOnlyChosenPathAndRejectsForeignPath() {
         JsonNode mql = json("""
@@ -178,6 +219,10 @@ class MqlParameterizerTest {
                 () -> parameterizer.apply(eq, List.of("/filter/0/value")));
     }
 
+    /**
+     * 输入：日期 in 列表条件。
+     * 预期：同样扫描为提示项（非可替换），防止语义被错误参数化。
+     */
     @Test
     void inListWithDatesBecomesHint() {
         JsonNode mql = json("""

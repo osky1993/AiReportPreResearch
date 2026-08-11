@@ -40,8 +40,11 @@ public record MetricDefinition(
         JsonNode mqlTemplate,
         Derived derived) {
 
+    /** 空值处理策略：ZERO=空窗口按0继续；BLOCK=出现 null 立即失败关闭。 */
     public static final String NULL_ZERO = "ZERO";
+    /** 空值处理策略：BLOCK=出现 null 立即失败关闭。 */
     public static final String NULL_BLOCK = "BLOCK";
+    /** 质量检查常量：仅支持 NON_NEGATIVE。 */
     public static final String CHECK_NON_NEGATIVE = "NON_NEGATIVE";
 
     /** 派生指标：left/right 为其他取数指标的 metricId，op 目前仅 subtract。 */

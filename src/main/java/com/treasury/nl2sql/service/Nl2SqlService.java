@@ -25,6 +25,7 @@ import java.util.Map;
 /**
  * 编排器：NL → (LLM) MQL → 校验/自我修正 → (jOOQ) SQL → 执行。
  * 每一跳的中间产物都保留在 {@link NlQueryResult} 里，方便观察这条链路。
+ * 该类只承接“自然语言到可执行结果”的公共查询，不处理报告口径复用与资产化策略。
  */
 @Service
 public class Nl2SqlService {
@@ -64,6 +65,9 @@ public class Nl2SqlService {
         this.schemaService = schemaService;
     }
 
+    /**
+     * 对外主入口。调用方通常不传 qv，默认按问题动态 embed 一次。
+     */
     public NlQueryResult query(String question) {
         return query(question, Double.POSITIVE_INFINITY);
     }
@@ -77,9 +81,12 @@ public class Nl2SqlService {
     }
 
     /**
-     * @param qv 编排层已算好的问题向量（请求内只 embed 一次）；null=本方法自算。
-     *        向量化失败时不阻断链路：linking 降级全量注入、few-shot 不注入、术语全量注入，
-     *        并在结果 warnings 留痕。
+     * @param question 用户自然语言问题。空值或空白问题由调用方参数校验确保进入前置拒绝。
+     * @param fewshotMaxSim few-shot 去重阈值（值越大，去重越严格；值越小接近会允许更多近邻示例）。
+     *                     业务上常用 {@code Double.POSITIVE_INFINITY} 表示不去重，评测场景可显式指定阈值避免泄漏。
+     * @param qv 问题向量，若外部已预计算可复用；null 时本方法将做一次 embedding 并在失败时降级继续执行。
+     * @return 查询链路产物：包括输入、MQL、SQL、结果集、失败信息、重试轮次、成功与告警；
+     *         成功路径 rows 非空且 success=true，失败路径 success=false 且留 warnings/errors。
      */
     public NlQueryResult query(String question, double fewshotMaxSim, float[] qv) {
         String degradeWarn = null;
@@ -92,7 +99,7 @@ public class Nl2SqlService {
             }
         }
 
-        // Schema linking：只把相关表的 schema 注入 prompt
+        // Schema linking：只把相关表的 schema 注入 prompt（避免无关表噪音，保留检索预算）
         SchemaLinker.LinkingResult linking = schemaLinker.select(question, qv);
         // 术语口径声明的表强制并入：口径涉及的表（如折算的 currency_rate 无外键、向量召回可能裁掉）
         // 不能缺席，否则模型会因"看不到表"而拒答
@@ -107,7 +114,7 @@ public class Nl2SqlService {
         }
         log.info("Schema linking 命中表: {}", linking.tables());
 
-        // 动态 few-shot：按相似度选 Top-N 示例（评估时排除近重复，防泄漏）
+        // 动态 few-shot：按相似度选 Top-N 示例（评估时可排除近重复，防泄漏）
         String fewShotBlock = fewShot.formatBlock(question, fewshotMaxSim, qv);
         // 业务术语口径：按问题相关性选 Top-N（术语库小时全量短路）
         String glossaryBlock = glossary.formatBlock(question, qv);
@@ -122,11 +129,12 @@ public class Nl2SqlService {
         List<String> errors = new ArrayList<>();
         int round = 0;
 
+        // 重试循环：解析失败/校验失败/执行失败都会回灌 prompt，直到 maxFixRounds 或首次成功。
         for (; round <= llmProps.getMaxFixRounds(); round++) {
             String raw = llm.completeJson(conversation);
             log.info("LLM 第{}轮输出: {}", round, raw);
 
-            // 1) 解析
+            // 1) 解析：合法 JSON 且无 unanswerable 才进入下一层校验
             try {
                 String json = stripFence(raw);
                 // 拒答：模型判定问题无法用本库只读查询回答 → 直接返回 success=false，不再重试
@@ -146,7 +154,7 @@ public class Nl2SqlService {
                 continue;
             }
 
-            // 2) 确定性校验
+            // 2) 确定性校验：统一规则通过后再进编译，避免抛异常污染执行层
             errors = validator.validate(mql);
             if (!errors.isEmpty()) {
                 log.info("第{}轮校验失败: {}", round, errors);
@@ -155,7 +163,7 @@ public class Nl2SqlService {
                 continue;
             }
 
-            // 3) 编译 + 执行（异常同样回灌，让模型自我修正，而非直接 500）
+            // 3) 编译 + 执行（异常同样回灌），失败只做模型可修正提示，不直接对外抛 500
             try {
                 SelectQuery<Record> query = compiler.compile(mql);
                 sql = compiler.renderSql(query);
@@ -181,12 +189,19 @@ public class Nl2SqlService {
         return new NlQueryResult(question, mql, sql, rows, errors, round, success, warnings, null);
     }
 
+    /**
+     * 将上一步 assistant 输出及其问题化 feedback 拼回对话历史。
+     * 让同一轮 LLM 具备“错误上下文”，提高下一轮修复成功率。
+     */
     private static void feedback(List<LlmClient.Message> conv, String assistantRaw, String userMsg) {
         conv.add(LlmClient.Message.assistant(assistantRaw));
         conv.add(LlmClient.Message.user(userMsg));
     }
 
-    /** 取异常链最深处的根因消息，压成单行，便于回灌给模型 */
+    /**
+     * 取异常链最深处的根因消息，压成单行，便于回灌提示词；
+     * 避免抛出过长堆栈，提升反馈文本可读性与可修复性。
+     */
     private static String rootMessage(Throwable e) {
         Throwable c = e;
         while (c.getCause() != null && c.getCause() != c) c = c.getCause();
@@ -194,6 +209,10 @@ public class Nl2SqlService {
         return (m == null ? c.getClass().getSimpleName() : m).replaceAll("\\s+", " ").trim();
     }
 
+    /**
+     * 组装系统提示词：强约束 + 示例 + 规则。
+     * 核心策略是“减少模型自由度”——约束清晰时能显著降低后续自我修正轮次。
+     */
     private String systemPrompt(String schemaText, String glossaryBlock, String fewShotBlock) {
         return """
             你是一个把中文自然语言问题翻译成「MQL（结构化中间查询语言）」的引擎，用于查询企业资金（treasury）数据。
@@ -291,6 +310,10 @@ public class Nl2SqlService {
                .replace("{{FEWSHOT}}", fewShotBlock);
     }
 
+    /**
+     * 兼容模型返回带代码围栏的常见格式，保留无围栏和有围栏两种输入路径。
+     * 仅用于“输入清洗”，不执行 JSON 校验与语义判断。
+     */
     private static String stripFence(String s) {
         if (s == null) return "";
         String t = s.trim();
