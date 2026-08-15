@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>国库库存月报 · 智能报告流水线演示</title>
+<title>司库资金周报 · 智能报告流水线演示</title>
 <style>
 :root{--accent:#2563eb;--bg:#f6f7f9;--card:#fff;--line:#e5e7eb;--text:#111827;--muted:#6b7280;
       --ok:#059669;--warn:#d97706;--bad:#dc2626;--violet:#7c3aed;}
@@ -112,21 +112,25 @@ details.step pre{background:#f9fafb;padding:6px 8px;overflow:auto;max-height:220
 <div>
   <div class="card">
     <h2>① 发起报告需求</h2>
-    <textarea id="reqText" placeholder="例：生成 2026 年 6 月的国库库存月报"></textarea>
-    <div class="chip-cat">✅ 正向示例（国库库存月报 · 多种问法均可签发；gk 首期一类模板）</div>
+    <textarea id="reqText" placeholder="例：生成 2026 年第 26 周的司库资金周报，和上周对比"></textarea>
+    <div class="chip-cat">✅ 正向示例（四类模板 × 多种问法均可签发）</div>
     <div class="chips">
-      <span class="chip" onclick="fillReq('生成 2026 年 6 月的国库库存月报')">月报 · 2026 年 6 月</span>
-      <span class="chip" onclick="fillReq('出一份 2026-M06 的库存月报')">月报 · ISO 标签 2026-M06</span>
-      <span class="chip" onclick="fillReq('帮我写一下 2026 年 5 月的国库库存报告')">口语化问法 · 2026 年 5 月</span>
-      <span class="chip" onclick="fillReq('生成 2026 年 6 月的库款月报，和上月及去年同期对比')">明说环比+同比 · 别名「库款月报」</span>
-      <span class="chip" onclick="fillReq('来一份 2025 年 12 月的库存月报')">跨年历史期 · 2025 年 12 月</span>
+      <span class="chip" onclick="fillReq('生成 2026 年第 26 周的司库资金周报，和上周对比')">周报 · 第 26 周 · 和上周对比</span>
+      <span class="chip" onclick="fillReq('出一份 2026-W25 的资金周报')">周报 · ISO 标签 2026-W25</span>
+      <span class="chip" onclick="fillReq('帮我写一下 2026 年第 24 周的每周资金报告')">周报 · 口语化问法 · 第 24 周</span>
+      <span class="chip" onclick="fillReq('出一份 2026 年第 26 周的资金快报')">快报 · 第 26 周</span>
+      <span class="chip" onclick="fillReq('来一份 2026-W25 的流动性快报')">快报 · 别名「流动性快报」</span>
+      <span class="chip" onclick="fillReq('生成 2026 年 6 月的资金月报')">月报 · 2026 年 6 月</span>
+      <span class="chip" onclick="fillReq('生成 2026 年 6 月的司库月报，和上月及去年同期对比')">月报 · 明说环比+同比</span>
+      <span class="chip" onclick="fillReq('出一份 2026-M06 的月度资金报告')">月报 · ISO 标签 2026-M06</span>
+      <span class="chip" onclick="fillReq('生成 2026 年二季度的资金季报')">季报 · 2026 年二季度</span>
+      <span class="chip" onclick="fillReq('出一份 2026-Q2 的季度报告，和一季度及去年同期对比')">季报 · ISO 标签 2026-Q2</span>
     </div>
     <div class="chip-cat">🚫 反向示例（失败关闭，BLOCKED 转人工，不猜测补全）</div>
     <div class="chips">
       <span class="chip neg" onclick="fillReq('生成 HR 月度盘点')">无关领域 · 匹配失败</span>
-      <span class="chip neg" onclick="fillReq('生成 2026 年度库存报告')">年报 · 周期粒度不支持</span>
-      <span class="chip neg" onclick="fillReq('给我一份 2026 年第 26 周的库存周报')">库存周报 · 粒度-模板矩阵把关</span>
-      <span class="chip neg" onclick="fillReq('生成国库库存月报')">缺报告期 · 周期识别不了必须问人</span>
+      <span class="chip neg" onclick="fillReq('生成 2026 年度资金报告')">年报 · 周期粒度不支持</span>
+      <span class="chip neg" onclick="fillReq('给我一份 2026 年二季度的司库资金周报')">季度周报 · 粒度-模板矩阵把关</span>
     </div>
     <div class="row">
       <button id="createBtn" onclick="createRun()">发起（① 大纲生成）</button>

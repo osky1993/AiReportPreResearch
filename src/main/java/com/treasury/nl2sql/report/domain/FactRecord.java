@@ -21,7 +21,7 @@ import java.util.Map;
  * @param chapterId 归属章节
  * @param factType BASE/DERIVED
  * @param value 事实标准值
- * @param unit 单位（CNY/亿元/percent 等）
+ * @param unit 单位（CNY/万元/percent 等）
  * @param periodLabel 周期标签
  * @param specJson 查询 spec 快照（JSON）
  * @param sqlHash SQL 执行 hash（防篡改与同源重放）

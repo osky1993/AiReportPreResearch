@@ -1,313 +1,346 @@
 [
   {
-    "metricId": "gk_eom_balance_total",
-    "name": "全辖国库月末库存余额合计",
-    "unit": "亿元",
-    "timeBound": true,
-    "comparable": true,
+    "metricId": "cny_total_balance",
+    "name": "人民币活跃账户余额合计",
+    "unit": "CNY",
+    "timeBound": false,
+    "comparable": false,
     "valueColumn": "total_balance",
     "nullPolicy": "BLOCK",
-    "qualityChecks": [
-      "NON_NEGATIVE"
-    ],
+    "qualityChecks": ["NON_NEGATIVE"],
     "mqlTemplate": {
-      "table": "treasury_balance_journal",
+      "table": "account",
       "filter": [
-        {
-          "field": "stat_date",
-          "op": "=",
-          "value": "{{period_end}}"
-        }
+        { "field": "currency", "op": "=", "value": "CNY" },
+        { "field": "status", "op": "=", "value": "ACTIVE" }
       ],
-      "metrics": [
-        {
-          "op": "sum",
-          "field": "balance",
-          "alias": "total_balance"
-        }
-      ]
+      "metrics": [ { "op": "sum", "field": "balance", "alias": "total_balance" } ]
     }
   },
   {
-    "metricId": "gk_eom_balance_city",
-    "name": "市级库月末库存余额（苏州市中心支库本级）",
-    "unit": "亿元",
-    "timeBound": true,
-    "comparable": true,
-    "valueColumn": "total_balance",
-    "nullPolicy": "BLOCK",
-    "qualityChecks": [
-      "NON_NEGATIVE"
-    ],
+    "metricId": "active_account_count",
+    "name": "活跃账户数",
+    "unit": "户",
+    "timeBound": false,
+    "comparable": false,
+    "valueColumn": "cnt",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
     "mqlTemplate": {
-      "table": "treasury_balance_journal",
-      "filter": [
-        {
-          "field": "stat_date",
-          "op": "=",
-          "value": "{{period_end}}"
-        },
-        {
-          "field": "treasury_code",
-          "op": "=",
-          "value": "1005000000"
-        }
-      ],
-      "metrics": [
-        {
-          "op": "sum",
-          "field": "balance",
-          "alias": "total_balance"
-        }
-      ]
+      "table": "account",
+      "filter": [ { "field": "status", "op": "=", "value": "ACTIVE" } ],
+      "metrics": [ { "op": "count", "alias": "cnt" } ]
     }
   },
   {
-    "metricId": "gk_eom_balance_county_level",
-    "name": "区县级库月末库存余额合计",
-    "unit": "亿元",
-    "timeBound": true,
-    "comparable": true,
-    "valueColumn": "total_balance",
-    "nullPolicy": "BLOCK",
-    "qualityChecks": [
-      "NON_NEGATIVE"
-    ],
+    "metricId": "frozen_account_count",
+    "name": "冻结账户数",
+    "unit": "户",
+    "timeBound": false,
+    "comparable": false,
+    "valueColumn": "cnt",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
     "mqlTemplate": {
-      "table": "treasury_balance_journal",
-      "joins": [
-        {
-          "table": "treasury_basic_info",
-          "type": "inner",
-          "on": [
-            {
-              "left": "treasury_balance_journal.treasury_code",
-              "right": "treasury_basic_info.treasury_code"
-            }
-          ]
-        }
-      ],
-      "filter": [
-        {
-          "field": "treasury_balance_journal.stat_date",
-          "op": "=",
-          "value": "{{period_end}}"
-        },
-        {
-          "field": "treasury_basic_info.treasury_level",
-          "op": "=",
-          "value": 4
-        }
-      ],
-      "metrics": [
-        {
-          "op": "sum",
-          "field": "treasury_balance_journal.balance",
-          "alias": "total_balance"
-        }
-      ]
+      "table": "account",
+      "filter": [ { "field": "status", "op": "=", "value": "FROZEN" } ],
+      "metrics": [ { "op": "count", "alias": "cnt" } ]
     }
   },
   {
-    "metricId": "gk_eom_balance_town_level",
-    "name": "乡镇级库月末库存余额合计",
-    "unit": "亿元",
-    "timeBound": true,
-    "comparable": true,
+    "metricId": "deposit_balance",
+    "name": "人民币定期存款账户余额",
+    "unit": "CNY",
+    "timeBound": false,
+    "comparable": false,
     "valueColumn": "total_balance",
-    "nullPolicy": "BLOCK",
-    "qualityChecks": [
-      "NON_NEGATIVE"
-    ],
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
     "mqlTemplate": {
-      "table": "treasury_balance_journal",
-      "joins": [
-        {
-          "table": "treasury_basic_info",
-          "type": "inner",
-          "on": [
-            {
-              "left": "treasury_balance_journal.treasury_code",
-              "right": "treasury_basic_info.treasury_code"
-            }
-          ]
-        }
-      ],
+      "table": "account",
       "filter": [
-        {
-          "field": "treasury_balance_journal.stat_date",
-          "op": "=",
-          "value": "{{period_end}}"
-        },
-        {
-          "field": "treasury_basic_info.treasury_level",
-          "op": "=",
-          "value": 5
-        }
+        { "field": "account_type", "op": "=", "value": "DEPOSIT" },
+        { "field": "status", "op": "=", "value": "ACTIVE" },
+        { "field": "currency", "op": "=", "value": "CNY" }
       ],
-      "metrics": [
-        {
-          "op": "sum",
-          "field": "treasury_balance_journal.balance",
-          "alias": "total_balance"
-        }
-      ]
+      "metrics": [ { "op": "sum", "field": "balance", "alias": "total_balance" } ]
     }
   },
   {
-    "metricId": "gk_eom_active_treasury_count",
-    "name": "月末在账国库数",
-    "unit": "个",
+    "metricId": "week_txn_count",
+    "name": "本期交易笔数（不含失败）",
+    "unit": "笔",
     "timeBound": true,
     "comparable": true,
     "valueColumn": "cnt",
     "nullPolicy": "ZERO",
-    "qualityChecks": [
-      "NON_NEGATIVE"
-    ],
+    "qualityChecks": ["NON_NEGATIVE"],
     "mqlTemplate": {
-      "table": "treasury_balance_journal",
+      "table": "cash_transaction",
       "filter": [
-        {
-          "field": "stat_date",
-          "op": "=",
-          "value": "{{period_end}}"
-        }
+        { "field": "txn_date", "op": ">=", "value": "{{period_start}}" },
+        { "field": "txn_date", "op": "<=", "value": "{{period_end}}" },
+        { "field": "status", "op": "!=", "value": "FAILED" }
       ],
-      "metrics": [
-        {
-          "op": "count",
-          "field": "treasury_code",
-          "distinct": true,
-          "alias": "cnt"
-        }
-      ]
+      "metrics": [ { "op": "count", "alias": "cnt" } ]
     }
   },
   {
-    "metricId": "gk_month_debit_total",
-    "name": "当月借方发生额合计",
-    "unit": "亿元",
+    "metricId": "week_txn_amount_cny",
+    "name": "本期交易总额（折人民币）",
+    "unit": "CNY",
     "timeBound": true,
     "comparable": true,
-    "valueColumn": "total_debit",
+    "valueColumn": "total_cny",
     "nullPolicy": "ZERO",
-    "qualityChecks": [
-      "NON_NEGATIVE"
+    "qualityChecks": ["NON_NEGATIVE"],
+    "anomalyRules": [
+      { "type": "volatility", "basis": "wow", "absPct": 30, "dimensionMetricId": "week_txn_amount_by_currency" },
+      { "type": "volatility", "basis": "mom", "absPct": 30, "dimensionMetricId": "week_txn_amount_by_currency" },
+      { "type": "volatility", "basis": "yoy", "absPct": 50 }
     ],
     "mqlTemplate": {
-      "table": "treasury_balance_journal",
+      "table": "cash_transaction",
+      "joins": [
+        { "table": "currency_rate", "type": "inner",
+          "on": [ { "left": "cash_transaction.currency", "right": "currency_rate.currency" } ] }
+      ],
       "filter": [
-        {
-          "field": "stat_date",
-          "op": ">=",
-          "value": "{{period_start}}"
-        },
-        {
-          "field": "stat_date",
-          "op": "<=",
-          "value": "{{period_end}}"
-        }
+        { "field": "currency_rate.rate_date", "op": "=",
+          "subquery": { "table": "currency_rate",
+                        "metrics": [ { "op": "max", "field": "rate_date", "alias": "latest" } ] } },
+        { "field": "cash_transaction.txn_date", "op": ">=", "value": "{{period_start}}" },
+        { "field": "cash_transaction.txn_date", "op": "<=", "value": "{{period_end}}" },
+        { "field": "cash_transaction.status", "op": "!=", "value": "FAILED" }
       ],
       "metrics": [
-        {
-          "op": "sum",
-          "field": "debit_amount",
-          "alias": "total_debit"
-        }
+        { "op": "sum",
+          "fieldExpr": { "left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny" },
+          "alias": "total_cny" }
       ]
     }
   },
   {
-    "metricId": "gk_month_credit_total",
-    "name": "当月贷方发生额合计",
-    "unit": "亿元",
+    "metricId": "week_inflow_amount_cny",
+    "name": "本期流入金额（折人民币）",
+    "unit": "CNY",
     "timeBound": true,
     "comparable": true,
-    "valueColumn": "total_credit",
+    "valueColumn": "total_cny",
     "nullPolicy": "ZERO",
-    "qualityChecks": [
-      "NON_NEGATIVE"
-    ],
+    "qualityChecks": ["NON_NEGATIVE"],
     "mqlTemplate": {
-      "table": "treasury_balance_journal",
+      "table": "cash_transaction",
+      "joins": [
+        { "table": "currency_rate", "type": "inner",
+          "on": [ { "left": "cash_transaction.currency", "right": "currency_rate.currency" } ] }
+      ],
       "filter": [
-        {
-          "field": "stat_date",
-          "op": ">=",
-          "value": "{{period_start}}"
-        },
-        {
-          "field": "stat_date",
-          "op": "<=",
-          "value": "{{period_end}}"
-        }
+        { "field": "currency_rate.rate_date", "op": "=",
+          "subquery": { "table": "currency_rate",
+                        "metrics": [ { "op": "max", "field": "rate_date", "alias": "latest" } ] } },
+        { "field": "cash_transaction.direction", "op": "=", "value": "IN" },
+        { "field": "cash_transaction.txn_date", "op": ">=", "value": "{{period_start}}" },
+        { "field": "cash_transaction.txn_date", "op": "<=", "value": "{{period_end}}" },
+        { "field": "cash_transaction.status", "op": "!=", "value": "FAILED" }
       ],
       "metrics": [
-        {
-          "op": "sum",
-          "field": "credit_amount",
-          "alias": "total_credit"
-        }
+        { "op": "sum",
+          "fieldExpr": { "left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny" },
+          "alias": "total_cny" }
       ]
     }
   },
   {
-    "metricId": "gk_eom_balance_by_county",
-    "name": "月末库存余额按所属县拆解（不含市库本级，余额降序）",
-    "unit": "亿元",
+    "metricId": "week_outflow_amount_cny",
+    "name": "本期流出金额（折人民币）",
+    "unit": "CNY",
+    "timeBound": true,
+    "comparable": true,
+    "valueColumn": "total_cny",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
+    "mqlTemplate": {
+      "table": "cash_transaction",
+      "joins": [
+        { "table": "currency_rate", "type": "inner",
+          "on": [ { "left": "cash_transaction.currency", "right": "currency_rate.currency" } ] }
+      ],
+      "filter": [
+        { "field": "currency_rate.rate_date", "op": "=",
+          "subquery": { "table": "currency_rate",
+                        "metrics": [ { "op": "max", "field": "rate_date", "alias": "latest" } ] } },
+        { "field": "cash_transaction.direction", "op": "=", "value": "OUT" },
+        { "field": "cash_transaction.txn_date", "op": ">=", "value": "{{period_start}}" },
+        { "field": "cash_transaction.txn_date", "op": "<=", "value": "{{period_end}}" },
+        { "field": "cash_transaction.status", "op": "!=", "value": "FAILED" }
+      ],
+      "metrics": [
+        { "op": "sum",
+          "fieldExpr": { "left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny" },
+          "alias": "total_cny" }
+      ]
+    }
+  },
+  {
+    "metricId": "week_net_inflow_cny",
+    "name": "本期净流入（折人民币）",
+    "unit": "CNY",
+    "timeBound": true,
+    "comparable": true,
+    "valueColumn": null,
+    "nullPolicy": "ZERO",
+    "qualityChecks": [],
+    "derived": { "op": "subtract", "left": "week_inflow_amount_cny", "right": "week_outflow_amount_cny" }
+  },
+  {
+    "metricId": "payroll_out_amount",
+    "name": "本期工资发放金额（人民币）",
+    "unit": "CNY",
+    "timeBound": true,
+    "comparable": true,
+    "valueColumn": "total_amount",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
+    "mqlTemplate": {
+      "table": "cash_transaction",
+      "filter": [
+        { "field": "direction", "op": "=", "value": "OUT" },
+        { "field": "category", "op": "=", "value": "PAYROLL" },
+        { "field": "currency", "op": "=", "value": "CNY" },
+        { "field": "txn_date", "op": ">=", "value": "{{period_start}}" },
+        { "field": "txn_date", "op": "<=", "value": "{{period_end}}" },
+        { "field": "status", "op": "!=", "value": "FAILED" }
+      ],
+      "metrics": [ { "op": "sum", "field": "amount", "alias": "total_amount" } ]
+    }
+  },
+  {
+    "metricId": "tax_txn_count",
+    "name": "本期税款缴纳笔数",
+    "unit": "笔",
+    "timeBound": true,
+    "comparable": true,
+    "valueColumn": "cnt",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
+    "mqlTemplate": {
+      "table": "cash_transaction",
+      "filter": [
+        { "field": "category", "op": "=", "value": "TAX" },
+        { "field": "txn_date", "op": ">=", "value": "{{period_start}}" },
+        { "field": "txn_date", "op": "<=", "value": "{{period_end}}" },
+        { "field": "status", "op": "!=", "value": "FAILED" }
+      ],
+      "metrics": [ { "op": "count", "alias": "cnt" } ]
+    }
+  },
+  {
+    "metricId": "large_txn_count",
+    "name": "本期大额交易笔数（人民币单笔≥50万）",
+    "unit": "笔",
+    "timeBound": true,
+    "comparable": true,
+    "valueColumn": "cnt",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
+    "mqlTemplate": {
+      "table": "cash_transaction",
+      "filter": [
+        { "field": "currency", "op": "=", "value": "CNY" },
+        { "field": "amount", "op": ">=", "value": 500000 },
+        { "field": "txn_date", "op": ">=", "value": "{{period_start}}" },
+        { "field": "txn_date", "op": "<=", "value": "{{period_end}}" },
+        { "field": "status", "op": "!=", "value": "FAILED" }
+      ],
+      "metrics": [ { "op": "count", "alias": "cnt" } ]
+    }
+  },
+  {
+    "metricId": "in_transit_txn_count",
+    "name": "在途交易笔数（当前快照）",
+    "unit": "笔",
+    "timeBound": false,
+    "comparable": false,
+    "valueColumn": "cnt",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
+    "mqlTemplate": {
+      "table": "cash_transaction",
+      "filter": [ { "field": "status", "op": "=", "value": "IN_TRANSIT" } ],
+      "metrics": [ { "op": "count", "alias": "cnt" } ]
+    }
+  },
+  {
+    "metricId": "pending_payment_count",
+    "name": "待审批付款单数（当前快照）",
+    "unit": "单",
+    "timeBound": false,
+    "comparable": false,
+    "valueColumn": "cnt",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
+    "mqlTemplate": {
+      "table": "payment_order",
+      "filter": [ { "field": "status", "op": "=", "value": "PENDING" } ],
+      "metrics": [ { "op": "count", "alias": "cnt" } ]
+    }
+  },
+  {
+    "metricId": "loan_outstanding_balance",
+    "name": "人民币贷款本金余额",
+    "unit": "CNY",
+    "timeBound": false,
+    "comparable": false,
+    "valueColumn": "total_principal",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
+    "mqlTemplate": {
+      "table": "loan",
+      "filter": [ { "field": "currency", "op": "=", "value": "CNY" } ],
+      "metrics": [ { "op": "sum", "field": "principal", "alias": "total_principal" } ]
+    }
+  },
+  {
+    "metricId": "due_repayment_count",
+    "name": "未偿还还款计划项数（当前快照）",
+    "unit": "项",
+    "timeBound": false,
+    "comparable": false,
+    "valueColumn": "cnt",
+    "nullPolicy": "ZERO",
+    "qualityChecks": ["NON_NEGATIVE"],
+    "mqlTemplate": {
+      "table": "loan_repayment",
+      "filter": [ { "field": "paid", "op": "=", "value": 0 } ],
+      "metrics": [ { "op": "count", "alias": "cnt" } ]
+    }
+  },
+  {
+    "metricId": "week_txn_amount_by_currency",
+    "name": "本期交易金额按币种拆解（折人民币）",
+    "unit": "CNY",
     "timeBound": true,
     "comparable": false,
-    "valueColumn": "total_balance",
+    "valueColumn": "total_cny",
     "nullPolicy": "ZERO",
-    "qualityChecks": [
-      "NON_NEGATIVE"
-    ],
-    "dimensions": [
-      "county_treasury_name"
-    ],
+    "qualityChecks": ["NON_NEGATIVE"],
+    "dimensions": ["currency"],
     "mqlTemplate": {
-      "table": "treasury_balance_journal",
-      "joins": [
-        {
-          "table": "treasury_basic_info",
-          "type": "inner",
-          "on": [
-            {
-              "left": "treasury_balance_journal.treasury_code",
-              "right": "treasury_basic_info.treasury_code"
-            }
-          ]
-        }
-      ],
+      "table": "cash_transaction",
+      "joins": [ { "table": "currency_rate", "type": "inner",
+                   "on": [ { "left": "cash_transaction.currency", "right": "currency_rate.currency" } ] } ],
       "filter": [
-        {
-          "field": "treasury_balance_journal.stat_date",
-          "op": "=",
-          "value": "{{period_end}}"
-        },
-        {
-          "field": "treasury_basic_info.treasury_level",
-          "op": "!=",
-          "value": 3
-        }
+        { "field": "currency_rate.rate_date", "op": "=",
+          "subquery": { "table": "currency_rate", "metrics": [ { "op": "max", "field": "rate_date", "alias": "latest" } ] } },
+        { "field": "cash_transaction.txn_date", "op": ">=", "value": "{{period_start}}" },
+        { "field": "cash_transaction.txn_date", "op": "<=", "value": "{{period_end}}" },
+        { "field": "cash_transaction.status", "op": "!=", "value": "FAILED" }
       ],
-      "groupBy": [
-        "treasury_balance_journal.county_treasury_name"
-      ],
-      "metrics": [
-        {
-          "op": "sum",
-          "field": "treasury_balance_journal.balance",
-          "alias": "total_balance"
-        }
-      ],
-      "orderBy": [
-        {
-          "field": "total_balance",
-          "direction": "desc"
-        }
-      ]
+      "groupBy": ["cash_transaction.currency"],
+      "metrics": [ { "op": "sum",
+                     "fieldExpr": { "left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny" },
+                     "alias": "total_cny" } ]
     }
   }
 ]

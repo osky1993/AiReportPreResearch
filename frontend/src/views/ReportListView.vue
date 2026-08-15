@@ -5,10 +5,10 @@ import { createRun, listRuns, primeRunDetail, type ReportRun } from '@/api/repor
 import { fmtTime, statusMeta } from '@/utils/reportMeta'
 
 const EXAMPLES = [
-  { text: '生成 2026 年 6 月的国库库存月报', note: '库存月报 · 2026 年 6 月' },
-  { text: '帮我写一下 2026 年 5 月的国库库存报告', note: '口语化问法 · 2026 年 5 月' },
+  { text: '生成 2026 年第 26 周的司库资金周报，和上周对比', note: '资金周报 · 第 26 周' },
+  { text: '出一份 2026 年第 26 周的资金快报', note: '资金快报 · 第 26 周' },
   { text: '生成 2026 年 6 月的库款月报，和上月及去年同期对比', note: '明说环比+同比' },
-  { text: '来一份 2025 年 12 月的库存月报', note: '跨年历史期' },
+  { text: '生成 2026 年 6 月的资金月报', note: '资金月报 · 2026 年 6 月' },
 ]
 
 const router = useRouter()
@@ -66,7 +66,7 @@ onMounted(loadRuns)
       <textarea
         v-model="input"
         rows="2"
-        placeholder="请描述报告需求，如：生成 2026 年 6 月的国库库存月报"
+        placeholder="请描述报告需求，如：生成 2026 年第 26 周的司库资金周报"
         @keydown.enter.exact.prevent="submit()"
       ></textarea>
       <div class="chips">

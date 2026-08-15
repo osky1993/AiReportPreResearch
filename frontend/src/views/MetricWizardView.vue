@@ -46,7 +46,7 @@ const paramErr = ref('')
 // ④ 元数据
 const metricId = ref('')
 const name = ref('')
-const unit = ref('亿元')
+const unit = ref('CNY')
 const valueColumn = ref('')
 const comparable = ref(true)
 const nullPolicy = ref('BLOCK')
@@ -236,7 +236,7 @@ onMounted(async () => {
         <textarea
           v-model="question"
           rows="2"
-          placeholder="例：2026年6月30日全省国库库存余额合计是多少"
+          placeholder="例：2026年6月22日到6月28日投资类支出折人民币总金额（不含失败交易）"
         ></textarea>
         <div class="row">
           <button class="btn-primary" :disabled="trying || !question.trim()" @click="doTry">

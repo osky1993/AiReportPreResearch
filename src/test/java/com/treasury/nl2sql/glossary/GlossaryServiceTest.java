@@ -55,11 +55,11 @@ class GlossaryServiceTest {
         GlossaryService g = new GlossaryService(om, schema, new LocalHashingEmbeddingClient(), true, 3);
         g.load();
 
-        List<GlossaryService.Selected> sel = g.select("国库库存月末余额还有多少");
+        List<GlossaryService.Selected> sel = g.select("在途资金还有多少");
 
         assertEquals(3, sel.size());
-        assertTrue(sel.stream().anyMatch(s -> s.term().equals("国库库存")),
-                "Top-3 应含「国库库存」，实际: " + sel);
+        assertTrue(sel.stream().anyMatch(s -> s.term().equals("在途资金")),
+                "Top-3 应含「在途资金」，实际: " + sel);
     }
 
     /**
@@ -77,7 +77,7 @@ class GlossaryServiceTest {
         String block = g.formatBlock("任意问题");
 
         assertEquals(0, embeds.get(), "短路场景不应有任何 embed 调用");
-        assertEquals(12, g.all().size());
+        assertEquals(11, g.all().size());
         for (Term t : g.all()) {
             assertTrue(block.contains("- " + t.term()), "全量注入应含「" + t.term() + "」");
         }
@@ -111,6 +111,6 @@ class GlossaryServiceTest {
 
         List<GlossaryService.Selected> sel = g.select("在途资金还有多少", null);
 
-        assertEquals(12, sel.size(), "降级应全量注入");
+        assertEquals(11, sel.size(), "降级应全量注入");
     }
 }

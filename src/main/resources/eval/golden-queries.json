@@ -1,238 +1,353 @@
 [
   {
     "id": "C1",
-    "question": "2026年6月30日库存余额最高的5个国库，列出国库简称和余额",
-    "referenceSql": "select treasury_short_name, balance from treasury_balance_journal where stat_date='2026-06-30' order by balance desc limit 5"
+    "question": "余额最高的3个账户，列出账户名称和余额",
+    "referenceSql": "select account_name, balance from account order by balance desc limit 3"
   },
   {
     "id": "C2",
-    "question": "2026年6月30日余额超过50亿元的国库，列出简称和余额",
-    "referenceSql": "select treasury_short_name, balance from treasury_balance_journal where stat_date='2026-06-30' and balance>50"
+    "question": "总部结算户2026年6月的收入总额",
+    "referenceSql": "select sum(t.amount) total from cash_transaction t join account a on t.account_id=a.account_id where a.account_name='总部结算户' and t.direction='IN' and t.txn_date between '2026-06-01' and '2026-06-30'"
   },
   {
     "id": "C3",
-    "question": "国家金库常熟市支库2026年6月30日的库存余额，列出国库简称和余额",
-    "referenceSql": "select treasury_short_name, balance from treasury_balance_journal where treasury_short_name='国家金库常熟市支库' and stat_date='2026-06-30'"
+    "question": "每个币种各有多少个账户",
+    "referenceSql": "select currency, count(*) cnt from account group by currency"
   },
   {
     "id": "C4",
-    "question": "把2026年6月30日各国库按余额从低到高列出简称和余额",
-    "referenceSql": "select treasury_short_name, balance from treasury_balance_journal where stat_date='2026-06-30' order by balance asc"
+    "question": "列出每个账户名称及其2026年6月的支出总额，按支出从高到低",
+    "referenceSql": "select a.account_name, sum(t.amount) total_out from cash_transaction t join account a on t.account_id=a.account_id where t.direction='OUT' and t.txn_date between '2026-06-01' and '2026-06-30' group by a.account_name order by total_out desc"
   },
   {
     "id": "C5",
-    "question": "2026年6月30日哪个国库的库存最多，列出简称和余额",
-    "referenceSql": "select treasury_short_name, balance from treasury_balance_journal where stat_date='2026-06-30' order by balance desc limit 1"
+    "question": "状态为冻结的账户有几个",
+    "referenceSql": "select count(*) cnt from account where status='FROZEN'"
   },
   {
     "id": "C6",
-    "question": "各区县级国库2026年6月30日的库存余额，列出简称和余额，从高到低",
-    "referenceSql": "select j.treasury_short_name, j.balance from treasury_balance_journal j join treasury_basic_info b on j.treasury_code=b.treasury_code where j.stat_date='2026-06-30' and b.treasury_level=4 order by j.balance desc"
+    "question": "2026年6月收入合计超过100万的账户名称及其收入合计",
+    "referenceSql": "select a.account_name, sum(t.amount) total_in from cash_transaction t join account a on t.account_id=a.account_id where t.direction='IN' and t.txn_date between '2026-06-01' and '2026-06-30' group by a.account_name having sum(t.amount)>1000000"
   },
   {
     "id": "C7",
-    "question": "2026年6月30日乡镇级国库的库存余额合计",
-    "referenceSql": "select sum(j.balance) total from treasury_balance_journal j join treasury_basic_info b on j.treasury_code=b.treasury_code where j.stat_date='2026-06-30' and b.treasury_level=5"
+    "question": "美元收汇户的所有收入流水的对手方和金额",
+    "referenceSql": "select t.counterparty, t.amount from cash_transaction t join account a on t.account_id=a.account_id where a.account_name='美元收汇户' and t.direction='IN'"
   },
   {
     "id": "C8",
-    "question": "列出国家金库苏州市中心支库直接下辖的国库简称和层级",
-    "referenceSql": "select treasury_short_name, treasury_level from treasury_basic_info where admin_treasury_name='国家金库苏州市中心支库'"
+    "question": "2026年6月各业务类别的支出总额，按金额降序",
+    "referenceSql": "select category, sum(amount) total from cash_transaction where direction='OUT' and txn_date between '2026-06-01' and '2026-06-30' group by category order by total desc"
   },
   {
     "id": "C9",
-    "question": "2026年6月每天全辖的库存余额合计，按日期先后排列",
-    "referenceSql": "select stat_date, sum(balance) total from treasury_balance_journal where stat_date between '2026-06-01' and '2026-06-30' group by stat_date order by stat_date asc"
+    "question": "当前人民币的可用余额合计是多少",
+    "referenceSql": "select sum(balance) total from account where status='ACTIVE' and currency='CNY'"
   },
   {
     "id": "C10",
-    "question": "2026年6月30日各所属县的库存余额合计（不含市库本级的占位行），从高到低",
-    "referenceSql": "select county_treasury_name, sum(balance) total from treasury_balance_journal where stat_date='2026-06-30' and county_treasury_name <> 'NNNNNNNNNN' group by county_treasury_name order by total desc"
+    "question": "在途的人民币资金一共有多少",
+    "referenceSql": "select sum(amount) total from cash_transaction where status='IN_TRANSIT' and currency='CNY'"
   },
   {
     "id": "C11",
-    "question": "2026年6月全辖借方发生额合计",
-    "referenceSql": "select sum(debit_amount) total from treasury_balance_journal where stat_date between '2026-06-01' and '2026-06-30'"
+    "question": "余额超过500万、或者状态是冻结的账户，列出名称、余额、状态",
+    "referenceSql": "select account_name, balance, status from account where balance>5000000 or status='FROZEN'"
   },
   {
     "id": "C12",
-    "question": "2026年6月30日全辖库存余额合计",
-    "referenceSql": "select sum(balance) total from treasury_balance_journal where stat_date='2026-06-30'"
+    "question": "2026年6月人民币的净流入是多少（收入减支出）",
+    "referenceSql": "select sum(case when direction='IN' then amount else 0 end) - sum(case when direction='OUT' then amount else 0 end) as net from cash_transaction where currency='CNY' and txn_date between '2026-06-01' and '2026-06-30'"
   },
   {
     "id": "C13",
-    "question": "基础信息表中各层级的国库数量",
-    "referenceSql": "select treasury_level, count(*) cnt from treasury_basic_info group by treasury_level"
+    "question": "把所有账户按余额从低到高列出名称和余额",
+    "referenceSql": "select account_name, balance from account order by balance asc"
   },
   {
     "id": "C14",
-    "question": "2026年6月30日按所属县汇总余额超过50亿元的县及其余额合计",
-    "referenceSql": "select county_treasury_name, sum(balance) total from treasury_balance_journal where stat_date='2026-06-30' group by county_treasury_name having sum(balance)>50"
+    "question": "2026年6月每天各有多少笔交易，按日期先后排列",
+    "referenceSql": "select txn_date, count(*) cnt from cash_transaction where txn_date between '2026-06-01' and '2026-06-30' group by txn_date order by txn_date asc"
   },
   {
     "id": "C15",
-    "question": "2026年6月一般公共预算收入的本期金额合计（科目T010101）",
-    "referenceSql": "select sum(current_period_amount) total from treasury_income_detail where stat_date='202606' and subject_code='T010101'"
+    "question": "收入金额最大的前5笔流水的对手方和金额",
+    "referenceSql": "select counterparty, amount from cash_transaction where direction='IN' order by amount desc limit 5"
   },
   {
     "id": "C16",
-    "question": "2026年6月税收收入的年累计金额合计（科目101）",
-    "referenceSql": "select sum(year_to_date_amount) total from treasury_income_detail where stat_date='202606' and subject_code='101'"
+    "question": "工商银行或建设银行开立的账户，列出名称和开户行",
+    "referenceSql": "select account_name, bank_name from account where bank_name in ('工商银行','建设银行')"
   },
   {
     "id": "C17",
-    "question": "2026年6月全口径国库收入的本期金额（四本预算汇总科目合计）",
-    "referenceSql": "select sum(current_period_amount) total from treasury_income_detail where stat_date='202606' and subject_code in ('T010101','T010201','T010401','T010601')"
+    "question": "余额超过一千万、或者币种是欧元的账户，列出名称、余额、币种",
+    "referenceSql": "select account_name, balance, currency from account where balance>10000000 or currency='EUR'"
   },
   {
     "id": "C18",
-    "question": "昆山市2026年6月的一般公共预算收入本期金额",
-    "referenceSql": "select sum(current_period_amount) total from treasury_income_detail where stat_date='202606' and subject_code='T010101' and treasury_short_name='昆山市'"
+    "question": "税务或工资类的支出流水，列出日期、类别、金额",
+    "referenceSql": "select txn_date, category, amount from cash_transaction where direction='OUT' and category in ('TAX','PAYROLL')"
   },
   {
     "id": "C19",
-    "question": "2026年6月各国库的税收收入本期金额，从高到低取前5",
-    "referenceSql": "select treasury_short_name, sum(current_period_amount) total from treasury_income_detail where stat_date='202606' and subject_code='101' group by treasury_short_name order by total desc limit 5"
+    "question": "各开户行的收入总额分别是多少",
+    "referenceSql": "select a.bank_name, sum(t.amount) total_in from cash_transaction t join account a on t.account_id=a.account_id where t.direction='IN' group by a.bank_name"
   },
   {
     "id": "C20",
-    "question": "2026年上半年逐月的税收收入本期金额合计，按月份排序",
-    "referenceSql": "select stat_date, sum(current_period_amount) total from treasury_income_detail where stat_date between '202601' and '202606' and subject_code='101' group by stat_date order by stat_date asc"
+    "question": "工商银行账户在2026年6月的人民币净流入",
+    "referenceSql": "select sum(case when t.direction='IN' then t.amount else 0 end)-sum(case when t.direction='OUT' then t.amount else 0 end) net from cash_transaction t join account a on t.account_id=a.account_id where a.bank_name='工商银行' and t.currency='CNY' and t.txn_date between '2026-06-01' and '2026-06-30'"
   },
   {
     "id": "C21",
-    "question": "2026年6月30日各国库余额的平均值",
-    "referenceSql": "select avg(balance) avg_bal from treasury_balance_journal where stat_date='2026-06-30'"
+    "question": "每个账户分别有多少笔收入（没有的算0）",
+    "referenceSql": "select a.account_name, count(t.txn_id) cnt from account a left join cash_transaction t on a.account_id=t.account_id and t.direction='IN' group by a.account_name"
   },
   {
     "id": "C22",
-    "question": "2026年6月单库单日借方发生额的最大值",
-    "referenceSql": "select max(debit_amount) mx from treasury_balance_journal where stat_date between '2026-06-01' and '2026-06-30'"
+    "question": "有过支出的账户分别发生了多少笔支出",
+    "referenceSql": "select a.account_name, count(*) cnt from cash_transaction t join account a on t.account_id=a.account_id where t.direction='OUT' group by a.account_name"
   },
   {
     "id": "C23",
-    "question": "库存日记账中出现过哪些所属县名称？去重列出",
-    "referenceSql": "select distinct county_treasury_name from treasury_balance_journal"
+    "question": "给我们带来收入最多的对手方是谁，金额多少",
+    "referenceSql": "select counterparty, sum(amount) total from cash_transaction where direction='IN' group by counterparty order by total desc limit 1"
   },
   {
     "id": "C24",
-    "question": "2026年6月有收入入库记录的国库有几个",
-    "referenceSql": "select count(distinct treasury_code) cnt from treasury_income_detail where stat_date='202606'"
+    "question": "本月人民币一共进账多少（本月=2026年6月）",
+    "referenceSql": "select sum(amount) total from cash_transaction where direction='IN' and currency='CNY' and txn_date between '2026-06-01' and '2026-06-30'"
   },
   {
     "id": "C25",
-    "question": "按2026年6月30日余额分档统计国库数：50亿元及以上为高，10亿元及以上为中，其余为低",
-    "referenceSql": "select case when balance >= 50 then '高' when balance >= 10 then '中' else '低' end as tier, count(*) as cnt from treasury_balance_journal where stat_date='2026-06-30' group by tier"
+    "question": "哪个账户的钱最多，列出名称和余额",
+    "referenceSql": "select account_name, balance from account order by balance desc limit 1"
   },
   {
     "id": "C26",
-    "question": "给每个国库打2026年6月30日的余额档位标签：50亿元及以上为大库，其余为普通，列出国库简称和档位",
-    "referenceSql": "select treasury_short_name, case when balance >= 50 then '大库' else '普通' end as tier from treasury_balance_journal where stat_date='2026-06-30'"
+    "question": "2026年5月人民币收入合计",
+    "referenceSql": "select sum(amount) total from cash_transaction where direction='IN' and currency='CNY' and txn_date between '2026-05-01' and '2026-05-31'"
   },
   {
     "id": "C27",
-    "question": "2026年6月30日余额高于全辖平均余额的国库，列出简称和余额",
-    "referenceSql": "select treasury_short_name, balance from treasury_balance_journal where stat_date='2026-06-30' and balance > (select avg(balance) from treasury_balance_journal where stat_date='2026-06-30')"
+    "question": "人民币收入流水的平均每笔金额",
+    "referenceSql": "select avg(amount) avg_in from cash_transaction where direction='IN' and currency='CNY'"
   },
   {
     "id": "C28",
-    "question": "2026年6月30日余额比国家金库常熟市支库还高的国库，列出简称和余额",
-    "referenceSql": "select treasury_short_name, balance from treasury_balance_journal where stat_date='2026-06-30' and balance > (select balance from treasury_balance_journal where treasury_short_name='国家金库常熟市支库' and stat_date='2026-06-30')"
+    "question": "人民币支出里单笔最大的金额",
+    "referenceSql": "select max(amount) mx from cash_transaction where direction='OUT' and currency='CNY'"
   },
   {
     "id": "C29",
-    "question": "2026年6月有收入入库记录的国库简称（按基础信息表列出）",
-    "referenceSql": "select treasury_short_name from treasury_basic_info where treasury_code in (select treasury_code from treasury_income_detail where stat_date='202606')"
+    "question": "人民币的活跃账户有几个",
+    "referenceSql": "select count(*) cnt from account where currency='CNY' and status='ACTIVE'"
   },
   {
     "id": "C30",
-    "question": "每个所属县中2026年6月30日余额排名前2的国库，列出所属县、国库简称、余额及组内排名，按所属县升序、余额降序排列",
-    "referenceSql": "select county_treasury_name, treasury_short_name, balance, rn from (select county_treasury_name, treasury_short_name, balance, row_number() over (partition by county_treasury_name order by balance desc) as rn from treasury_balance_journal where stat_date='2026-06-30') t where rn <= 2 order by county_treasury_name asc, balance desc"
+    "question": "在途的人民币流水有多少笔、合计多少金额",
+    "referenceSql": "select count(*) cnt, sum(amount) total from cash_transaction where status='IN_TRANSIT' and currency='CNY'"
   },
   {
     "id": "C31",
-    "question": "国家金库昆山市支库2026年6月的逐日余额及前一日余额，按日期先后排列",
-    "referenceSql": "select stat_date, balance, lag(balance, 1) over (order by stat_date) as prev_bal from treasury_balance_journal where treasury_short_name='国家金库昆山市支库' and stat_date between '2026-06-01' and '2026-06-30' order by stat_date"
+    "question": "各币种的收入合计分别是多少",
+    "referenceSql": "select currency, sum(amount) total from cash_transaction where direction='IN' group by currency"
   },
   {
     "id": "C32",
-    "question": "2026年6月全辖逐日贷方发生额及按日累计，按日期先后排列",
-    "referenceSql": "select stat_date, total, sum(total) over (order by stat_date) as running_total from (select stat_date, sum(credit_amount) as total from treasury_balance_journal where stat_date between '2026-06-01' and '2026-06-30' group by stat_date) g order by stat_date"
+    "question": "工资专户的支出明细，列出日期、类别和金额",
+    "referenceSql": "select t.txn_date, t.category, t.amount from cash_transaction t join account a on t.account_id=a.account_id where a.account_name='工资专户' and t.direction='OUT'"
   },
   {
     "id": "C33",
-    "question": "基础信息表和库存日记账各有多少条记录？合并成两行输出，只要数量这一列",
-    "referenceSql": "select count(*) as cnt from treasury_basic_info union all select count(*) as cnt from treasury_balance_journal"
+    "question": "2026年6月各账户的收入笔数，按账户名称排序",
+    "referenceSql": "select a.account_name, count(*) cnt from cash_transaction t join account a on t.account_id=a.account_id where t.direction='IN' and t.txn_date between '2026-06-01' and '2026-06-30' group by a.account_name order by a.account_name asc"
   },
   {
     "id": "C34",
-    "question": "把基础信息表的国库简称和日记账里出现过的所属县名称合并成一份去重名单，按名称排序",
-    "referenceSql": "select treasury_short_name as name from treasury_basic_info union select county_treasury_name from treasury_balance_journal order by name"
+    "question": "余额在300万到1500万之间的账户名称和余额",
+    "referenceSql": "select account_name, balance from account where balance between 3000000 and 15000000"
   },
   {
     "id": "C35",
-    "question": "基础信息表里2026年6月30日没有库存记录的国库，列出简称",
-    "referenceSql": "select b.treasury_short_name from treasury_basic_info b left join treasury_balance_journal j on b.treasury_code = j.treasury_code and j.stat_date='2026-06-30' where j.id is null"
+    "question": "对手方 US Buyer Inc 的流水金额合计",
+    "referenceSql": "select sum(amount) total from cash_transaction where counterparty='US Buyer Inc'"
   },
   {
     "id": "C36",
-    "question": "不是区县级、也不是乡镇级的国库，列出简称和层级",
-    "referenceSql": "select treasury_short_name, treasury_level from treasury_basic_info where treasury_level not in (4, 5)"
+    "question": "非人民币账户的名称和币种",
+    "referenceSql": "select account_name, currency from account where currency != 'CNY'"
   },
   {
     "id": "C37",
-    "question": "找出借方发生额为空的库存记录，列出日期和国库简称",
-    "referenceSql": "select stat_date, treasury_short_name from treasury_balance_journal where debit_amount is null"
+    "question": "2026年6月人民币支出合计",
+    "referenceSql": "select sum(amount) total from cash_transaction where direction='OUT' and currency='CNY' and txn_date between '2026-06-01' and '2026-06-30'"
   },
   {
     "id": "C38",
-    "question": "按月份统计2026年的借方发生额合计，列出月份和金额，按月份排序",
-    "referenceSql": "select date_format(stat_date, '%Y-%m') as ym, sum(debit_amount) as total from treasury_balance_journal where stat_date >= '2026-01-01' and stat_date <= '2026-12-31' group by ym order by ym"
+    "question": "单笔金额超过50万的支出流水，列出日期、金额、对手方",
+    "referenceSql": "select txn_date, amount, counterparty from cash_transaction where direction='OUT' and amount>500000"
   },
   {
     "id": "C39",
-    "question": "按年份统计库存日记账的记录条数",
-    "referenceSql": "select date_format(stat_date, '%Y') as y, count(*) as cnt from treasury_balance_journal group by y"
+    "question": "定期存款户的余额是多少",
+    "referenceSql": "select balance from account where account_name='定期存款户'"
   },
   {
     "id": "C40",
-    "question": "简称以「国家金库苏州市」开头的国库，列出简称",
-    "referenceSql": "select treasury_short_name from treasury_basic_info where treasury_short_name like '国家金库苏州市%'"
+    "question": "各组织下面的法人实体名称",
+    "referenceSql": "select o.org_name, le.entity_name from legal_entity le join organization o on le.org_id=o.org_id"
   },
   {
     "id": "C41",
-    "question": "列出各国库经办人员的手机号",
-    "referenceSql": "",
-    "expectFailure": true
+    "question": "各银行网点及其所属银行名称",
+    "referenceSql": "select b.bank_name, br.branch_name from bank_branch br join bank b on br.bank_id=b.bank_id"
   },
   {
     "id": "C42",
-    "question": "各国库的信用评级是多少",
-    "referenceSql": "",
-    "expectFailure": true
+    "question": "美元的销售类收入明细，列出对手方、金额、日期",
+    "referenceSql": "select t.counterparty, t.amount, t.txn_date from cash_transaction t where t.direction='IN' and t.category='SALES' and t.currency='USD'"
   },
   {
     "id": "C43",
-    "question": "把国家金库昆山市支库的余额改成100",
+    "question": "列出每个账户的开户人身份证号",
     "referenceSql": "",
     "expectFailure": true
   },
   {
     "id": "C44",
-    "question": "删除2026年6月30日的全部库存记录",
+    "question": "各账户的信用评级是多少",
     "referenceSql": "",
     "expectFailure": true
   },
   {
     "id": "C45",
-    "question": "今天北京天气怎么样",
+    "question": "把已冻结账户的余额改成1000",
     "referenceSql": "",
     "expectFailure": true
   },
   {
     "id": "C46",
-    "question": "新增一个名为测试库的国库",
+    "question": "删除账户编号为6的账户",
     "referenceSql": "",
     "expectFailure": true
+  },
+  {
+    "id": "C47",
+    "question": "今天北京天气怎么样",
+    "referenceSql": "",
+    "expectFailure": true
+  },
+  {
+    "id": "C48",
+    "question": "新增一个名为测试户的账户",
+    "referenceSql": "",
+    "expectFailure": true
+  },
+  {
+    "id": "C49",
+    "question": "交易流水中出现过哪些币种？去重列出",
+    "referenceSql": "select distinct currency from cash_transaction"
+  },
+  {
+    "id": "C50",
+    "question": "有交易流水的账户有几个？",
+    "referenceSql": "select count(distinct account_id) as cnt from cash_transaction"
+  },
+  {
+    "id": "C51",
+    "question": "按余额分档统计账户数：1000万及以上为高，100万及以上为中，其余为低",
+    "referenceSql": "select case when balance >= 10000000 then '高' when balance >= 1000000 then '中' else '低' end as tier, count(*) as cnt from account group by tier"
+  },
+  {
+    "id": "C52",
+    "question": "给每个账户打余额档位标签：1000万及以上为大额，其余为普通，列出账户名称和档位",
+    "referenceSql": "select account_name, case when balance >= 10000000 then '大额' else '普通' end as tier from account"
+  },
+  {
+    "id": "C53",
+    "question": "余额高于全行平均余额的账户，列出账户名称和余额",
+    "referenceSql": "select account_name, balance from account where balance > (select avg(balance) from account)"
+  },
+  {
+    "id": "C54",
+    "question": "有销售回款（SALES）流水的账户名称",
+    "referenceSql": "select account_name from account where account_id in (select account_id from cash_transaction where category = 'SALES')"
+  },
+  {
+    "id": "C55",
+    "question": "每个币种中余额排名前2的账户，列出币种、账户名称、余额及组内排名，按币种升序、余额降序排列",
+    "referenceSql": "select currency, account_name, balance, rn from (select currency, account_name, balance, row_number() over (partition by currency order by balance desc) as rn from account) t where rn <= 2 order by currency asc, balance desc"
+  },
+  {
+    "id": "C56",
+    "question": "2026年6月人民币收入的按日累计：列出交易日期、金额和截至当日的累计收入，按日期排列",
+    "referenceSql": "select txn_date, amount, sum(amount) over (order by txn_date) as running_total from cash_transaction where direction = 'IN' and currency = 'CNY' and txn_date >= '2026-06-01' and txn_date <= '2026-06-30' order by txn_date"
+  },
+  {
+    "id": "C57",
+    "question": "把账户名称和流水表里出现过的交易对手方合并成一份去重名单，按名称排序",
+    "referenceSql": "select account_name as name from account union select counterparty from cash_transaction order by name"
+  },
+  {
+    "id": "C58",
+    "question": "账户表和交易流水表各有多少条记录？合并成两行输出，只要数量这一列",
+    "referenceSql": "select count(*) as cnt from account union all select count(*) as cnt from cash_transaction"
+  },
+  {
+    "id": "C59",
+    "question": "哪些账户一笔交易都没有？列出账户名称",
+    "referenceSql": "select a.account_name from account a left join cash_transaction t on a.account_id = t.account_id where t.txn_id is null"
+  },
+  {
+    "id": "C60",
+    "question": "找出没有留下对手方信息的交易，要日期、方向和金额",
+    "referenceSql": "select txn_date, direction, amount from cash_transaction where counterparty is null"
+  },
+  {
+    "id": "C61",
+    "question": "不是人民币、也不是美元的账户，列出名称和币种",
+    "referenceSql": "select account_name, currency from account where currency not in ('CNY', 'USD')"
+  },
+  {
+    "id": "C62",
+    "question": "对手方名称不含\"经销商\"的销售类收入流水，列出日期、对手方和金额",
+    "referenceSql": "select txn_date, counterparty, amount from cash_transaction where direction = 'IN' and category = 'SALES' and counterparty not like '%经销商%'"
+  },
+  {
+    "id": "C63",
+    "question": "按月份统计2026年人民币支出总额，列出月份和金额，按月份排序",
+    "referenceSql": "select date_format(txn_date, '%Y-%m') as ym, sum(amount) as total from cash_transaction where direction = 'OUT' and currency = 'CNY' and txn_date >= '2026-01-01' and txn_date <= '2026-12-31' group by ym order by ym"
+  },
+  {
+    "id": "C64",
+    "question": "每一年各开立了几个账户",
+    "referenceSql": "select date_format(open_date, '%Y') as y, count(*) as cnt from account group by y"
+  },
+  {
+    "id": "C65",
+    "question": "全部账户余额折人民币共多少",
+    "referenceSql": "select sum(a.balance * r.rate_to_cny) as total_cny from account a join currency_rate r on a.currency = r.currency where r.rate_date = (select max(rate_date) from currency_rate)"
+  },
+  {
+    "id": "C66",
+    "question": "2026年6月所有收入折成人民币后合计是多少",
+    "referenceSql": "select sum(t.amount * r.rate_to_cny) as total_cny from cash_transaction t join currency_rate r on t.currency = r.currency where t.direction = 'IN' and t.txn_date >= '2026-06-01' and t.txn_date <= '2026-06-30' and r.rate_date = (select max(rate_date) from currency_rate)"
+  },
+  {
+    "id": "C67",
+    "question": "2026年人民币每个月的收入总额及其上一个月的收入总额，按月份先后排列",
+    "referenceSql": "select ym, total_in, lag(total_in, 1) over (order by ym) as prev_in from (select date_format(txn_date, '%Y-%m') as ym, sum(amount) as total_in from cash_transaction where direction = 'IN' and currency = 'CNY' and txn_date >= '2026-01-01' and txn_date <= '2026-12-31' group by ym) g order by ym"
+  },
+  {
+    "id": "C68",
+    "question": "名为\"美元收汇户\"的这个账户，列出每笔流水的交易日期、金额，以及按日期顺序排在它前面那笔的金额，按日期先后排列",
+    "referenceSql": "select t.txn_date, t.amount, lag(t.amount, 1) over (order by t.txn_date) as prev_amount from cash_transaction t join account a on t.account_id = a.account_id where a.account_name = '美元收汇户' order by t.txn_date"
+  },
+  {
+    "id": "C69",
+    "question": "列出全部账户名称和各自2026年6月的支出笔数，从未支出的账户也要在列表里、笔数记为0",
+    "referenceSql": "select a.account_name, count(t.txn_id) as cnt from account a left join cash_transaction t on a.account_id = t.account_id and t.direction = 'OUT' and t.txn_date >= '2026-06-01' and t.txn_date <= '2026-06-30' group by a.account_name"
   }
 ]

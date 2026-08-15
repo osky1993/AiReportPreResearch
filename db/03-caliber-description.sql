@@ -5,7 +5,7 @@
 --     Duplicate column name 'description'，可安全忽略。
 --   · 列为 NULL 表示「沉淀时未生成描述」（旧资产 / 反翻译失败），
 --     问数前端会回落到按需「生成口径说明」按钮，不影响召回与直取。
--- 执行：mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/03-caliber-description.sql
+-- 执行：mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/03-caliber-description.sql
 -- =====================================================================
 ALTER TABLE caliber_asset
   ADD COLUMN description VARCHAR(1000) NULL

@@ -57,7 +57,7 @@ export function reuse(assetId: number, question: string): Promise<AssistedRespon
 /**
  * 列名→列注释 映射（源自 GET /api/schema 反射快照），供结果表渲染中文表头。
  * 模块级缓存一次会话只取一次；失败返回空 Map（表头回落原列名，不阻断）。
- * 同名列注释冲突取首见（快照表序 journal 在前，treasury_short_name 取「国库简称」）。
+ * 同名列注释冲突取首见（按 schema 反射的表序）。
  */
 let schemaColumnMapPromise: Promise<Map<string, string>> | null = null
 

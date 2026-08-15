@@ -1,7 +1,7 @@
 -- =============================================================
 -- 报告流水线状态表（ideaV2 核心路径「最小运行状态」落库形态）
--- 独立于 db/00-init.sql：reportbigk 业务库已存在，本脚本只增流水线元数据表。
---   mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/01-report-tables.sql
+-- 独立于 db/00-init.sql：reportbi 业务库已存在，本脚本只增流水线元数据表。
+--   mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/01-report-tables.sql
 -- 三张表均为系统元数据表，必须列入 application.yml 的 schema.exclude-tables，
 -- 不得进入 NL2SQL 的表白名单。
 -- 可重复执行（DROP 后重建 = 清空全部运行记录，回到零状态）。

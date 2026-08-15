@@ -103,10 +103,10 @@ class AssistedQueryServiceTest {
         when(store.isEnabled()).thenReturn(true);
         when(embedding.embed(anyString())).thenReturn(new float[]{1f});
         when(store.recall(anyString(), any())).thenReturn(new CaliberStore.Recall(
-                CaliberStore.Band.HIT, 7L, "2026年6月30日库存余额最高的5个县级国库",
+                CaliberStore.Band.HIT, 7L, "2026年6月30日余额最高的5个活期账户",
                 MQL, "口径描述", 0.93));
 
-        AssistedResponse resp = service.ask("2026年7月31日库存余额最高的5个县级国库", false);
+        AssistedResponse resp = service.ask("2026年7月31日余额最高的5个活期账户", false);
 
         assertEquals(QueryState.CLARIFY, resp.state());
         assertEquals(7L, resp.assetId());

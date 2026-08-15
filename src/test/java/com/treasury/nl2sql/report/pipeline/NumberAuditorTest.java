@@ -141,27 +141,6 @@ class NumberAuditorTest {
     }
 
     /**
-     * 输入：外币 fact（亿元单位）替换与回读。
-     * 预期：render/verify 全链一致，拒绝篡改后单位与数值。
-     */
-    @Test
-    void yiYuanUnitRendersAndVerifies() {
-        // gk 国库域：金额以亿元存储直显（两位小数、无量级换算）——替换与回读全链一致
-        Map<String, FactRecord> gk = Map.of("fact_101", fact("fact_101", "817.44", "亿元"));
-        String rendered = NumberAuditor.substitute("月末全辖库存余额{{fact_101}}。", gk);
-        assertTrue(rendered.contains("817.44 亿元[fact_101]"), rendered);
-
-        AuditResult audit = NumberAuditor.verifyRendered(rendered, gk, 0);
-        assertTrue(audit.passed(), String.valueOf(audit.violations()));
-        assertEquals(1, audit.matchedNumbers());
-
-        // 篡改与量词重复两个构型：篡改必拦；引用后重复「亿元」量词被去重
-        assertFalse(NumberAuditor.verifyRendered("余额818.44 亿元[fact_101]。", gk, 0).passed());
-        assertEquals("余额817.44 亿元[fact_101]。",
-                NumberAuditor.dedupeUnitAfterRef("余额817.44 亿元[fact_101]亿元。"));
-    }
-
-    /**
      * 输入：故意篡改 rendered 数值。
      * 预期：verifyRendered 发现 mismatch，阻断最终发布。
      */

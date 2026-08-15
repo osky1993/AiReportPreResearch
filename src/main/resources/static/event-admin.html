@@ -40,10 +40,10 @@
     <form id="f" onsubmit="return false">
       <label>标题 *</label><input id="title" maxlength="64" placeholder="≤64 字，禁 { } ` &lt; &gt; \ |">
       <label>日期 *</label><input id="date" type="date">
-      <label>维度</label><input id="dims" placeholder='可空，如 county_treasury_name=国家金库昆山市支库（至多 3 个，分号分隔）'>
-      <label>关联指标</label><input id="metrics" placeholder="可空，指标 id 逗号分隔（至多 10 个），如 gk_eom_balance_total">
+      <label>维度</label><input id="dims" placeholder='可空，如 currency=USD（至多 3 个，分号分隔）'>
+      <label>关联指标</label><input id="metrics" placeholder="可空，指标 id 逗号分隔（至多 10 个）">
       <label>描述</label><textarea id="desc" maxlength="500" placeholder="≤500 字，同字符白名单"></textarea>
-      <label>来源</label><input id="source" maxlength="128" placeholder="如 国库科工作台账 / 收入分析月会纪要">
+      <label>来源</label><input id="source" maxlength="128" placeholder="如 资金部周会纪要">
       <label>操作人</label><input id="op" value="demo">
       <span id="msg"></span>
       <span class="hint"><button onclick="save()">保存</button> <button class="ghost" onclick="resetForm()">清空</button> 编辑时保存即覆盖（updated_by 留痕）</span>

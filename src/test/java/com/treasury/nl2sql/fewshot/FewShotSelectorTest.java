@@ -66,7 +66,7 @@ class FewShotSelectorTest {
         FewShotSelector sel = new FewShotSelector(new LocalHashingEmbeddingClient(), om, validator, true, 3);
         sel.load();
 
-        String dup = "2026年6月末各所属县的库存余额合计";   // 与某条示例问题完全相同 → 自身余弦=1.0
+        String dup = "按币种统计账户数量";   // 与某条示例问题完全相同 → 自身余弦=1.0
 
         // 不排除：该示例应被选中（相似度最高）
         List<Selected> withDup = sel.select(dup, Double.POSITIVE_INFINITY);

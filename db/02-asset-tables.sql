@@ -1,6 +1,6 @@
 -- =============================================================
 -- 报告资产表（Phase01 P1：模板与指标资产入库管理）
---   mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/02-asset-tables.sql
+--   mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/02-asset-tables.sql
 --
 -- 与 01-report-tables.sql 的「DROP 重建=清零」语义相反：资产表长期存续，
 -- 禁止 DROP 重建——版本行一经写入不可变，被 run 引用过的版本永不物理删除。
@@ -68,8 +68,27 @@ CREATE TABLE IF NOT EXISTS report_event (
   KEY idx_event_date (event_date, status)
 ) COMMENT='业务事件知识库（归因候选来源；Phase05）';
 
--- gk 分支：不种 demo 事件（master 版此处有 4 条司库演示事件种子，引用的是 demo 指标）。
--- gk 场景的业务事件（如集中缴税、债券发行缴款等）待真实归因素材到位后经页面/API 录入。
+-- 种子事件（幂等：同标题存在即跳过；与增量种子的异动数据呼应，撑归因演示与评测）
+INSERT INTO report_event (title, event_date, dimensions_json, related_metrics, description, source, created_by)
+SELECT * FROM (SELECT '华东大客户季度回款集中到账' t, DATE '2026-06-23' d,
+  '{"currency":"CNY"}' dj, 'week_txn_amount_cny,week_inflow_amount_cny' rm,
+  '华东区两家经销商季度货款于本周集中结算，单周流入显著高于常态水平。' de, '资金部周会纪要' s, 'seed' c) x
+WHERE NOT EXISTS (SELECT 1 FROM report_event WHERE title = x.t);
+INSERT INTO report_event (title, event_date, dimensions_json, related_metrics, description, source, created_by)
+SELECT * FROM (SELECT '六月工资集中发放' t, DATE '2026-06-25' d,
+  NULL dj, 'payroll_out_amount,week_outflow_amount_cny' rm,
+  '当月工资批次于二十五日统一发放，含季度绩效部分，支出高于上月批次。' de, '人力资源部通知' s, 'seed' c) x
+WHERE NOT EXISTS (SELECT 1 FROM report_event WHERE title = x.t);
+INSERT INTO report_event (title, event_date, dimensions_json, related_metrics, description, source, created_by)
+SELECT * FROM (SELECT '核心收付系统迁移（历史）' t, DATE '2025-06-12' d,
+  NULL dj, 'week_txn_amount_cny,week_txn_count' rm,
+  '上年六月核心收付系统切换停机三个交易日，当期交易量为历史低基数。' de, '科技部变更记录' s, 'seed' c) x
+WHERE NOT EXISTS (SELECT 1 FROM report_event WHERE title = x.t);
+INSERT INTO report_event (title, event_date, dimensions_json, related_metrics, description, source, created_by)
+SELECT * FROM (SELECT '美元供应商付款周期调整' t, DATE '2026-05-20' d,
+  '{"currency":"USD"}' dj, 'week_outflow_amount_cny' rm,
+  '海外供应商账期由月结改为季结，美元流出节奏后移。' de, '采购部备忘' s, 'seed' c) x
+WHERE NOT EXISTS (SELECT 1 FROM report_event WHERE title = x.t);
 
 -- ---------- ALTER 段：既有库升级 ----------
 -- report_run 加 template_version（新装库由 01-report-tables.sql 的 CREATE 直接带上此列）。

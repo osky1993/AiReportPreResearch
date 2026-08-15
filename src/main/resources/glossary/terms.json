@@ -1,74 +1,68 @@
 [
   {
-    "term": "国库库存",
-    "aliases": ["库存余额", "库款", "库存", "国库存款余额"],
-    "definition": "treasury_balance_journal.balance 是**日终时点数**（每库每日一行），金额单位为**亿元**。取库存必须先锁定某一天（如月末最后一天 stat_date='2026-06-30'）再按范围求和；严禁把多天的 balance 加在一起（跨日 SUM 无业务意义）。按月看库存默认取该月最后一天。",
-    "tables": ["treasury_balance_journal"]
+    "term": "折人民币",
+    "aliases": ["折合人民币", "折CNY", "本位币", "人民币口径", "统一折算", "换算成人民币"],
+    "definition": "把原币金额按最新汇率折算成人民币再汇总。口径：join currency_rate（on 本表.currency = currency_rate.currency），并在 filter 里用标量子查询把 currency_rate.rate_date 限定为最新一天（{\"field\":\"currency_rate.rate_date\",\"op\":\"=\",\"subquery\":{\"table\":\"currency_rate\",\"metrics\":[{\"op\":\"max\",\"field\":\"rate_date\",\"alias\":\"latest\"}]}}，防多日汇率使行数翻倍）；指标用行级表达式聚合：{\"op\":\"sum\",\"fieldExpr\":{\"left\":\"金额列\",\"arith\":\"*\",\"right\":\"currency_rate.rate_to_cny\"},\"alias\":\"total_cny\"}。已折算的结果无需再按币种分组。",
+    "tables": ["currency_rate", "account", "cash_transaction"]
   },
   {
-    "term": "借贷发生额",
-    "aliases": ["借方发生额", "贷方发生额", "当日发生额"],
-    "definition": "treasury_balance_journal.debit_amount（借方）与 credit_amount（贷方）是当日发生额，金额单位为**亿元**，可按日期区间 SUM 汇总（与时点数 balance 不同）。借贷方向与余额增减的勾稽关系尚待业务确认，只陈述金额勿推断资金流向。",
-    "tables": ["treasury_balance_journal"]
+    "term": "可用余额",
+    "aliases": ["可动用余额", "可用资金"],
+    "definition": "账户当前可动用的余额。口径：account.balance，且仅统计 status='ACTIVE' 的账户（FROZEN 冻结、CLOSED 销户不计入）。",
+    "tables": ["account"]
   },
   {
-    "term": "国库隶属",
-    "aliases": ["辖内", "下辖", "所辖", "下级国库", "上级国库"],
-    "definition": "treasury_basic_info.admin_treasury_code 指向上级国库代码，构成一棵机构树。「辖内/全辖」= 本库加全部下级：treasury_code = X OR admin_treasury_code = X（一层下钻）；市级库（treasury_level=3）查全辖需对结果集再下钻一层，把乡镇库（孙级）也纳入。另：库存日记账的 county_treasury_code/county_treasury_name 平面标记每行所属县，市级库本级行以 'NNNNNNNNNN' 占位表示「无所属县」（业务约定，非脏数据）——按县分组/筛选时注意把该占位行单独处理或剔除。",
-    "tables": ["treasury_basic_info", "treasury_balance_journal"]
+    "term": "在途资金",
+    "aliases": ["在途金额", "未结算资金"],
+    "definition": "尚未完成结算、处于在途状态的资金。口径：cash_transaction 中 status='IN_TRANSIT' 的 amount。",
+    "tables": ["cash_transaction"]
   },
   {
-    "term": "国库名称",
-    "aliases": ["国库简称", "库名", "支库名称"],
-    "definition": "treasury_balance_journal 与 treasury_basic_info 的 treasury_short_name 存的是**含「国家金库」前缀的全称**（如「国家金库常熟市支库」「国家金库苏州市中心支库」）——按名称等值过滤必须用全称，不要截短；不确定全称时用 like '%常熟%' 模糊匹配。注意 treasury_income_detail 的同名字段存的是**行政区短名**（如「昆山市」「姑苏区」），两表取值风格不同，跨表勿直接用名称关联（用 treasury_code）。",
-    "tables": ["treasury_balance_journal", "treasury_basic_info", "treasury_income_detail"]
+    "term": "已结算流水",
+    "aliases": ["已到账", "已清算"],
+    "definition": "已完成结算的流水。口径：cash_transaction 中 status='SETTLED'。",
+    "tables": ["cash_transaction"]
   },
   {
-    "term": "国库层级",
-    "aliases": ["库级", "国库级别", "市级库", "区县级库", "乡镇级库"],
-    "definition": "treasury_basic_info.treasury_level（int）：DDL 注释枚举为 1=总库、2=分库、3=市中心支库、4=区县支库；数据中另存在大量 5（按乡镇支库理解，注释未列、待对方确认）。本库数据分布：3 一个（苏州市中心支库）、4 十个、5 七十一个。按层级筛库需 JOIN treasury_basic_info（ON treasury_code），库存日记账表内没有层级字段。",
-    "tables": ["treasury_basic_info", "treasury_balance_journal"]
+    "term": "进账",
+    "aliases": ["收款", "收入", "流入"],
+    "definition": "资金流入。口径：cash_transaction 中 direction='IN'。",
+    "tables": ["cash_transaction"]
   },
   {
-    "term": "预算级次",
-    "aliases": ["级次", "中央级", "省级", "地方级"],
-    "definition": "treasury_income_detail.budget_level（int）：1=中央、2=省、3=市、4=区县、5=乡镇。「全口径」= 不带级次条件；「地方级」常见口径为 IN (4,5)，但存在多个版本（业务尚未最终确认），除非用户明确说了级次，否则不要擅自加 budget_level 过滤。",
-    "tables": ["treasury_income_detail"]
+    "term": "出账",
+    "aliases": ["付款", "支出", "流出"],
+    "definition": "资金流出。口径：cash_transaction 中 direction='OUT'。",
+    "tables": ["cash_transaction"]
   },
   {
-    "term": "入库收入",
-    "aliases": ["国库收入", "收入", "入库", "收入执行"],
-    "definition": "treasury_income_detail 按 月×库×科目×级次 存收入：本期金额 = current_period_amount（当月单月发生）；年累计 = year_to_date_amount（直读当月行的累计值，**不要**跨月把 current_period_amount 加总来凑累计）。金额单位为**亿元**。stat_date 是 'yyyyMM' 六位字符串（如 '202606'），单月用等值过滤，跨月区间可用字符串比较（字典序即时间序）。",
-    "tables": ["treasury_income_detail"]
+    "term": "销售回款",
+    "aliases": ["营收", "销售收入"],
+    "definition": "销售相关的资金流入。口径：cash_transaction 中 direction='IN' 且 category='SALES'。",
+    "tables": ["cash_transaction"]
   },
   {
-    "term": "科目代码",
-    "aliases": ["科目", "预算科目", "收入科目"],
-    "definition": "treasury_income_detail.subject_code 中**多层级科目行并存**（类 101、款 10101、项 1010101 同时各有数据行），另有一套 T 前缀汇总码（如 T010101）。不同层级的科目相加会**重复计数**：聚合必须限定单一确切科目码或业务确认过的同层级集合，禁止 LIKE 前缀把父子码混加，禁止 T 码与数字码混合相加。",
-    "tables": ["treasury_income_detail"]
+    "term": "工资支出",
+    "aliases": ["薪资发放", "发工资"],
+    "definition": "工资类支出。口径：cash_transaction 中 direction='OUT' 且 category='PAYROLL'。",
+    "tables": ["cash_transaction"]
   },
   {
-    "term": "一般公共预算收入",
-    "aliases": ["公共预算收入", "一般预算收入"],
-    "definition": "subject_code = 'T010101'（T 前缀汇总码，单码取数）。",
-    "tables": ["treasury_income_detail"]
+    "term": "净流入",
+    "aliases": ["净现金流", "净流量", "收支净额"],
+    "definition": "收入合计减支出合计。口径：派生指标 expr，left=sum(amount where direction='IN')、arith='-'、right=sum(amount where direction='OUT')。注意单币种统计（跨币种须先限定或分币种）。",
+    "tables": ["cash_transaction"]
   },
   {
-    "term": "税收收入",
-    "aliases": ["税收"],
-    "definition": "subject_code = '101'（类级汇总行本身，等值取这一行，不要 LIKE '101%' 把下级税种再加一遍）。非税收入 = 一般公共预算收入(T010101) − 税收(101) 的差额（该公式待业务最终确认，谨慎使用）。",
-    "tables": ["treasury_income_detail"]
+    "term": "结算户",
+    "aliases": ["活期户", "对公结算账户"],
+    "definition": "结算类账户。口径：account 中 account_type='SETTLEMENT'。",
+    "tables": ["account"]
   },
   {
-    "term": "全口径国库收入",
-    "aliases": ["四本预算", "全口径收入", "国库收入总量"],
-    "definition": "四本预算合计：subject_code IN ('T010101','T010201','T010401','T010601')，即一般公共预算 + 政府性基金 + 社会保险基金 + 国有资本经营，且不带 budget_level 条件。",
-    "tables": ["treasury_income_detail"]
-  },
-  {
-    "term": "房产五税",
-    "aliases": ["五税", "房地产相关税收"],
-    "definition": "五个税种合计：subject_code IN ('10110','10112','10113','10118','10119')，即房产税、城镇土地使用税、土地增值税、耕地占用税、契税。",
-    "tables": ["treasury_income_detail"]
+    "term": "定期存款",
+    "aliases": ["定存", "存款户"],
+    "definition": "定期存款账户。口径：account 中 account_type='DEPOSIT'。",
+    "tables": ["account"]
   }
 ]

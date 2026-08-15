@@ -120,7 +120,7 @@ public class MqlExplainService {
         collectTables(mqlNode, tables);
         String intro = mode == Mode.TEMPLATE
                 ? "你是企业资金数据的指标口径解读器"
-                : "你是国库业务数据的查询口径解读器";
+                : "你是企业资金数据的查询口径解读器";
         String modeRules = mode == Mode.TEMPLATE
                 ? """
                   - 禁止输出任何具体数值或业务结论。

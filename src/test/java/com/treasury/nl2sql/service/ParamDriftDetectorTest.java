@@ -22,8 +22,8 @@ class ParamDriftDetectorTest {
     @Test
     void identicalNumbers_noDrift() {
         ParamDriftDetector.Drift d = ParamDriftDetector.diff(
-                "2026年6月30日库存余额最高的5个县级国库，列出国库简称和余额",
-                "2026年6月30日 库存余额排前5的县级国库有哪些");
+                "2026年6月30日余额最高的5个活期账户，列出账户名称和余额",
+                "2026年6月30日 余额排前5的活期账户有哪些");
         assertFalse(d.drifted());
         assertTrue(d.assetOnly().isEmpty());
         assertTrue(d.questionOnly().isEmpty());
@@ -35,8 +35,8 @@ class ParamDriftDetectorTest {
     @Test
     void changedDate_drifts_withBothSides() {
         ParamDriftDetector.Drift d = ParamDriftDetector.diff(
-                "2026年6月30日库存余额最高的5个县级国库",
-                "2026年7月31日库存余额最高的5个县级国库");
+                "2026年6月30日余额最高的5个活期账户",
+                "2026年7月31日余额最高的5个活期账户");
         assertTrue(d.drifted());
         assertEquals(List.of("30", "6"), d.assetOnly());
         assertEquals(List.of("31", "7"), d.questionOnly());

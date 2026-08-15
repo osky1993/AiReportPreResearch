@@ -4,9 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 这是什么
 
-`AiReportPreResearch` 是 `../nl2mql2sqlDemo`（NL→MQL→SQL「两跳」查询引擎）的 **fork + 上层演进**：在原查询底座之上，叠加 `plan/ideaV2-核心路径.md` 定义的**报告生成 6 步流水线编排层**，做出「锁口径(人) → 结构化取数(引擎) → 程序造事实 → LLM 只照事实写 → 程序核数字 → 人签发」的最小可信闭环。
-
-> **⚠️ 本分支（gk）业务域为国库真实数据**：master 的司库 demo 场景（周报/快报，23 张演示表）在本分支已整体替换为 **gk 国库三表 + 国库库存月报**（`reportbigk` 库：库存日记账/基础信息/收入明细，真实数据人工导入、无种子数据；原第四张表 `treasury_balance_monthly` 经确认无用已删除）。三表已有表/字段注释（金额单位**亿元**，业务已确认）。收入表相关能力（第二期）待口径仲裁闭环后接入——预研与仲裁文档见 `docs/todo/{内部工作文档,对外转发}/gk-*.md`。
+`AiReportPreResearch` 是 `../nl2mql2sqlDemo`（NL→MQL→SQL「两跳」查询引擎）的 **fork + 上层演进**：在原查询底座之上，叠加 `plan/ideaV2-核心路径.md` 定义的**报告生成 6 步流水线编排层**，做出「锁口径(人) → 结构化取数(引擎) → 程序造事实 → LLM 只照事实写 → 程序核数字 → 人签发」的最小可信闭环。演示场景：司库资金周报 / 资金快报。
 
 **两层同处一个包根 `com.treasury.nl2sql`，但边界清晰**：
 
@@ -23,11 +21,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)   # 必须 JDK 17+（pom java.version=17）
 
 # 建库（首次/新环境，按编号顺序执行）：
-mysql -h127.0.0.1 -P23306 -uroot -p < db/00-init.sql              # 建 reportbigk + gk 三表 + caliber_asset（全 IF NOT EXISTS 无 DROP，业务数据另行人工导入）
-mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/01-report-tables.sql  # 流水线状态表（可清零）
-mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/02-asset-tables.sql   # 资产表（CREATE IF NOT EXISTS，版本行不可变，禁 DROP）
+mysql -h127.0.0.1 -P23306 -uroot -p < db/00-init.sql              # 建 reportbi + 23 张业务表 + 种子（DROP 重建，慎用）
+mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/01-report-tables.sql  # 流水线状态表（可清零）
+mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/02-asset-tables.sql   # 资产表（CREATE IF NOT EXISTS，版本行不可变，禁 DROP）
 # 存量环境补丁（新环境勿执行，00 已含该列；重复执行报 Duplicate column 可忽略）：
-mysql -h127.0.0.1 -P23306 -uroot -p reportbigk < db/03-caliber-description.sql  # caliber_asset 增补 description
+mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/03-caliber-description.sql  # caliber_asset 增补 description
 
 mvn -q spring-boot:run            # 端口 8080；看到「报告资产注册表就绪」即就绪
 mvn -q clean package
@@ -39,13 +37,13 @@ mvn -q test -Dtest=MqlSqlCompilerTest#nonEquiJoin_rendersComparisonOperator  # �
 mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,NumberAuditorTest,TemplateMatcherTest,MqlParameterizerTest,TemplateValidatorTest,MetricAdminServiceTest,TemplateDraftServiceTest,WriteStepPromptTest'
 ```
 
-- ⚠️ **启动即反射 `information_schema`（`SchemaService`）+ 全量校验入库报告资产**，DB 不通或某资产坏了都会**启动失败**——`spring-boot:run` 前先备好 `reportbigk` 库（含真实业务数据）。
+- ⚠️ **启动即反射 `information_schema`（`SchemaService`）+ 全量校验入库报告资产**，DB 不通或某资产坏了都会**启动失败**——`spring-boot:run` 前先备好 `reportbi` 库。
 - ⚠️ **改种子 JSON（metrics.json/templates）对已入库资产无效**（库是唯一事实源）：开发期要让新种子生效，需清空 `report_template/report_metric`（连带 run/step/fact/claim）后重启重灌；且删改资源文件后先 `mvn clean`——maven 不会从 `target/classes` 删除已移除的资源文件，残留旧模板会让启动自检失败。
 - 演示页（启动后）：`report.html`（报告流水线，双卡点+证据钻取）、`template-admin.html`（模板管理+AI 起草）、`metric-wizard.html`（指标五步向导）；原查询引擎演示页仍在 `/`。
 
 ## 配置与密钥
 
-- 本分支连 **`reportbigk`** 库（gk 国库真实数据；master 为 `reportbi`），默认 `127.0.0.1:23306`，用 `DB_HOST/DB_PORT/DB_NAME/...` 覆盖。
+- 本项目连 **`reportbi`** 库（不是底座默认的 `chatbi`），默认 `127.0.0.1:23306`，用 `DB_HOST/DB_PORT/DB_NAME/...` 覆盖。
 - 密钥**不入库**：`src/main/resources/application-local.yml`（gitignore，`cp .example` 后填）或环境变量 `LLM_API_KEY`/`EMBEDDING_API_KEY`。切 LLM 供应商只改 `LLM_BASE_URL/LLM_MODEL/LLM_API_KEY`（OpenAI 兼容协议通用）。
 - 报告层专属配置（`application.yml` 的 `report`）：`max-rewrite-rounds: 2`（⑥审计违规回灌重写上限）、`match.tau: 0.60`（①模板 embedding 召回阈值，keywords 命中不受此限，召回空即失败关闭）。
 - **元数据表隔离**：状态表 + 资产表已加入 `schema.exclude-tables`——不进 NL2SQL 白名单与 prompt schema（否则报告引擎会试图查自己的状态表）。

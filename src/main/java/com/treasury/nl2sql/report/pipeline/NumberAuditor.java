@@ -32,7 +32,7 @@ public final class NumberAuditor {
     private static final Pattern BARE_NUMBER = Pattern.compile("[-+]?\\d[\\d,]*(?:\\.\\d+)?\\s*(?:%|万亿|亿|万)?");
     /** 终稿里的「数值[fact_xxx]」对（由程序替换产生，格式已知；[A-Z]{3} 为外币码如 USD）。 */
     private static final Pattern RENDERED = Pattern.compile(
-            "([-+]?[\\d,]+(?:\\.\\d+)?)\\s*(%|亿元|万元|元|笔|个|户|单|项|[A-Z]{3})?\\[(fact_[A-Za-z0-9_]+)\\]");
+            "([-+]?[\\d,]+(?:\\.\\d+)?)\\s*(%|万元|元|笔|个|户|单|项|[A-Z]{3})?\\[(fact_[A-Za-z0-9_]+)\\]");
 
     /** 检查1：草稿禁数扫描 + 占位符引用校验。返回违规清单（空=通过）。 */
     public static List<String> checkDraft(String draft, Map<String, FactRecord> facts) {
@@ -84,7 +84,7 @@ public final class NumberAuditor {
 
     /** 量词去重构型：display_value 尾随单位 + [fact_xxx] 引用 + 紧跟的同一单位字（LLM 在占位符后重复量词）。 */
     private static final Pattern DUP_UNIT = Pattern.compile(
-            "(亿元|万元|元|笔|个|户|单|项)(\\[fact_[A-Za-z0-9_]+\\])\\1");
+            "(万元|元|笔|个|户|单|项)(\\[fact_[A-Za-z0-9_]+\\])\\1");
 
     /**
      * 行文后处理（P2-T5，替换后、检查2 前）：去重占位符引用后重复的量词——
@@ -170,10 +170,6 @@ public final class NumberAuditor {
                 return new Parsed(raw, new BigDecimal("0.005"));
             }
             return null;
-        }
-        // gk 国库域：fact 值即以亿元计（无量级换算），两位小数展示 → 容差半个末位
-        if ("亿元".equals(factUnit)) {
-            return "亿元".equals(unitText) ? new Parsed(raw, new BigDecimal("0.005")) : null;
         }
         // 外币码（USD/EUR 等）：单位须一致，金额展示 2 位小数 → 容差半个末位
         if (factUnit != null && factUnit.matches("[A-Z]{3}")) {

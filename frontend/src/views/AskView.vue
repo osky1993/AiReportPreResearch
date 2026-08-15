@@ -47,9 +47,9 @@ interface ChatItem {
 }
 
 const EXAMPLES = [
-  '2026年6月30日库存余额最高的5个县级国库，列出国库简称和余额',
-  '2026年6月全省国库借方发生额合计是多少',
-  '全省共有多少家区县支库',
+  '余额最高的3个账户，列出账户名称和余额',
+  '2026年6月人民币的净流入是多少',
+  '按币种统计账户数量',
 ]
 
 const items = ref<ChatItem[]>([])
@@ -283,11 +283,12 @@ onMounted(async () => {
   columnComments.value = await getSchemaColumnMap()
 })
 
-/** 中文表头：金额列「…，亿元」转尾注；说明性长尾（：/（ 之后）截断；无注释保留技术列名（如 LLM 别名）。 */
+/** 中文表头：金额列「…，<单位>」转尾注；说明性长尾（：/（ 之后）截断；无注释保留技术列名（如 LLM 别名）。 */
 function headerLabel(col: string): string {
   const comment = columnComments.value.get(col)
   if (!comment) return col
-  if (comment.endsWith('，亿元')) return `${comment.slice(0, -3)}（亿元）`
+  const unitTail = comment.match(/，(元|万元|亿元)$/)
+  if (unitTail) return `${comment.slice(0, -unitTail[0].length)}（${unitTail[1]!}）`
   const label = comment.split('：')[0]!.split('（')[0]!.trim()
   return label || col
 }
@@ -316,7 +317,7 @@ function pct(v: number): string {
       <div v-if="items.length === 0" class="empty">
         <h1>智能问数</h1>
         <p class="empty-sub">
-          用一句话查询国库库存、机构数据。已核验口径直接复用，全程可查看取数依据（金额单位：亿元）。
+          用一句话查询账户余额、交易流水等资金数据。已核验口径直接复用，全程可查看取数依据。
         </p>
         <div class="examples">
           <button v-for="q in EXAMPLES" :key="q" class="example" @click="send(q)">
@@ -594,7 +595,7 @@ function pct(v: number): string {
       <textarea
         v-model="input"
         rows="1"
-        placeholder="请输入您的问题，如：最近一天全省国库库存余额合计是多少"
+        placeholder="请输入您的问题，如：当前人民币的可用余额合计是多少"
         @keydown.enter.exact.prevent="send()"
       ></textarea>
       <button class="btn-primary btn-send" :disabled="busy || !input.trim()" @click="send()">

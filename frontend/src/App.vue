@@ -6,7 +6,7 @@ import { RouterLink, RouterView } from 'vue-router'
   <header class="topbar">
     <RouterLink to="/" class="brand">
       <span class="brand-mark">库</span>
-      <span class="brand-name">国库智能数据服务</span>
+      <span class="brand-name">司库智能数据服务</span>
     </RouterLink>
     <nav class="nav">
       <RouterLink to="/">首页</RouterLink>

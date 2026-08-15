@@ -230,7 +230,7 @@ onMounted(async () => {
       <textarea
         v-model="description"
         rows="2"
-        placeholder="例：做一份国库库存季度分析报告，先讲全省总量和环比，再按县分布排名"
+        placeholder="例：每周给资金部领导看的外汇风险情况报告，重点是外币头寸、跨境收支和大额交易"
       ></textarea>
       <div class="row">
         <input v-model="author" class="inp name-inp" placeholder="制作人（默认：业务用户）" />
