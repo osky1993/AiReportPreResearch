@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 /**
  * 模板校验（P2 契约：保存 / validate 干跑 / 启动自检三处共用同一套规则）。
  * 纯静态、无依赖，逐条返回错误并以 location 定位到章节/字段（前端红字定位靠它）。
- * 规则见 README「模板管理 API」：结构 + 引用存在性 + 每章至少 1 个指标
+ * 规则见 docs/API说明.md「模板管理 API」：结构 + 引用存在性 + 每章至少 1 个指标
  * + Phase03 起的周期声明与比较矩阵（periodTypes × ComparisonType）。
  */
 public final class TemplateValidator {

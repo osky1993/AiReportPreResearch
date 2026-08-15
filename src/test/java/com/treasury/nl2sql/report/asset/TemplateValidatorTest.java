@@ -10,7 +10,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 模板校验规则单测（纯逻辑，无 DB/Spring）——契约见 README「模板管理 API」。
+ * 模板校验规则单测（纯逻辑，无 DB/Spring）——契约见 docs/API说明.md「模板管理 API」。
  * 覆盖结构字段、comparison 矩阵、图表绑定矩阵与指标引用约束，保证模板发布前静态拒错是可解释的 fail-fast。
  */
 class TemplateValidatorTest {

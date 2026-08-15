@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 指标资产管理与指标制作向导端点（P5 契约，见 README；演示页 metric-wizard.html 的后端）。
+ * 指标资产管理与指标制作向导端点（P5 契约，见 docs/API说明.md；演示页 metric-wizard.html 的后端）。
  *
  * <p>职责链路：试查(P0) + 反翻译(P1) + 指标保存/发布(P2) + 参数化(P3)。
  * 本控制器不直接执行报告主链路，只负责把“可执行口径”沉淀为版本化资产，供流水线和匹配模型消费。</p>

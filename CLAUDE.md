@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 底座查询引擎 | `com.treasury.nl2sql.{ir,compile,validate,llm,embedding,schema,service,glossary,fewshot,eval,guard,store,api}` | 原 demo 原样继承，存量代码/端点不改（增量仅 `service/MqlExplainService` + `POST /api/explain` 口径反翻译，见衔接契约） |
 | 报告流水线 | `com.treasury.nl2sql.report.{domain,asset,pipeline,store,api}` | 本项目新增 |
 
-> **底座层的权威文档是 `../nl2mql2sqlDemo/CLAUDE.md`**——它详述 IR 模型（`ir/Mql.java`）、`MqlValidator` 安全边界、`Nl2SqlService.query()` 链路、口径沉淀等。改底座前先读它。本文件只详述**报告流水线层**与两层的衔接契约。项目自带文档：`README.md`（能力全景 + 演示脚本）、`plan/`（设计与阶段计划：`ideaV2*.md` 主线设计、`roadmap.md` 总路线、`phase01~06.md` 各阶段分解与验收记录）、`docs/`（技术说明 PDF 各版本与架构图归档）。
+> **底座层的权威文档是 `../nl2mql2sqlDemo/CLAUDE.md`**——它详述 IR 模型（`ir/Mql.java`）、`MqlValidator` 安全边界、`Nl2SqlService.query()` 链路、口径沉淀等。改底座前先读它。本文件只详述**报告流水线层**与两层的衔接契约。项目自带文档：`README.md`（定位 + 流水线底线 + 快速开始 + 文档导航）、`docs/演示脚本.md`（评审演示）、`docs/API说明.md`（端点契约）、`docs/代码地图与扩展.md`、`docs/部署指南.md`、`plan/`（设计与阶段计划：`ideaV2*.md` 主线设计、`roadmap.md` 总路线、`phase01~06.md` 各阶段分解与验收记录）、`docs/`（技术说明 PDF 各版本与架构图归档）。
 
 ## 常用命令
 
@@ -99,7 +99,7 @@ mvn -q test -Dtest='PeriodResolverTest,MqlTemplateFillerTest,FactBuildStepTest,N
 | `api/` | `ReportController`（流水线端点 `/api/report`）、`TemplateAdminController`、`MetricAdminController`；非法状态迁移→400 |
 | 前端 | `resources/static/{report,template-admin,metric-wizard}.html`，均单文件 vanilla JS |
 
-状态机：`AWAITING_OUTLINE_APPROVAL → RUNNING → AWAITING_PUBLISH_APPROVAL → PUBLISHED`；任一步失败→`BLOCKED`；卡点2 驳回→`REJECTED`。完整 API 表与演示脚本见 `README.md` §四/§三。
+状态机：`AWAITING_OUTLINE_APPROVAL → RUNNING → AWAITING_PUBLISH_APPROVAL → PUBLISHED`；任一步失败→`BLOCKED`；卡点2 驳回→`REJECTED`。完整 API 表见 `docs/API说明.md`，演示脚本见 `docs/演示脚本.md`。
 
 ## 技术说明 PDF 随包分发
 
