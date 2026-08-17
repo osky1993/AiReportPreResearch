@@ -24,6 +24,7 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 21)   # 必须 JDK 17+（pom java.v
 mysql -h127.0.0.1 -P23306 -uroot -p < db/00-init.sql              # 建 reportbi + 23 张业务表 + 种子（DROP 重建，慎用）
 mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/01-report-tables.sql  # 流水线状态表（可清零）
 mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/02-asset-tables.sql   # 资产表（CREATE IF NOT EXISTS，版本行不可变，禁 DROP）
+mysql -h127.0.0.1 -P23306 -uroot -p reportbi < db/04-business-data-v2.sql  # 业务数据扩容 v2（纯增量+显式主键，只跟在 00 之后跑一次）
 
 mvn -q spring-boot:run            # 端口 8080；看到「报告资产注册表就绪」即就绪
 mvn -q clean package

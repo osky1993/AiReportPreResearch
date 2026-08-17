@@ -9,6 +9,10 @@
 --   · 末尾「司库域扩展表」：20 张表 + 多跳外键链，用于验证 Schema Linking 的
 --     Top-K 裁剪、多跳 FK 闭包（fk-hops≥2）与同义召回（≥20 表规模）。
 --   · 报告流水线的状态表与资产表不在本文件：另见 01-report-tables.sql / 02-asset-tables.sql。
+--   · ⚠️ 本文件只是「地基种子」：真正的演示数据量在 04-business-data-v2.sql（2026-08-17
+--     业务数据扩容 v2，2024-01~2026-08 逐月 / 5 币种 / 26 个账户），跑完 00 记得接着跑 04。
+--     该批次同时解除了下方「数据扩充增量种子」段的避窗红线——黄金评测期望值已随之重算，
+--     以后再扩数据不必再躲窗口，但改完必须重跑 POST /api/report/eval/run?layer=deterministic。
 -- =====================================================================
 
 CREATE DATABASE IF NOT EXISTS reportbi DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
