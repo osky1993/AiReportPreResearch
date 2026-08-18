@@ -103,13 +103,9 @@ public class OutlineStep {
             if (u.isTextual() && !u.asText().isBlank()) unresolved.add(u.asText());
         }
 
-        List<Outline.OutlineChapter> chapters = tpl.chapters().stream()
-                .map(c -> new Outline.OutlineChapter(c.chapterId(), c.title(),
-                        new ArrayList<>(c.metrics()), c.comparison(), c.comparisons(), c.guidance(),
-                        c.stylePrompt(), c.charts()))
-                .toList();
         log.info("[OUTLINE] 模板={}, 报告期={}, unresolved={}", templateId, window.label(), unresolved);
-        return new Outline(templateId, window.label(), chapters, unresolved);
+        // 模板→章节的确定性映射抽到 Outline.fromTemplate（与模板预览共用，防两处漂移）
+        return Outline.fromTemplate(tpl, window.label(), unresolved);
     }
 
     /**

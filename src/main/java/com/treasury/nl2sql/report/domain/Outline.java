@@ -16,6 +16,21 @@ public record Outline(
         List<String> unresolved) {
 
     /**
+     * 模板定义 → 大纲的确定性映射（零 LLM）：章节结构原样透传。
+     * ① OutlineStep（LLM 只负责选模板与抽报告期，映射交给这里）与模板预览共用本工厂——
+     * 两处各自内联会在模板结构演进时口径漂移。
+     */
+    public static Outline fromTemplate(com.treasury.nl2sql.report.asset.ReportTemplateDef tpl,
+                                       String periodLabel, List<String> unresolved) {
+        List<OutlineChapter> chapters = tpl.chapters().stream()
+                .map(c -> new OutlineChapter(c.chapterId(), c.title(),
+                        new java.util.ArrayList<>(c.metrics()), c.comparison(), c.comparisons(),
+                        c.guidance(), c.stylePrompt(), c.charts()))
+                .toList();
+        return new Outline(tpl.templateId(), periodLabel, chapters, List.copyOf(unresolved));
+    }
+
+    /**
      * @param chapterId 章节稳定 ID（用于 fact / chart / claims 归属）
      * @param title 章节标题（最终报告中保留）
      * @param metricIds 本章入池指标列表（按顺序作为事实渲染顺序）

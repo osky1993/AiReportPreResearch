@@ -67,6 +67,26 @@ class SpecResolveStepTest {
     }
 
     /**
+     * 输入：声明/未声明同比的大纲（Gate3 抽取的共享装配方法）。
+     * 预期：环比窗口无条件装配（保现行为）；同比窗口仅在大纲声明 yoy 时出现——
+     * ReportPipeline 与模板预览共用此方法，行为以此测试锁定。
+     */
+    @Test
+    void buildCompareWindowsAssemblesYoyOnlyWhenDeclared() {
+        Outline noYoy = new Outline("tpl", "2026-W26", List.of(
+                legacyChapter("ch1", "week_over_week", "m1")), List.of());
+        Map<String, PeriodResolver.Window> w1 = SpecResolveStep.buildCompareWindows(noYoy, W26);
+        assertEquals(PeriodResolver.previous(W26), w1.get(MetricQuerySpec.PURPOSE_COMPARE));
+        assertFalse(w1.containsKey(MetricQuerySpec.PURPOSE_COMPARE_YOY), "未声明同比不得装配同比窗口");
+
+        Outline withYoy = new Outline("tpl", "2026-M06", List.of(
+                listChapter("ch1", List.of("month_over_month", "year_over_year"), "m1")), List.of());
+        Map<String, PeriodResolver.Window> w2 = SpecResolveStep.buildCompareWindows(withYoy, M06);
+        assertEquals(PeriodResolver.previous(M06), w2.get(MetricQuerySpec.PURPOSE_COMPARE));
+        assertEquals(PeriodResolver.sameLastYear(M06), w2.get(MetricQuerySpec.PURPOSE_COMPARE_YOY));
+    }
+
+    /**
      * 输入：月报同时声明 MOM 与 YOY。
      * 预期：按 CURRENT -> COMPARE -> COMPARE_YOY 阶段化顺序产出，方便下游执行分块。
      */

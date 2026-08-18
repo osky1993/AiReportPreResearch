@@ -5,6 +5,7 @@ import com.treasury.nl2sql.report.asset.TemplateAdminService;
 import com.treasury.nl2sql.report.asset.TemplateDraftService;
 import com.treasury.nl2sql.report.asset.TemplateAdminService.NotFoundException;
 import com.treasury.nl2sql.report.asset.TemplateAdminService.ValidationFailedException;
+import com.treasury.nl2sql.report.asset.TemplatePreviewService;
 import com.treasury.nl2sql.report.asset.TemplateValidator.ValidationError;
 import com.treasury.nl2sql.report.pipeline.ComparisonType;
 import com.treasury.nl2sql.report.pipeline.PeriodResolver;
@@ -47,15 +48,37 @@ public class TemplateAdminController {
     /** AI 起草请求体：面向页面场景描述文本输入。 */
     public record DraftRequest(String description, String createdBy) {}
 
+    /** 预览请求体：模板草稿（未落库编辑态）+ 可选报告期标签 + 可选单章 id。 */
+    public record PreviewRequest(ReportTemplateDef template, String periodLabel, String chapterId) {}
+
     private final TemplateAdminService service;
     private final TemplateDraftService draftService;
+    private final TemplatePreviewService previewService;
 
     /**
      * 依赖注入。所有异常响应由本类统一封装，避免上抛到全局默认处理影响前端结构一致性。
      */
-    public TemplateAdminController(TemplateAdminService service, TemplateDraftService draftService) {
+    public TemplateAdminController(TemplateAdminService service, TemplateDraftService draftService,
+                                   TemplatePreviewService previewService) {
         this.service = service;
         this.draftService = draftService;
+        this.previewService = previewService;
+    }
+
+    /**
+     * 模板试生成预览（Gate3）：对草稿干跑 ②③④，返回带真实数字的事实/图表章节样例。
+     * <p>零落库；流水线语义的失败关闭以 200 + blocked=true 返回（预览的用途就是把拦截原因给编辑者看）；
+     * 结构性校验错误按保存同款 400 契约返回字段级 details。</p>
+     */
+    @PostMapping("/preview")
+    public TemplatePreviewService.PreviewResult preview(@RequestBody PreviewRequest req) {
+        return previewService.preview(req.template(), req.periodLabel(), req.chapterId());
+    }
+
+    /** 预览推荐报告期：按业务数据最大日期锚定的最近完整周/月/季（避免推到空数据周期）。 */
+    @GetMapping("/preview/periods")
+    public Map<String, String> previewPeriods() {
+        return previewService.recommendedPeriods();
     }
 
     /**

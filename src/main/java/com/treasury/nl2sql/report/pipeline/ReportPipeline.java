@@ -256,13 +256,9 @@ public class ReportPipeline {
             ReportRun run = require(runId);
             Outline outline = readOutline(run);
             PeriodResolver.Window current = PeriodResolver.resolve(run.periodLabel());
-            // 基期窗口按大纲声明的比较用途组装：环比无条件（保现行为），同比仅声明了才算
-            Map<String, PeriodResolver.Window> compareWindows = new LinkedHashMap<>();
-            compareWindows.put(MetricQuerySpec.PURPOSE_COMPARE, PeriodResolver.previous(current));
-            if (SpecResolveStep.requiredComparePurposes(outline)
-                    .contains(MetricQuerySpec.PURPOSE_COMPARE_YOY)) {
-                compareWindows.put(MetricQuerySpec.PURPOSE_COMPARE_YOY, PeriodResolver.sameLastYear(current));
-            }
+            // 基期窗口按大纲声明的比较用途组装（与模板预览共用 SpecResolveStep.buildCompareWindows）
+            Map<String, PeriodResolver.Window> compareWindows =
+                    SpecResolveStep.buildCompareWindows(outline, current);
             // 指标定义按 run 固化的版本快照回读（②③④ 与 resume 同一通路）；
             // 快照缺失 = Phase02 前存量 run，回退当前 PUBLISHED（详情页标注「未固化」）
             Map<String, Integer> pinnedVersions = readMetricVersions(run);

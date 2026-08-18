@@ -169,4 +169,50 @@ class PeriodResolverTest {
         assertThrows(PolicyException.class, () -> PeriodResolver.granularity("2026年6月"));
         assertThrows(PolicyException.class, () -> PeriodResolver.granularity(null));
     }
+
+    // ---- Gate3：最近完整周期推导（预览推荐周期） ----
+
+    /**
+     * 输入：锚定日为周日（当周恰好整周结束）与周中（当周未完）。
+     * 预期：周日取本周，周中退上一周——「完整」以 end ≤ anchor 判定。
+     */
+    @Test
+    void latestCompleteWeekAtSundayVsMidweek() {
+        // 2026-08-16 是周日 = 2026-W33 的最后一天（演示库业务数据边界，README 当期可用 W33 的出处）
+        assertEquals("2026-W33", PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 8, 16), PeriodResolver.TYPE_WEEK));
+        // 周三：本周未完 → 退上一周
+        assertEquals("2026-W33", PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 8, 19), PeriodResolver.TYPE_WEEK));
+        // 周一：本周未完 → 退上一周
+        assertEquals("2026-W33", PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 8, 17), PeriodResolver.TYPE_WEEK));
+    }
+
+    /**
+     * 输入：月初/月末锚定日。
+     * 预期：月中/月初退上月，月末（恰为最后一天）取当月；跨年边界正确。
+     */
+    @Test
+    void latestCompleteMonthBoundaries() {
+        assertEquals("2026-M07", PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 8, 16), PeriodResolver.TYPE_MONTH));
+        assertEquals("2026-M08", PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 8, 31), PeriodResolver.TYPE_MONTH));
+        // 1 月 1 日 → 上年 12 月（跨年）
+        assertEquals("2025-M12", PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 1, 1), PeriodResolver.TYPE_MONTH));
+    }
+
+    /**
+     * 输入：季中/季末/年初锚定日。
+     * 预期：季中退上季、季末取当季、年初跨年退上年 Q4。
+     */
+    @Test
+    void latestCompleteQuarterBoundaries() {
+        assertEquals("2026-Q2", PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 8, 16), PeriodResolver.TYPE_QUARTER));
+        assertEquals("2026-Q3", PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 9, 30), PeriodResolver.TYPE_QUARTER));
+        assertEquals("2025-Q4", PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 1, 15), PeriodResolver.TYPE_QUARTER));
+    }
+
+    /** 未知粒度失败关闭。 */
+    @Test
+    void latestCompleteLabelRejectsUnknownType() {
+        assertThrows(PolicyException.class,
+                () -> PeriodResolver.latestCompleteLabel(LocalDate.of(2026, 8, 16), "DAY"));
+    }
 }

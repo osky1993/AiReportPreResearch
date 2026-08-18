@@ -148,6 +148,20 @@ public class SpecResolveStep {
     }
 
     /**
+     * 基期窗口装配：环比无条件（保现行为）、同比仅大纲声明了才算。
+     * ReportPipeline.runAsync 与模板预览共用——装配逻辑复制两份会在比较类型演进时漂移。
+     */
+    public static Map<String, PeriodResolver.Window> buildCompareWindows(Outline outline,
+                                                                         PeriodResolver.Window current) {
+        Map<String, PeriodResolver.Window> compareWindows = new LinkedHashMap<>();
+        compareWindows.put(MetricQuerySpec.PURPOSE_COMPARE, PeriodResolver.previous(current));
+        if (requiredComparePurposes(outline).contains(MetricQuerySpec.PURPOSE_COMPARE_YOY)) {
+            compareWindows.put(MetricQuerySpec.PURPOSE_COMPARE_YOY, PeriodResolver.sameLastYear(current));
+        }
+        return compareWindows;
+    }
+
+    /**
      * 大纲声明的全部比较用途（purpose 集合）——调用方据此决定是否算同比窗口。
      * <p>
      * 只返回 token 已通过 `ComparisonType.require` 语义校验后的值，不在这里吞掉非法 token，

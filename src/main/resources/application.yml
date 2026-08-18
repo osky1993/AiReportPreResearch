@@ -85,6 +85,9 @@ report:
   max-rewrite-rounds: 2   # ⑥证据审计违规后回灌 LLM 重写的最大轮数，超限失败关闭（与 llm.max-fix-rounds 对齐）
   match:
     tau: 0.60             # ①模板匹配 embedding 召回阈值（keywords 命中不受此限）；召回为空即失败关闭
+  preview:
+    anchor-table: cash_transaction   # 预览推荐周期的锚定表/列：MAX(该列)=业务数据边界，
+    anchor-column: txn_date          # 用它推最近完整周期（真实 now() 会推到演示数据覆盖外的空周期）
   export:
     font-path: ${REPORT_EXPORT_FONT_PATH:}   # PDF 导出中文字体（.ttf/.otf）；空=按内置候选路径自动探测，探测不到则 PDF 导出明确报错（Docx 不受影响）
   observe:

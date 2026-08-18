@@ -67,6 +67,25 @@ public final class PeriodResolver {
     }
 
     /**
+     * 以锚定日期推「最近一个完整周期」的标签（Gate3 预览推荐周期用）：
+     * 锚定日所在周期若已整期结束（end ≤ anchor）取之，否则退上一周期。
+     * 锚定日应取业务数据的最大日期而非系统当前日——演示库数据有覆盖边界，
+     * 用真实 now() 推导很可能落到空数据周期。
+     */
+    public static String latestCompleteLabel(LocalDate anchor, String periodType) {
+        Window w = switch (periodType) {
+            case TYPE_WEEK -> {
+                LocalDate monday = anchor.with(ChronoField.DAY_OF_WEEK, 1);
+                yield new Window(weekLabelOf(monday), monday, monday.plusDays(6));
+            }
+            case TYPE_MONTH -> monthWindow(YearMonth.from(anchor));
+            case TYPE_QUARTER -> quarterWindow(anchor);
+            default -> throw new PolicyException("未知周期粒度: " + periodType);
+        };
+        return (w.end().isAfter(anchor) ? previous(w) : w).label();
+    }
+
+    /**
      * 计算对比期窗口：上一个同粒度周期。
      * 周期回退后不影响原始报告期定义，返回 label/start/end 三元组与原窗口同形态。
      */

@@ -52,6 +52,16 @@ th{color:var(--muted);font-weight:600;background:#f9fafb}
 .errlist{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;font-size:12px;color:var(--bad);margin-top:8px}
 .okmsg{color:var(--ok);font-size:12px;margin-top:6px}
 pre.body{background:#f9fafb;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:11px;overflow:auto;max-height:320px;white-space:pre-wrap;word-break:break-all}
+/* ---------- 预览证据渲染（js/report-render.js 共享件所需样式，与 report.html 同款） ---------- */
+.factref{background:#eef2ff;color:var(--accent);border-radius:4px;padding:0 4px;font-size:11px;cursor:pointer;font-family:ui-monospace,Menlo,monospace}
+.factref:hover{background:#dbeafe}
+tr.facthl>td{background:#fef9c3}
+.factdetail{background:#f9fafb;border-radius:6px;padding:8px;margin:4px 0;font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:pre-wrap;word-break:break-all}
+.b-run{background:#e0e7ff;color:#4338ca}
+.chartgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+.chartbox{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff}
+.chartbox .charttitle{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;gap:8px}
+.chartbox .chart{height:260px}
 /* ---------- 顶部导航条（各演示页统一） ---------- */
 .topnav{ background:#fff; border-bottom:1px solid #e3e6ea; padding:10px 28px;
   display:flex; align-items:center; gap:6px; font-size:13px; }
@@ -104,12 +114,16 @@ pre.body{background:#f9fafb;border:1px solid var(--line);border-radius:6px;paddi
 </div>
 </div>
 
+<script src="vendor/echarts.min.js"></script>
+<script src="js/report-render.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 let LIST = [], METRICS = [], CUR = null, EDIT = null, IS_NEW = false, ERRORS = [], OKMSG = '';
 // 编辑器选项元数据（对比方式/周期粒度/图表种类的中文标签与约束矩阵）——来自 /templates/meta，
 // 数据源是后端 ComparisonType 枚举（单一权威），前端不硬编码 token 或矩阵
 let META = {comparisons:[], periodTypes:[], chartKinds:[], chartTypes:{}};
+// 预览推荐周期（按业务数据边界锚定的最近完整周/月/季）——来自 /templates/preview/periods
+let PPERIODS = {};
 
 const ST = { DRAFT:['草稿','b-draft'], PUBLISHED:['已发布','b-pub'], DEPRECATED:['已下架','b-dep'] };
 
@@ -208,6 +222,7 @@ function render(){
       <h3>章节 ${i+1}
         <button class="ghost mini" onclick="moveCh(${i},-1)" ${i===0?'disabled':''}>↑</button>
         <button class="ghost mini" onclick="moveCh(${i},1)" ${i===EDIT.chapters.length-1?'disabled':''}>↓</button>
+        <button class="ghost mini" onclick="doPreview('${esc(c.chapterId)}')">🔍 预览本章</button>
         <button class="danger mini" style="margin-left:auto" onclick="delCh(${i})">删除本章</button>
       </h3>
       <div class="row" style="margin-top:0">
@@ -284,8 +299,53 @@ function render(){
     </div>
     <div class="err" id="opErr"></div>
   </div>
+  ${previewCard()}
   ${IS_NEW?'':versionsCard(versions)}
   <div id="versionView"></div>`;
+}
+
+/* ---------- 试生成预览（Gate3：干跑 ②③④，零落库） ---------- */
+let PV = { label: null };   // 报告期输入的编辑态（跨 render 保持）
+
+function previewCard(){
+  const type = effPeriods()[0];
+  const recommend = PPERIODS[type] || '';
+  const hint = ['WEEK','MONTH','QUARTER'].filter(t=>PPERIODS[t])
+    .map(t=>`${({WEEK:'周',MONTH:'月',QUARTER:'季'})[t]} ${PPERIODS[t]}`).join(' / ');
+  return `<div class="card">
+    <h2>🔍 试生成预览 <span class="muted" style="font-weight:400">干跑取数到事实/图表（零 LLM、零落库、真实数据）；改完即看，不必保存发布</span></h2>
+    <div class="row" style="margin-top:0">
+      报告期 <input type="text" style="width:110px" id="pvPeriod" value="${esc(PV.label || recommend)}"
+        onchange="PV.label=this.value.trim()">
+      <button onclick="doPreview(null)">预览全模板</button>
+      <span class="muted">推荐（按库内数据边界）：${esc(hint||'不可用')}</span>
+    </div>
+    <div id="pvOut" style="margin-top:8px"></div>
+  </div>`;
+}
+
+async function doPreview(chapterId){
+  const out = $('pvOut'); if(!out) return;
+  out.innerHTML = '<span class="muted">预览中（干跑取数）…</span>';
+  try{
+    const label = ($('pvPeriod') ? $('pvPeriod').value.trim() : '') || null;
+    const r = await api('/templates/preview', {method:'POST', body: JSON.stringify(
+      {template: payload().template, periodLabel: label, chapterId})});
+    if(r.blocked){
+      out.innerHTML = `<div class="errlist">⛔ 失败关闭（流水线在此会 BLOCKED 转人工）：<br>${esc(r.blockedReason)}</div>`;
+      return;
+    }
+    const scope = chapterId ? `章节 ${esc(chapterId)}` : '全模板';
+    out.innerHTML = `
+      <div class="okmsg">✓ ${scope} · 报告期 ${esc(r.periodLabel)} · 事实 ${r.facts.length} 条 · 图表 ${(r.charts||[]).length} 张</div>
+      ${(r.notes||[]).length?`<div class="muted" style="margin:4px 0">${r.notes.map(esc).join('<br>')}</div>`:''}
+      ${(r.charts||[]).length?chartGridHtml(r.charts,'pvchart'):''}
+      ${factsTable(r.facts)}`;
+    initChartsInto(r.charts||[], 'pvchart');
+  }catch(e){
+    out.innerHTML = `<div class="errlist">✖ ${esc(e.message)}${(e.details&&e.details.length)
+      ? '<br>'+e.details.map(d=>esc(d.location+'：'+d.message)).join('<br>') : ''}</div>`;
+  }
 }
 
 function versionsCard(versions){
@@ -479,6 +539,8 @@ async function viewVersion(v){
   }catch(e){ /* 指标目录取不到时编辑器仍可用，勾选列表为空 */ }
   try{ META = await api('/templates/meta'); }
   catch(e){ /* meta 取不到时对比/周期选项为空，保存仍由服务端校验兜底 */ }
+  try{ PPERIODS = await api('/templates/preview/periods'); }
+  catch(e){ /* 推荐周期取不到时预览仍可用，报告期需手填 */ }
   // 制作指标回跳：恢复编辑态 + 自动勾选新指标（目录已重拉，新发布指标已在 METRICS 中）
   const p = new URLSearchParams(location.search);
   const newMetric = p.get('newMetric');
