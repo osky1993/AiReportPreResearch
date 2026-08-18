@@ -79,6 +79,7 @@ tr.facthl>td{background:#fef9c3}
   <a href="/">NL2SQL 查询</a>
   <a href="/report.html">报告生成</a>
   <a href="/template-admin.html" class="cur">模板管理</a>
+  <a href="/template-wizard.html">模板制作向导</a>
   <a href="/metric-wizard.html">指标制作向导</a>
   <a href="/dashboard.html">运行看板</a>
   <a href="/智能查数与报告流水线技术说明-lastRelease.pdf" target="_blank" rel="noopener">📄 技术说明</a>
@@ -95,7 +96,8 @@ tr.facthl>td{background:#fef9c3}
   <div class="card">
     <h2>模板列表
       <button class="ghost mini" style="margin-left:auto" onclick="loadList()">刷新</button>
-      <button class="mini" onclick="newTemplate()">＋ 新建模板</button>
+      <button class="mini" onclick="location.href='template-wizard.html'">🧭 用向导新建</button>
+      <button class="ghost mini" onclick="newTemplate()">＋ 空白新建</button>
     </h2>
     <div id="tplList" class="muted">加载中…</div>
   </div>

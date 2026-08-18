@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模板制作向导 · 智能报告流水线</title>
+<style>
+/* 与 template-admin/metric-wizard 同款视觉基线 */
+:root{--accent:#2563eb;--bg:#f6f7f9;--card:#fff;--line:#e5e7eb;--text:#111827;--muted:#6b7280;
+      --ok:#059669;--warn:#d97706;--bad:#dc2626;--violet:#7c3aed;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+.wrap{max-width:1240px;margin:0 auto;padding:24px 32px}
+header{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+header h1{font-size:20px}
+header .sub{color:var(--muted);font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h2{font-size:14px;margin-bottom:10px}
+textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;resize:vertical;min-height:48px}
+input[type=text],input[type=number]{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}
+select{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;background:#fff}
+button{border:0;border-radius:8px;padding:7px 14px;font:inherit;cursor:pointer;background:var(--accent);color:#fff}
+button.ghost{background:#eef2ff;color:var(--accent)}
+button.danger{background:#fee2e2;color:var(--bad)}
+button.okbtn{background:#d1fae5;color:var(--ok)}
+button.mini{padding:2px 8px;font-size:12px;border-radius:6px}
+button:disabled{opacity:.5;cursor:not-allowed}
+.muted{color:var(--muted);font-size:12px}
+.err{color:var(--bad);font-size:12px;margin-top:6px;white-space:pre-wrap}
+.errlist{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;font-size:12px;color:var(--bad);margin-top:8px}
+.okmsg{color:var(--ok);font-size:12px;margin-top:6px}
+.warnbox{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;font-size:12px;color:var(--warn);margin-top:8px}
+.field{margin:6px 0}
+.field .fl{font-size:12px;color:var(--muted);margin-bottom:2px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;background:#f9fafb}
+/* 步骤条 */
+.steps{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.steps .st{padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;background:#e5e7eb;color:var(--muted);cursor:not-allowed}
+.steps .st.done{background:#d1fae5;color:var(--ok);cursor:pointer}
+.steps .st.cur{background:var(--accent);color:#fff;cursor:default}
+/* 起点卡 */
+.startgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.startcard{border:1px solid var(--line);border-radius:10px;padding:12px;cursor:pointer}
+.startcard:hover{border-color:var(--accent);box-shadow:0 0 0 2px #dbeafe}
+.startcard.sel{border-color:var(--accent);box-shadow:0 0 0 2px #dbeafe}
+.startcard b{font-size:14px}
+/* 章节与指标选择器（template-admin 同款） */
+.chapter{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+.chapter h3{font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+label.metric{display:inline-flex;align-items:center;gap:4px;background:#f9fafb;border:1px solid var(--line);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px;cursor:pointer}
+/* 预览证据渲染（js/report-render.js 共享件所需样式） */
+.factref{background:#eef2ff;color:var(--accent);border-radius:4px;padding:0 4px;font-size:11px;cursor:pointer;font-family:ui-monospace,Menlo,monospace}
+.factref:hover{background:#dbeafe}
+tr.facthl>td{background:#fef9c3}
+.factdetail{background:#f9fafb;border-radius:6px;padding:8px;margin:4px 0;font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:pre-wrap;word-break:break-all}
+.badge{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:600}
+.b-run{background:#e0e7ff;color:#4338ca}
+.chartgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+.chartbox{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff}
+.chartbox .charttitle{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;gap:8px}
+.chartbox .chart{height:260px}
+pre.body{background:#f9fafb;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:11px;overflow:auto;max-height:280px;white-space:pre-wrap;word-break:break-all}
+/* ---------- 顶部导航条（各演示页统一） ---------- */
+.topnav{ background:#fff; border-bottom:1px solid #e3e6ea; padding:10px 28px;
+  display:flex; align-items:center; gap:6px; font-size:13px; }
+.topnav .brand{ font-weight:800; color:#0f172a; margin-right:16px; }
+.topnav .brand .dot{ display:inline-block; width:10px; height:10px; background:#2563eb;
+  border-radius:3px; margin-right:7px; }
+.topnav a{ color:#475569; text-decoration:none; font-weight:600; padding:5px 13px; border-radius:999px; }
+.topnav a:hover{ background:#eef2ff; color:#2563eb; }
+.topnav a.cur{ background:#2563eb; color:#fff; }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand"><span class="dot"></span>智能报告流水线演示</span>
+  <a href="/">NL2SQL 查询</a>
+  <a href="/report.html">报告生成</a>
+  <a href="/template-admin.html">模板管理</a>
+  <a href="/template-wizard.html" class="cur">模板制作向导</a>
+  <a href="/metric-wizard.html">指标制作向导</a>
+  <a href="/dashboard.html">运行看板</a>
+</nav>
+<div class="wrap">
+<header>
+  <h1>模板制作向导</h1>
+  <span class="sub">起点选择 → 基本信息 → 逐章调整 → 试生成预览 → 保存发布（编辑存量模板请用「模板管理」编辑器）</span>
+</header>
+<div class="steps" id="stepbar"></div>
+<div id="pane"></div>
+</div>
+
+<script src="vendor/echarts.min.js"></script>
+<script src="js/report-render.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+
+/* ---------- 状态（metric-wizard 同款协议：单一 WIZ + sessionStorage 持久化 +
+   maxReachable 按前置产物推导门禁 + 重做上游级联作废下游） ---------- */
+const STEPS = ['① 起点选择','② 基本信息','③ 逐章调整','④ 试生成预览','⑤ 保存发布'];
+function fresh(){
+  return { step:1, startMode:null, input:'', copyFrom:'',
+           tpl:null, unresolved:[], notes:[],
+           saved:null, chapterIdx:null };
+}
+let WIZ = load() || fresh();
+function load(){ try{ return JSON.parse(sessionStorage.getItem('template-wizard')); }catch(e){ return null; } }
+function persist(){ sessionStorage.setItem('template-wizard', JSON.stringify(WIZ)); }
+function resetWiz(){ WIZ = fresh(); persist(); render(); }
+
+let METRICS = [], META = {comparisons:[], periodTypes:[], chartKinds:[], chartTypes:{}}, PPERIODS = {}, TPL_LIST = [];
+
+function maxReachable(){
+  if(!WIZ.tpl) return 1;
+  const hasMetrics = (WIZ.tpl.chapters||[]).some(c=>c.metrics && c.metrics.length);
+  return hasMetrics ? 5 : 3;
+}
+function goto(n){ if(n <= maxReachable()){ WIZ.step = n; persist(); render(); } }
+
+async function api(path, opts){
+  const resp = await fetch('/api/report'+path, opts ? {headers:{'Content-Type':'application/json'},...opts} : undefined);
+  const body = await resp.json().catch(()=>({}));
+  if(!resp.ok){ const e = new Error(body.error || ('HTTP '+resp.status)); e.details = body.details||[]; throw e; }
+  return body;
+}
+
+/* ---------- 渲染分发 ---------- */
+function render(){
+  const max = maxReachable();
+  $('stepbar').innerHTML = STEPS.map((s,i)=>{
+    const n=i+1, cls = n===WIZ.step?'cur':(n<=max?'done':'');
+    return `<span class="st ${cls}" ${n<=max&&n!==WIZ.step?`onclick="goto(${n})"`:''}>${s}</span>`;
+  }).join('');
+  $('pane').innerHTML = [null, step1, step2, step3, step4, step5][WIZ.step]();
+}
+
+/* ---------- ① 起点选择 ---------- */
+function step1(){
+  const m = WIZ.startMode;
+  const needText = m==='scene' || m==='report';
+  return `<div class="card"><h2>① 从哪开始？</h2>
+    <div class="startgrid">
+      <div class="startcard ${m==='scene'?'sel':''}" onclick="pickStart('scene')"><b>🤖 AI 场景起草</b>
+        <div class="muted">一句话描述报告场景，AI 参照指标资产起草（只选既有指标，不发明）</div></div>
+      <div class="startcard ${m==='report'?'sel':''}" onclick="pickStart('report')"><b>📄 粘贴旧报告导入</b>
+        <div class="muted">粘贴过去人工写的报告全文，AI 反向抽取章节结构与指标映射</div></div>
+      <div class="startcard ${m==='copy'?'sel':''}" onclick="pickStart('copy')"><b>📋 复制现有模板</b>
+        <div class="muted">以某个已有模板为底稿修改（产出新模板，不影响原模板）</div></div>
+      <div class="startcard ${m==='blank'?'sel':''}" onclick="pickStart('blank')"><b>📝 从空白开始</b>
+        <div class="muted">手工逐章搭建（熟悉指标资产的用户）</div></div>
+    </div>
+    ${needText?`<div class="field" style="margin-top:10px">
+      <textarea id="startInput" style="min-height:${m==='report'?'140':'56'}px" placeholder="${m==='report'
+        ?'粘贴历史报告全文（至少 100 字；超 8000 字符自动截断；全文会发送给 LLM）…'
+        :'例：每周给资金部领导看的外汇风险情况报告，重点是外币头寸、跨境收支和大额交易'}">${esc(WIZ.input||'')}</textarea>
+      <div class="row"><button id="goBtn" onclick="doStart()">${m==='report'?'反向抽取（LLM，约 10~30 秒）':'起草（LLM，约 10~30 秒）'}</button></div>
+    </div>`:''}
+    ${m==='copy'?`<div class="row" style="margin-top:10px">
+      以 <select id="copySel">${TPL_LIST.map(t=>`<option value="${t.templateId}" ${WIZ.copyFrom===t.templateId?'selected':''}>${esc(t.name)}（${t.templateId}）</option>`).join('')}</select>
+      为底稿 <button onclick="doStart()">载入 →</button></div>`:''}
+    ${m==='blank'?`<div class="row" style="margin-top:10px"><button onclick="doStart()">创建空白模板 →</button></div>`:''}
+    ${WIZ.tpl?`<div class="okmsg">已有进行中的草稿「${esc(WIZ.tpl.name||'(未命名)')}」——重新选择起点会作废它与下游产物</div>`:''}
+    <div class="err" id="startErr"></div>
+  </div>`;
+}
+function pickStart(m){ WIZ.startMode = m; persist(); render(); }
+
+/** 起点动作：产出 WIZ.tpl；重做起点 = 级联作废下游（saved/notes/unresolved）。 */
+async function doStart(){
+  const err = $('startErr'); if(err) err.textContent = '';
+  const m = WIZ.startMode;
+  try{
+    let tpl, unresolved = [], notes = [];
+    if(m==='scene' || m==='report'){
+      const text = ($('startInput')?$('startInput').value:'').trim();
+      WIZ.input = text;
+      if(!text){ err.textContent = '请先填写内容'; return; }
+      const btn = $('goBtn'); btn.disabled = true; btn.textContent = '起草中…';
+      const body = m==='report' ? {mode:'report', reportText:text, createdBy:'template-wizard'}
+                                : {mode:'scene', description:text, createdBy:'template-wizard'};
+      const r = await api('/templates/draft', {method:'POST', body: JSON.stringify(body)});
+      tpl = r.draft; unresolved = r.unresolved||[]; notes = r.notes||[];
+    }else if(m==='copy'){
+      const src = $('copySel').value; WIZ.copyFrom = src;
+      const d = await api('/templates/'+src);
+      tpl = JSON.parse(JSON.stringify(d.latest));
+      tpl.templateId = uniqueLocalId(src+'-copy');
+      tpl.name = (tpl.name||'') + '（副本）';
+    }else{
+      tpl = { templateId: uniqueLocalId('t'+Date.now().toString(36)), name:'', keywords:[], periodTypes:[],
+              chapters:[{chapterId:'ch1', title:'一、', metrics:[], comparisons:[], guidance:'', stylePrompt:''}] };
+    }
+    normalizeTpl(tpl);
+    WIZ.tpl = tpl; WIZ.unresolved = unresolved; WIZ.notes = notes;
+    WIZ.saved = null;                     // 级联作废下游产物
+    WIZ.step = 2; persist(); render();
+  }catch(e){
+    if(err) err.textContent = e.message + (e.details&&e.details.length ? '\n'+e.details.map(d=>(d.location||'')+' '+d.message).join('\n') : '');
+    render();
+  }
+}
+function uniqueLocalId(base){
+  base = base.toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'') || ('t'+Date.now().toString(36));
+  if(!/^[a-z]/.test(base)) base = 't'+base;
+  let id = base, i = 2;
+  while(TPL_LIST.some(t=>t.templateId===id)) id = base + '-' + (i++);
+  return id.slice(0, 63);
+}
+function normalizeTpl(t){
+  t.periodTypes = t.periodTypes || [];
+  (t.chapters||[]).forEach(c=>{
+    if(!c.comparisons || !c.comparisons.length) c.comparisons = c.comparison ? [c.comparison] : [];
+    delete c.comparison;
+  });
+  return t;
+}
+
+/* ---------- ② 基本信息 ---------- */
+function step2(){
+  const t = WIZ.tpl;
+  const banner = (WIZ.unresolved.length ? `<div class="errlist">⚠️ AI 未能对应的表述（不发明、不猜测，请人工处理——可去指标向导补建指标）：<br>${WIZ.unresolved.map(esc).join('<br>')}</div>`:'')
+    + (WIZ.notes.length ? `<div class="muted" style="margin-top:6px">${WIZ.notes.map(esc).join('<br>')}</div>`:'');
+  return `<div class="card"><h2>② 基本信息</h2>${banner}
+    <div class="field"><div class="fl">模板名称（必填）</div>
+      <input type="text" style="width:320px" value="${esc(t.name)}" onchange="WIZ.tpl.name=this.value.trim();persist()"></div>
+    <div class="field"><div class="fl">匹配关键词（逗号分隔，必填——运行期用户说「生成资金周报」时靠它召回模板）</div>
+      <input type="text" style="width:100%" value="${esc((t.keywords||[]).join('，'))}"
+        onchange="WIZ.tpl.keywords=this.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean);persist()"></div>
+    <div class="field"><div class="fl">适用周期（不勾选 = 默认仅周报；决定各章可用的对比方式）</div>
+      ${META.periodTypes.map(p=>`<label class="metric"><input type="checkbox" ${(t.periodTypes||[]).includes(p.code)?'checked':''}
+        onchange="togglePeriod('${p.code}')"> ${esc(p.label)}</label>`).join('')}</div>
+    <div class="muted">模板标识自动生成：<code>${esc(t.templateId)}</code></div>
+    <div class="row"><button class="okbtn" onclick="goto(3)">下一步：逐章调整 →</button></div>
+  </div>`;
+}
+function effPeriods(){ const t=WIZ.tpl; return (t.periodTypes&&t.periodTypes.length)?t.periodTypes:['WEEK']; }
+function compApplicable(mc){ return effPeriods().every(pt=>mc.periodTypes.includes(pt)); }
+function togglePeriod(code){
+  const arr = WIZ.tpl.periodTypes;
+  arr.includes(code) ? arr.splice(arr.indexOf(code),1) : arr.push(code);
+  const ok = new Set(META.comparisons.filter(compApplicable).map(m=>m.token));
+  WIZ.tpl.chapters.forEach(c=>{ c.comparisons = (c.comparisons||[]).filter(t=>ok.has(t)); });
+  persist(); render();
+}
+
+/* ---------- ③ 逐章调整 ---------- */
+let MSEARCH = {};
+function step3(){
+  const t = WIZ.tpl;
+  return `<div class="card"><h2>③ 逐章调整 <span class="muted" style="font-weight:400">章节结构 · 指标 · 对比方式 · 图表（可一键采纳程序推荐）</span></h2>
+    ${t.chapters.map((c,i)=>chapterHtml(c,i)).join('')}
+    <div class="row"><button class="ghost" onclick="addCh()">＋ 添加章节</button>
+      <button class="okbtn" style="margin-left:auto" onclick="goto(4)">下一步：试生成预览 →</button></div>
+  </div>`;
+}
+function chapterHtml(c,i){
+  const avail = META.comparisons.filter(compApplicable);
+  return `<div class="chapter">
+    <h3>章节 ${i+1}
+      <button class="ghost mini" onclick="moveCh(${i},-1)" ${i===0?'disabled':''}>↑</button>
+      <button class="ghost mini" onclick="moveCh(${i},1)" ${i===WIZ.tpl.chapters.length-1?'disabled':''}>↓</button>
+      <button class="danger mini" style="margin-left:auto" onclick="delCh(${i})">删除本章</button>
+    </h3>
+    <div class="field"><div class="fl">章节标题</div>
+      <input type="text" style="width:100%" value="${esc(c.title)}" onchange="WIZ.tpl.chapters[${i}].title=this.value;persist()"></div>
+    <div class="field"><div class="fl">对比方式（随「适用周期」过滤；环比至多一项，可与同比共存）</div>
+      ${avail.length ? avail.map(mc=>`<label class="metric"><input type="checkbox" ${(c.comparisons||[]).includes(mc.token)?'checked':''}
+        onchange="toggleComp(${i},'${mc.token}')"> ${esc(mc.label)}</label>`).join('')
+        : '<span class="muted">当前周期组合无可用对比（多周期时环比不通用，仅月/季可用同比）</span>'}</div>
+    <div class="field"><div class="fl">指标（搜索 / 分组勾选；悬停看口径）
+        <a href="#" onclick="goMakeMetric(${i});return false" style="font-size:12px;color:var(--accent);margin-left:8px">没有想要的指标？去制作 →</a></div>
+      <input type="text" style="width:260px;margin-bottom:4px" placeholder="搜索指标 id / 名称 / 描述…"
+        value="${esc(MSEARCH[i]||'')}" oninput="MSEARCH[${i}]=this.value; $('msel-${i}').innerHTML=metricListHtml(${i})">
+      <div id="msel-${i}">${metricListHtml(i)}</div></div>
+    <div class="field"><div class="fl">写作指引（本章写什么、按什么顺序、强调什么）</div>
+      <textarea onchange="WIZ.tpl.chapters[${i}].guidance=this.value;persist()">${esc(c.guidance||'')}</textarea></div>
+    <div class="field"><div class="fl">文风要求（可空；只影响措辞，数字安全由审计死代码兜底）</div>
+      <textarea onchange="WIZ.tpl.chapters[${i}].stylePrompt=this.value;persist()">${esc(c.stylePrompt||'')}</textarea></div>
+    <div class="field"><div class="fl">📊 图表</div>
+      ${(c.charts||[]).map((g,j)=>`<div class="row" style="margin:4px 0;gap:6px">
+        <span>${esc(g.title||g.chartId)} · ${esc((META.chartKinds.find(k=>k.kind===(g.binding&&g.binding.kind))||{}).label||'')} · ${esc(META.chartTypes[g.type]||g.type)}
+          · ${esc((metricDef(g.binding&&g.binding.metricId)||{}).name||'')}${g.binding&&g.binding.periods?` · 近${g.binding.periods}期`:''}</span>
+        <button class="danger mini" onclick="delChart(${i},${j})">✕</button></div>`).join('')}
+      ${recommendCharts(c).filter(rc=>!(c.charts||[]).some(g=>g.binding&&g.binding.metricId===rc.binding.metricId&&g.binding.kind===rc.binding.kind))
+        .map((rc,k)=>`<div class="row" style="margin:4px 0;gap:6px"><span class="muted">推荐：${esc(rc.title)}（${rc.binding.kind==='series'?'趋势折线':'构成饼图'}，程序按校验矩阵生成，零 LLM）</span>
+        <button class="ghost mini" onclick='adoptChart(${i}, ${JSON.stringify(rc)})'>一键采纳</button></div>`).join('')}
+    </div>
+  </div>`;
+}
+function metricDef(id){ return METRICS.find(m=>m.metricId===id); }
+function heuristicCategory(m){
+  const id = m.metricId || '';
+  if(/loan|repay/.test(id)) return '融资与偿付';
+  if(/frozen|large|in_transit|pending/.test(id)) return '风险与待办';
+  if(/account|balance|deposit/.test(id)) return '账户与头寸';
+  if(/txn|inflow|outflow|payroll|tax|invest/.test(id)) return '交易与收支';
+  return '其他';
+}
+function metricTooltip(m){
+  const parts = [];
+  if(m.description) parts.push(m.description);
+  parts.push('单位 '+(m.unit||'-')+' · '+(m.timeBound?'期间指标':'快照指标')
+    +(m.dimensions&&m.dimensions.length?' · 维度:'+m.dimensions.join('/'):'')+(m.derived?' · 派生指标':''));
+  return parts.join('\n');
+}
+function metricListHtml(i){
+  const c = WIZ.tpl.chapters[i];
+  const q = (MSEARCH[i]||'').trim().toLowerCase();
+  const hit = METRICS.filter(m=>!q||(m.metricId+(m.name||'')+(m.description||'')).toLowerCase().includes(q));
+  if(!hit.length) return '<span class="muted">无匹配指标</span>';
+  const groups = {};
+  hit.forEach(m=>{ const g = m.category || heuristicCategory(m); (groups[g]=groups[g]||[]).push(m); });
+  return Object.entries(groups).map(([g,ms])=>`<details open style="margin:2px 0">
+    <summary style="cursor:pointer;font-size:12px;color:var(--muted)">${esc(g)}（${ms.length}）</summary>
+    ${ms.map(m=>`<label class="metric" title="${esc(metricTooltip(m))}"><input type="checkbox" ${c.metrics.includes(m.metricId)?'checked':''}
+      onchange="toggleMetric(${i},'${m.metricId}')"> ${esc(m.name)} <span class="muted">${esc(m.metricId)}</span></label>`).join('')}
+  </details>`).join('');
+}
+function toggleMetric(i,id){
+  const arr = WIZ.tpl.chapters[i].metrics;
+  arr.includes(id) ? arr.splice(arr.indexOf(id),1) : arr.push(id);
+  persist();
+}
+function toggleComp(i, token){
+  const arr = WIZ.tpl.chapters[i].comparisons;
+  if(arr.includes(token)){ arr.splice(arr.indexOf(token),1); }
+  else{
+    const kind = (META.comparisons.find(m=>m.token===token)||{}).kind;
+    if(kind==='环比'){
+      const huanbi = new Set(META.comparisons.filter(m=>m.kind==='环比').map(m=>m.token));
+      WIZ.tpl.chapters[i].comparisons = arr.filter(t=>!huanbi.has(t));
+    }
+    WIZ.tpl.chapters[i].comparisons.push(token);
+  }
+  persist(); render();
+}
+function addCh(){
+  let n = WIZ.tpl.chapters.length + 1;
+  while(WIZ.tpl.chapters.some(c=>c.chapterId==='ch'+n)) n++;
+  WIZ.tpl.chapters.push({chapterId:'ch'+n, title:'', metrics:[], comparisons:[], guidance:'', stylePrompt:''});
+  persist(); render();
+}
+function delCh(i){ WIZ.tpl.chapters.splice(i,1); persist(); render(); }
+function moveCh(i,d){ const c=WIZ.tpl.chapters.splice(i,1)[0]; WIZ.tpl.chapters.splice(i+d,0,c); persist(); render(); }
+
+/** 程序化推荐图表（Gate4 决策：图表不走 LLM，按校验矩阵确定性生成，零幻觉）：
+    本章有 timeBound 非派生无维度指标 → 推荐首个的近 6 期趋势折线；有维度指标 → 推荐构成饼图。 */
+function recommendCharts(c){
+  const recs = [];
+  const series = c.metrics.map(metricDef).filter(m=>m&&m.timeBound&&!m.derived&&!(m.dimensions&&m.dimensions.length));
+  if(series.length) recs.push({chartId:'', type:'line', title:'近六期'+series[0].name,
+    binding:{kind:'series', metricId:series[0].metricId, periods:6}});
+  const dim = c.metrics.map(metricDef).filter(m=>m&&m.dimensions&&m.dimensions.length);
+  if(dim.length) recs.push({chartId:'', type:'pie', title:dim[0].name+'构成',
+    binding:{kind:'dimension', metricId:dim[0].metricId, periods:null}});
+  return recs;
+}
+function adoptChart(i, rc){
+  const charts = (WIZ.tpl.chapters[i].charts = WIZ.tpl.chapters[i].charts || []);
+  let n = charts.length + 1;
+  while(charts.some(g=>g.chartId==='chart_'+n)) n++;
+  rc.chartId = 'chart_'+n;
+  charts.push(rc);
+  persist(); render();
+}
+function delChart(i,j){
+  WIZ.tpl.chapters[i].charts.splice(j,1);
+  if(!WIZ.tpl.chapters[i].charts.length) WIZ.tpl.chapters[i].charts = null;
+  persist(); render();
+}
+
+/* ---------- 去制作指标（metric-wizard 往返，template-admin 同款协议） ---------- */
+function goMakeMetric(chapterIdx){
+  WIZ.chapterIdx = chapterIdx; persist();
+  sessionStorage.setItem('tpl-wizard-edit', JSON.stringify(WIZ));
+  location.href = 'metric-wizard.html?return=template-wizard&chapter=' + chapterIdx;
+}
+
+/* ---------- ④ 试生成预览 ---------- */
+function step4(){
+  const type = effPeriods()[0];
+  const recommend = PPERIODS[type] || '';
+  return `<div class="card"><h2>④ 试生成预览 <span class="muted" style="font-weight:400">干跑取数到事实/图表（零 LLM、零落库、真实数据）</span></h2>
+    <div class="row" style="margin-top:0">
+      报告期 <input type="text" style="width:110px" id="pvPeriod" value="${esc(recommend)}">
+      <button onclick="doPreview(null)">预览全模板</button>
+      ${WIZ.tpl.chapters.map(c=>`<button class="ghost mini" onclick="doPreview('${esc(c.chapterId)}')">预览「${esc((c.title||c.chapterId).slice(0,10))}」</button>`).join('')}
+    </div>
+    <div id="pvOut" style="margin-top:8px"></div>
+    <div class="row"><button class="okbtn" onclick="goto(5)">下一步：保存发布 →</button></div>
+  </div>`;
+}
+async function doPreview(chapterId){
+  const out = $('pvOut'); out.innerHTML = '<span class="muted">预览中（干跑取数）…</span>';
+  try{
+    const label = $('pvPeriod').value.trim() || null;
+    const r = await api('/templates/preview', {method:'POST', body: JSON.stringify(
+      {template: payloadTpl(), periodLabel: label, chapterId})});
+    if(r.blocked){
+      out.innerHTML = `<div class="errlist">⛔ 失败关闭（流水线在此会 BLOCKED 转人工）：<br>${esc(r.blockedReason)}</div>
+        <div class="muted">回「③ 逐章调整」修改指标/对比配置后再试。</div>`;
+      return;
+    }
+    out.innerHTML = `
+      <div class="okmsg">✓ ${chapterId?('章节 '+esc(chapterId)):'全模板'} · 报告期 ${esc(r.periodLabel)} · 事实 ${r.facts.length} 条 · 图表 ${(r.charts||[]).length} 张</div>
+      ${(r.notes||[]).length?`<div class="muted" style="margin:4px 0">${r.notes.map(esc).join('<br>')}</div>`:''}
+      ${(r.charts||[]).length?chartGridHtml(r.charts,'pvchart'):''}
+      ${factsTable(r.facts)}`;
+    initChartsInto(r.charts||[], 'pvchart');
+  }catch(e){
+    out.innerHTML = `<div class="errlist">✖ ${esc(e.message)}${(e.details&&e.details.length)
+      ? '<br>'+e.details.map(d=>esc((d.location||'')+'：'+d.message)).join('<br>') : ''}</div>`;
+  }
+}
+
+/* ---------- ⑤ 保存发布 ---------- */
+function step5(){
+  const s = WIZ.saved;
+  let body;
+  if(s && s.status === 'PUBLISHED'){
+    body = `<div class="okmsg">✓ 已发布：${esc(s.templateId)} v${s.version}（PUBLISHED，运行期匹配即时生效）</div>
+      <div class="row"><a href="/report.html"><button class="okbtn">去报告页试跑 →</button></a>
+        <a href="/template-admin.html"><button class="ghost">去模板管理查看 →</button></a>
+        <button class="ghost" onclick="resetWiz()">再做一个模板</button></div>`;
+  }else if(s){
+    body = `<div class="okmsg">✓ 已保存：${esc(s.templateId)} v${s.version}（DRAFT）</div>
+      <div class="warnbox">DRAFT 不参与运行期匹配，发布后「报告生成」页才会用到它。</div>
+      <div class="row"><button class="okbtn" onclick="doPublish()">发布（DRAFT → PUBLISHED）</button>
+        <button class="ghost" onclick="doSave()">改过了？再存新版本</button></div>`;
+  }else{
+    body = `<pre class="body">${esc(JSON.stringify(payloadTpl(),null,2))}</pre>
+      <div class="row">
+        <button class="ghost" onclick="doValidate()">先校验（干跑）</button>
+        <button class="okbtn" onclick="doSave()">保存（v1 DRAFT）</button>
+      </div>`;
+  }
+  return `<div class="card"><h2>⑤ 保存发布 <span class="muted" style="font-weight:400">保存 = 版本化 DRAFT（行不可变）；发布前服务端全量校验把关</span></h2>
+    ${body}<div class="okmsg" id="opOk"></div><div class="err" id="opErr"></div></div>`;
+}
+function payloadTpl(){
+  const t = JSON.parse(JSON.stringify(WIZ.tpl));
+  if(!t.periodTypes || !t.periodTypes.length) delete t.periodTypes;
+  t.chapters.forEach(c=>{
+    if(!c.stylePrompt) delete c.stylePrompt; if(!c.guidance) c.guidance='';
+    if(!c.comparisons || !c.comparisons.length) delete c.comparisons;
+    delete c.comparison;
+    if(!c.charts || !c.charts.length) delete c.charts;
+  });
+  return t;
+}
+async function doValidate(){
+  $('opErr').textContent=''; $('opOk').textContent='';
+  try{
+    const r = await api('/templates/validate', {method:'POST', body: JSON.stringify({template: payloadTpl(), createdBy:'template-wizard'})});
+    if(r.valid){ $('opOk').textContent = '✓ 校验通过（干跑，未写库）'; }
+    else { $('opErr').textContent = r.errors.map(x=>x.location+'：'+x.message).join('\n'); }
+  }catch(e){ $('opErr').textContent = e.message + (e.details&&e.details.length?'\n'+e.details.map(d=>(d.location||'')+'：'+d.message).join('\n'):''); }
+}
+async function doSave(){
+  $('opErr') && ($('opErr').textContent='');
+  try{
+    const req = {template: payloadTpl(), createdBy:'template-wizard', remark:'模板向导制作'};
+    WIZ.saved = WIZ.saved
+      ? await api('/templates/'+WIZ.tpl.templateId, {method:'PUT', body: JSON.stringify(req)})
+      : await api('/templates', {method:'POST', body: JSON.stringify(req)});
+    persist(); render();
+  }catch(e){
+    render();
+    $('opErr').textContent = e.message + (e.details&&e.details.length?'\n'+e.details.map(d=>(d.location||'')+'：'+d.message).join('\n'):'');
+  }
+}
+async function doPublish(){
+  try{
+    WIZ.saved = await api('/templates/'+WIZ.saved.templateId+'/publish', {method:'POST', body: JSON.stringify({version: WIZ.saved.version})});
+    persist(); render();
+  }catch(e){ render(); $('opErr').textContent = e.message; }
+}
+
+/* ---------- 启动 ---------- */
+(async function init(){
+  try{ const a = await api('/assets'); METRICS = a.metrics || []; }catch(e){}
+  try{ META = await api('/templates/meta'); }catch(e){}
+  try{ PPERIODS = await api('/templates/preview/periods'); }catch(e){}
+  try{ TPL_LIST = await api('/templates'); }catch(e){}
+  // 指标向导回跳：恢复向导态 + 自动勾选新指标（目录已重拉）
+  const p = new URLSearchParams(location.search);
+  const newMetric = p.get('newMetric');
+  if(newMetric){
+    try{
+      const saved = JSON.parse(sessionStorage.getItem('tpl-wizard-edit'));
+      if(saved && saved.tpl){
+        WIZ = saved;
+        const ci = p.get('chapter') !== null && p.get('chapter') !== '' ? parseInt(p.get('chapter')) : WIZ.chapterIdx;
+        if(ci != null && WIZ.tpl.chapters[ci] && !WIZ.tpl.chapters[ci].metrics.includes(newMetric)){
+          WIZ.tpl.chapters[ci].metrics.push(newMetric);
+        }
+        WIZ.step = 3;
+        sessionStorage.removeItem('tpl-wizard-edit');
+        persist();
+      }
+    }catch(e){ /* 恢复失败正常进第 1 步 */ }
+    history.replaceState(null, '', 'template-wizard.html');
+  }
+  render();
+})();
+</script>
+</body>
+</html>

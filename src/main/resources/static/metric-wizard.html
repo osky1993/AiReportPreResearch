@@ -326,8 +326,10 @@ function step5(){
   const saved = WIZ.saved;
   let body;
   if(saved && saved.status === 'PUBLISHED'){
-    const back = WIZ.returnTo === 'template-admin'
-      ? `<a href="/template-admin.html?newMetric=${encodeURIComponent(saved.metricId)}&chapter=${WIZ.chapterIdx??''}"><button class="okbtn">返回模板编辑器并自动勾选 →</button></a>`
+    // 回跳目标白名单化（Gate5：模板编辑器与模板向导都可往返）
+    const RETURN_PAGES = {'template-admin':'返回模板编辑器并自动勾选 →', 'template-wizard':'返回模板向导并自动勾选 →'};
+    const back = RETURN_PAGES[WIZ.returnTo]
+      ? `<a href="/${WIZ.returnTo}.html?newMetric=${encodeURIComponent(saved.metricId)}&chapter=${WIZ.chapterIdx??''}"><button class="okbtn">${RETURN_PAGES[WIZ.returnTo]}</button></a>`
       : `<a href="/template-admin.html"><button class="ghost">去模板管理挂载此指标 →</button></a>`;
     body = `<div class="okmsg">✓ 已发布：${esc(saved.metricId)} v${saved.version}（PUBLISHED，模板编辑器立即可选）</div>
       <div class="row">${back}<button class="ghost" onclick="resetWiz()">再做一个指标</button></div>`;
