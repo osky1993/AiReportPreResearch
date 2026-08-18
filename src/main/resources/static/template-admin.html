@@ -101,7 +101,11 @@ tr.facthl>td{background:#fef9c3}
   </div>
   <div class="card">
     <h2>🤖 AI 起草模板</h2>
-    <div class="muted">一句话描述场景，AI 参照指标资产起草草案（只从既有指标选，不发明；草案进编辑器人工调整后保存）。</div>
+    <div class="row" style="margin-top:0">
+      <label class="metric"><input type="radio" name="draftMode" value="scene" checked onchange="setDraftMode('scene')"> 场景描述</label>
+      <label class="metric"><input type="radio" name="draftMode" value="report" onchange="setDraftMode('report')"> 粘贴历史报告</label>
+    </div>
+    <div class="muted" id="draftHint">一句话描述场景，AI 参照指标资产起草草案（只从既有指标选，不发明；草案进编辑器人工调整后保存）。</div>
     <textarea id="draftDesc" placeholder="例：每周给资金部领导看的外汇风险情况报告，重点是外币头寸、跨境收支和大额交易"></textarea>
     <div class="row"><button id="draftBtn" onclick="doDraft()">起草（LLM，约 10~30 秒）</button></div>
     <div class="err" id="draftErr"></div>
@@ -469,13 +473,27 @@ function goMakeMetric(chapterIdx){
   location.href = 'metric-wizard.html?return=template-admin&chapter=' + chapterIdx;
 }
 
-/* ---------- AI 起草（P3-T2） ---------- */
+/* ---------- AI 起草（P3-T2 场景模式 + Gate4 历史报告导入模式） ---------- */
+let DRAFT_MODE = 'scene';
+function setDraftMode(m){
+  DRAFT_MODE = m;
+  $('draftHint').textContent = m === 'report'
+    ? '粘贴一篇过去人工写的周报/月报全文，AI 反向抽取章节结构与指标映射（映射不到的进「未能对应」清单转人工，不发明）。注意：全文会发送给 LLM。'
+    : '一句话描述场景，AI 参照指标资产起草草案（只从既有指标选，不发明；草案进编辑器人工调整后保存）。';
+  $('draftDesc').placeholder = m === 'report'
+    ? '粘贴历史报告全文（至少 100 字；超 8000 字符自动截断）…'
+    : '例：每周给资金部领导看的外汇风险情况报告，重点是外币头寸、跨境收支和大额交易';
+}
+
 async function doDraft(){
   const desc = $('draftDesc').value.trim();
-  if(!desc){ $('draftErr').textContent = '请先写场景描述'; return; }
+  if(!desc){ $('draftErr').textContent = DRAFT_MODE==='report' ? '请先粘贴历史报告全文' : '请先写场景描述'; return; }
   $('draftBtn').disabled = true; $('draftBtn').textContent = '起草中…'; $('draftErr').textContent = '';
   try{
-    const r = await api('/templates/draft', {method:'POST', body: JSON.stringify({description: desc, createdBy: 'admin-page'})});
+    const body = DRAFT_MODE==='report'
+      ? {mode:'report', reportText: desc, createdBy: 'admin-page'}
+      : {mode:'scene', description: desc, createdBy: 'admin-page'};
+    const r = await api('/templates/draft', {method:'POST', body: JSON.stringify(body)});
     CUR = null; IS_NEW = true; ERRORS = []; OKMSG = '';
     EDIT = normalizeTpl(r.draft); EDIT._versions = []; EDIT._unresolved = r.unresolved||[]; EDIT._notes = r.notes||[];
     render(); loadList();

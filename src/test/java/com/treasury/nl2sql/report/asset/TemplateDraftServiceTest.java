@@ -9,6 +9,7 @@ import com.treasury.nl2sql.report.store.TemplateAssetRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -257,6 +258,83 @@ class TemplateDraftServiceTest {
         ReportTemplateDef.ChapterDef ch = r.draft().chapters().get(0);
         assertNull(ch.comparison());
         assertEquals(List.of("week_over_week"), ch.comparisons());
+    }
+
+    // ---------- Gate4：历史报告导入模式 ----------
+
+    /** 捕获送入 LLM 的对话（校验 prompt 组装），并回放预设输出。 */
+    private TemplateDraftService serviceCapturing(List<List<LlmClient.Message>> captured, String... replies) {
+        Deque<String> queue = new ArrayDeque<>(List.of(replies));
+        LlmClient fake = messages -> {
+            captured.add(List.copyOf(messages));
+            if (queue.isEmpty()) throw new IllegalStateException("FakeLlm 被多余调用");
+            return queue.pop();
+        };
+        return new TemplateDraftService(fake, assets, matcher, repo, mapper);
+    }
+
+    private static String longReport(int minLen) {
+        StringBuilder sb = new StringBuilder("2026年第26周司库资金周报\n一、核心结论\n本周人民币账户余额合计保持平稳，交易总额较上周小幅上升。\n");
+        while (sb.length() < minLen) sb.append("二、交易与收支\n本周交易活跃，净流入为正，工资发放与税款缴纳正常执行。\n");
+        return sb.toString();
+    }
+
+    /**
+     * 验证 report 模式 prompt 组装：含指标目录/禁止编造/比较措辞映射规则，不含场景模式的 few-shot 段；
+     * user 段携带报告全文。
+     */
+    @Test
+    void reportModePromptSkipsFewShotAndCarriesRules() {
+        List<List<LlmClient.Message>> captured = new ArrayList<>();
+        serviceCapturing(captured, GOOD_REPLY).draftFromReport(longReport(200));
+        String system = captured.get(0).get(0).content();
+        assertTrue(system.contains("可用指标目录"));
+        assertTrue(system.contains("禁止发明目录外的指标 id"));
+        assertTrue(system.contains("较去年同期"), "含比较措辞映射规则");
+        assertFalse(system.contains("既有模板示例"), "report 模式不含 few-shot 段");
+        assertTrue(captured.get(0).get(1).content().contains("历史报告全文"));
+    }
+
+    /**
+     * 验证报告全文过短（<100 字）失败关闭且不烧 LLM。
+     */
+    @Test
+    void tooShortReportRejectedWithoutLlmCall() {
+        TemplateDraftService svc = serviceWithLlm();
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> svc.draftFromReport("资金周报：本周一切正常。"));
+        assertTrue(e.getMessage().contains("过短"));
+    }
+
+    /**
+     * 验证超长报告截断 + note 提示（不失败关闭），送入 LLM 的文本不超过上限。
+     */
+    @Test
+    void overlongReportTruncatedWithNote() {
+        List<List<LlmClient.Message>> captured = new ArrayList<>();
+        DraftResult r = serviceCapturing(captured, GOOD_REPLY)
+                .draftFromReport(longReport(TemplateDraftService.REPORT_TEXT_MAX + 3000));
+        assertTrue(r.notes().stream().anyMatch(n -> n.contains("截断")));
+        String user = captured.get(0).get(1).content();
+        assertTrue(user.length() < TemplateDraftService.REPORT_TEXT_MAX + 200, "送 LLM 的正文须已截断");
+    }
+
+    /**
+     * 验证 report 模式走同一条后处理链：幻觉指标剔除转 unresolved、unanswerable 失败关闭。
+     */
+    @Test
+    void reportModeSharesPostProcessChain() {
+        DraftResult r = serviceWithLlm("""
+            {"template":{"templateId":"weekly-x","name":"资金周报","keywords":["周报"],
+              "chapters":[{"chapterId":"a","title":"一、核心结论","metrics":["cny_total_balance","ghost_metric"],"guidance":"g"}]},
+             "unresolved":["外币衍生品敞口 1.2 亿元"],"unanswerable":false}""")
+                .draftFromReport(longReport(200));
+        assertTrue(r.unresolved().stream().anyMatch(u -> u.contains("ghost_metric")));
+        assertTrue(r.unresolved().stream().anyMatch(u -> u.contains("外币衍生品敞口")));
+
+        assertThrows(IllegalArgumentException.class, () -> serviceWithLlm("""
+            {"unanswerable":true,"reason":"粘贴内容是聊天记录，不是报告"}""")
+                .draftFromReport(longReport(200)));
     }
 
     /**

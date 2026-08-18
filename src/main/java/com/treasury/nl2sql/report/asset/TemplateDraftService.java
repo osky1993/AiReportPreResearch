@@ -51,11 +51,16 @@ public class TemplateDraftService {
         this.mapper = mapper;
     }
 
+    /** 兼容旧调用：默认场景描述模式。 */
+    public DraftResult draft(String description) {
+        return draftFromScene(description);
+    }
+
     /**
-     * 模板草稿端到端处理：few-shot 检索 -> LLM 起草 -> 结构修复 -> 异常指标剔除 -> 规则复核 -> 入参返回。
+     * 场景描述模式：一句话场景 → few-shot 检索 → LLM 起草 → 共享后处理链。
      * 任何环节失败都 fail-closed 到人工确认，不返回“猜测模板”。
      */
-    public DraftResult draft(String description) {
+    public DraftResult draftFromScene(String description) {
         // ⓪ 前置：过短描述不烧 token
         if (description == null || description.strip().length() < 10) {
             throw new IllegalArgumentException("场景描述过短，请用一两句话说明报告的用途、读者与关注内容（至少 10 字）");
@@ -65,10 +70,41 @@ public class TemplateDraftService {
         // ① LLM 起草（few-shot = 与描述最相近的 PUBLISHED 模板）
         ReportTemplateDef fewShot = pickFewShot(desc);
         List<LlmClient.Message> conversation = new ArrayList<>();
-        conversation.add(LlmClient.Message.system(systemPrompt(fewShot)));
+        conversation.add(LlmClient.Message.system(scenePrompt(fewShot)));
         conversation.add(LlmClient.Message.user("场景描述：" + desc + "\n请输出模板草案 JSON。"));
-        JsonNode node = completeWithOneRetry(conversation);
+        return postProcess(completeWithOneRetry(conversation), new ArrayList<>());
+    }
 
+    /** report 模式截断上限：历史报告尾部通常是落款/署名，截断损失小，不做失败关闭。 */
+    static final int REPORT_TEXT_MAX = 8000;
+
+    /**
+     * 历史报告导入模式（Gate4）：粘贴过去人工写的周报/月报全文，LLM 反向抽取章节结构与指标映射。
+     * 与场景模式的差异：① 长度前置不同（过短说明不是报告全文；超长截断+note 不失败关闭）；
+     * ② 跳过 few-shot 召回（recall 为「一句话场景」设计，整篇报告做 embedding 召回噪声大且挤 token）。
+     * 其余后处理链（unanswerable 失败关闭/幻觉指标剔除/非法 token 剔除/终检）与场景模式完全共用。
+     */
+    public DraftResult draftFromReport(String reportText) {
+        if (reportText == null || reportText.strip().length() < 100) {
+            throw new IllegalArgumentException("历史报告全文过短（至少 100 字）——请粘贴完整的报告正文，而不是标题或摘要");
+        }
+        String text = reportText.strip();
+        List<String> notes = new ArrayList<>();
+        if (text.length() > REPORT_TEXT_MAX) {
+            text = text.substring(0, REPORT_TEXT_MAX);
+            notes.add("报告全文超 " + REPORT_TEXT_MAX + " 字符，已截断后起草（尾部通常为落款，损失有限）");
+        }
+        List<LlmClient.Message> conversation = new ArrayList<>();
+        conversation.add(LlmClient.Message.system(reportPrompt()));
+        conversation.add(LlmClient.Message.user("历史报告全文：\n" + text + "\n\n请按规则反向抽取模板草案 JSON。"));
+        return postProcess(completeWithOneRetry(conversation), notes);
+    }
+
+    /**
+     * 共享后处理链（两模式同款）：失败关闭判定 → 结构解析 → 幻觉指标剔除转 unresolved →
+     * 非法 periodTypes/comparisons 剔除转 notes → 剔空章节 → slugify 撞库避让 → TemplateValidator 终检。
+     */
+    private DraftResult postProcess(JsonNode node, List<String> notes) {
         // ② 失败关闭：空泛 / 无关领域
         if (node.path("unanswerable").asBoolean(false)) {
             throw new IllegalArgumentException("无法起草：" + node.path("reason").asText("描述过于空泛或与资金/司库领域无关")
@@ -89,7 +125,6 @@ public class TemplateDraftService {
         for (JsonNode u : node.path("unresolved")) {
             if (u.isTextual() && !u.asText().isBlank()) unresolved.add(u.asText());
         }
-        List<String> notes = new ArrayList<>();
 
         // ③④⑤ chapterId 重排（结构规整）+ 幻觉指标剔除转 unresolved + 剔空章节
         //     + 非法 periodTypes/comparisons token 剔除转 notes（降噪，失败关闭仍由 ⑧ 终检兜底）
@@ -155,10 +190,10 @@ public class TemplateDraftService {
     }
 
     /**
-     * 系统提示词：强制“指标 id 约束 + 禁止发明 + 必写指标来源”
+     * 场景模式系统提示词：强制“指标 id 约束 + 禁止发明 + 必写指标来源”
      * + 空值判定（unanswerable）以减少幻觉，避免上线后大量 invalid template.
      */
-    private String systemPrompt(ReportTemplateDef fewShot) {
+    private String scenePrompt(ReportTemplateDef fewShot) {
         String fewShotJson;
         try {
             fewShotJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(fewShot);
@@ -203,6 +238,54 @@ public class TemplateDraftService {
             - 描述与资金/司库领域完全无关（如人事、库存、天气），或空泛到无法确定报告主题时，
               输出 {"unanswerable": true, "reason": "..."}——不要硬编。
             """.formatted(assets.metricCatalogText(), fewShotJson, ComparisonType.legalTokens());
+    }
+
+    /**
+     * 报告导入模式系统提示词（Gate4）：从历史报告全文反向抽取模板。
+     * 与场景模式同一输出 schema（后处理链与终检同款），差异在抽取规则：
+     * 按标题层级抽章节、数字性陈述映射指标目录、周期措辞推断 periodTypes/comparisons、
+     * 映射不到的原文摘录进 unresolved 禁止编造。不含 few-shot（整篇报告本身就是结构锚点）。
+     */
+    private String reportPrompt() {
+        return """
+            你是报告模板反向抽取器。业务人员会粘贴一篇过去人工撰写的报告全文，
+            你要参照指标目录，把它反向抽取成一份可复用的报告模板草案。
+            只输出一个 JSON 对象，不要解释、不要 markdown 代码块。
+
+            ## 可用指标目录（chapters[].metrics 只允许从中选 id）
+            %s
+
+            ## 输出 JSON 结构
+            {
+              "template": {
+                "templateId": "小写连字符命名，如 fx-risk-weekly",
+                "name": "模板中文名（从报告标题归纳，去掉具体期数，如「2026年第26周资金周报」→「资金周报」）",
+                "keywords": ["3~6 个中文匹配关键词（从报告主题词抽取，运行期按需求文本召回模板）"],
+                "periodTypes": ["适用周期粒度数组，取值 WEEK/MONTH/QUARTER；由报告中的周期措辞推断（本周/第N周→WEEK、本月→MONTH、本季度→QUARTER），推断不出则 null"],
+                "chapters": [
+                  { "chapterId": "ch1", "title": "一、…（沿用报告的章节标题）", "metrics": ["指标目录中的 id"],
+                    "comparisons": ["本章比较声明数组，可空；合法 token 仅限：%s"],
+                    "guidance": "本章写作指引（从该章行文归纳：写什么、按什么顺序、强调什么，≤1000 字）",
+                    "stylePrompt": "本章文风要求（从该章语言风格归纳，如电报式短句/正式公文体；可省略）" }
+                ]
+              },
+              "unresolved": ["报告中出现、但指标目录里找不到对应指标的数字性陈述（原文摘录，没有则空数组）"],
+              "unanswerable": false,
+              "reason": "unanswerable 为 true 时说明原因"
+            }
+
+            ## 抽取规则
+            - 章节结构按报告的标题/段落层级抽取，保持原有顺序与标题措辞。
+            - 每章正文中的数字性陈述逐条对照指标目录映射成 metricId；**禁止发明目录外的指标 id**，
+              映射不到的把原文语句摘录进 unresolved，由人工决定补建指标或忽略。
+            - 比较措辞映射：「较上周/周环比」→ week_over_week，「较上月/月环比」→ month_over_month，
+              「较上季/季环比」→ quarter_over_quarter，「同比/较去年同期」→ year_over_year；
+              须与 periodTypes 粒度匹配（周报只能 week_over_week；月报可 month_over_month/year_over_year；
+              季报可 quarter_over_quarter/year_over_year）。拿不准就留空数组。
+            - 每个章节至少 1 个映射成功的指标；一个指标都对不上的章节不要产出（其内容进 unresolved）。
+            - 粘贴的文本不是报告（如聊天记录、代码、名单），或与资金/司库领域完全无关时，
+              输出 {"unanswerable": true, "reason": "..."}——不要硬编。
+            """.formatted(assets.metricCatalogText(), ComparisonType.legalTokens());
     }
 
     // ---------- 工具 ----------

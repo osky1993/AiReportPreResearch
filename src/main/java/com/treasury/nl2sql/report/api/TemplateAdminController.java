@@ -45,8 +45,8 @@ public class TemplateAdminController {
     /** 写请求体：模板定义 + 操作人 + 版本备注；remark 可用于发布日志和 diff 复核。 */
     public record SaveRequest(ReportTemplateDef template, String createdBy, String remark) {}
 
-    /** AI 起草请求体：面向页面场景描述文本输入。 */
-    public record DraftRequest(String description, String createdBy) {}
+    /** AI 起草请求体：mode 缺省 scene（场景描述）向后兼容；report = 粘贴历史报告全文反向抽取（Gate4）。 */
+    public record DraftRequest(String mode, String description, String reportText, String createdBy) {}
 
     /** 预览请求体：模板草稿（未落库编辑态）+ 可选报告期标签 + 可选单章 id。 */
     public record PreviewRequest(ReportTemplateDef template, String periodLabel, String chapterId) {}
@@ -119,7 +119,10 @@ public class TemplateAdminController {
      */
     @PostMapping("/draft")
     public TemplateDraftService.DraftResult draft(@RequestBody DraftRequest req) {
-        return draftService.draft(req.description());
+        // 两模式产出契约与错误契约完全相同，共用一个端点；mode 缺省 scene 向后兼容
+        return "report".equals(req.mode())
+                ? draftService.draftFromReport(req.reportText())
+                : draftService.draftFromScene(req.description());
     }
 
     /**
