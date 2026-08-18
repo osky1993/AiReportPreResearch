@@ -107,6 +107,9 @@ pre.body{background:#f9fafb;border:1px solid var(--line);border-radius:6px;paddi
 <script>
 const $ = id => document.getElementById(id);
 let LIST = [], METRICS = [], CUR = null, EDIT = null, IS_NEW = false, ERRORS = [], OKMSG = '';
+// 编辑器选项元数据（对比方式/周期粒度/图表种类的中文标签与约束矩阵）——来自 /templates/meta，
+// 数据源是后端 ComparisonType 枚举（单一权威），前端不硬编码 token 或矩阵
+let META = {comparisons:[], periodTypes:[], chartKinds:[], chartTypes:{}};
 
 const ST = { DRAFT:['草稿','b-draft'], PUBLISHED:['已发布','b-pub'], DEPRECATED:['已下架','b-dep'] };
 
@@ -138,20 +141,60 @@ async function loadList(){
 }
 
 /* ---------- 打开 / 新建 ---------- */
+// 载入归一化：旧单值 comparison → comparisons 数组并清掉旧字段（校验器禁双字段同填；
+// 保存即完成新旧字段迁移，语义等价——全链路读 effectiveComparisons 新优先）
+function normalizeTpl(t){
+  t.periodTypes = t.periodTypes || [];
+  (t.chapters||[]).forEach(c=>{
+    if(!c.comparisons || !c.comparisons.length) c.comparisons = c.comparison ? [c.comparison] : [];
+    delete c.comparison;
+  });
+  return t;
+}
+
 async function openTpl(id){
   CUR = id; IS_NEW = false; ERRORS = []; OKMSG='';
   const d = await api('/templates/'+id);
-  EDIT = JSON.parse(JSON.stringify(d.latest));
+  EDIT = normalizeTpl(JSON.parse(JSON.stringify(d.latest)));
   EDIT._versions = d.versions;
   render(); loadList();
 }
 
 function newTemplate(){
   CUR = null; IS_NEW = true; ERRORS = []; OKMSG='';
-  EDIT = { templateId:'', name:'', keywords:[], chapters:[
-    { chapterId:'ch1', title:'一、', metrics:[], comparison:null, guidance:'', stylePrompt:'' } ] };
+  EDIT = { templateId:'', name:'', keywords:[], periodTypes:[], chapters:[
+    { chapterId:'ch1', title:'一、', metrics:[], comparisons:[], guidance:'', stylePrompt:'' } ] };
   EDIT._versions = [];
   render(); loadList();
+}
+
+/* ---------- 周期/对比联动 ---------- */
+function effPeriods(){ return (EDIT.periodTypes && EDIT.periodTypes.length) ? EDIT.periodTypes : ['WEEK']; }
+// token 是否适用当前周期组合：须对声明的每个粒度都适用（同校验器矩阵规则）
+function compApplicable(mc){ return effPeriods().every(pt => mc.periodTypes.includes(pt)); }
+
+function togglePeriod(code){
+  const arr = EDIT.periodTypes;
+  arr.includes(code) ? arr.splice(arr.indexOf(code),1) : arr.push(code);
+  // 周期变了 → 自动剔除各章不再适用的对比 token（前端预过滤，避免提交后才报错）
+  const ok = new Set(META.comparisons.filter(compApplicable).map(m=>m.token));
+  EDIT.chapters.forEach(c=>{ c.comparisons = (c.comparisons||[]).filter(t=>ok.has(t)); });
+  render();
+}
+
+function toggleComp(i, token){
+  const arr = EDIT.chapters[i].comparisons;
+  if(arr.includes(token)){ arr.splice(arr.indexOf(token),1); }
+  else{
+    // 同粒度环比至多一个：勾新环比自动替换旧环比（同比可与环比共存）
+    const kind = (META.comparisons.find(m=>m.token===token)||{}).kind;
+    if(kind==='环比'){
+      const huanbi = new Set(META.comparisons.filter(m=>m.kind==='环比').map(m=>m.token));
+      EDIT.chapters[i].comparisons = arr.filter(t=>!huanbi.has(t));
+    }
+    EDIT.chapters[i].comparisons.push(token);
+  }
+  render();
 }
 
 /* ---------- 编辑器渲染 ---------- */
@@ -168,14 +211,14 @@ function render(){
         <button class="danger mini" style="margin-left:auto" onclick="delCh(${i})">删除本章</button>
       </h3>
       <div class="row" style="margin-top:0">
-        <div class="field"><div class="fl">chapterId</div><input type="text" value="${esc(c.chapterId)}" onchange="setCh(${i},'chapterId',this.value)"></div>
         <div class="field" style="flex:1"><div class="fl">章节标题</div><input type="text" style="width:100%" value="${esc(c.title)}" onchange="setCh(${i},'title',this.value)"></div>
-        <div class="field"><div class="fl">环比对比</div>
-          <select onchange="setCh(${i},'comparison',this.value||null)">
-            <option value="" ${!c.comparison?'selected':''}>无</option>
-            <option value="week_over_week" ${c.comparison==='week_over_week'?'selected':''}>week_over_week</option>
-          </select></div>
       </div>
+      <div class="field"><div class="fl">对比方式（选项随「适用周期」过滤；环比至多一项，可与同比共存）</div>
+        ${(()=>{ const avail = META.comparisons.filter(compApplicable);
+          if(!avail.length) return '<span class="muted">当前周期组合无可用对比（同时勾选多个周期时，环比不通用，仅月/季可用同比）</span>';
+          return avail.map(mc=>`<label class="metric"><input type="checkbox" ${(c.comparisons||[]).includes(mc.token)?'checked':''}
+            onchange="toggleComp(${i},'${mc.token}')"> ${esc(mc.label)}</label>`).join('');
+        })()}</div>
       <div class="field"><div class="fl">指标（勾选，选项来自指标资产）</div>
         ${METRICS.map(m=>`<label class="metric"><input type="checkbox" ${c.metrics.includes(m.metricId)?'checked':''}
           onchange="toggleMetric(${i},'${m.metricId}')"> ${esc(m.name)} <span class="muted">${esc(m.metricId)}</span></label>`).join('')}
@@ -185,24 +228,26 @@ function render(){
         <textarea onchange="setCh(${i},'guidance',this.value)">${esc(c.guidance||'')}</textarea></div>
       <div class="field"><div class="fl">✍️ 风格提示词 stylePrompt（只影响文风；数字安全由 ⑥ 审计死代码兜底）</div>
         <textarea onchange="setCh(${i},'stylePrompt',this.value)">${esc(c.stylePrompt||'')}</textarea></div>
-      <div class="field"><div class="fl">📊 图表 charts（P4：数据由程序从 fact 绑定，LLM 零接触；series→line/bar，dimension→pie/bar）</div>
-        ${(c.charts||[]).map((g,j)=>`<div class="row" style="margin:4px 0;gap:6px;flex-wrap:wrap">
-          <input type="text" style="width:110px" placeholder="chartId" value="${esc(g.chartId||'')}" onchange="setChart(${i},${j},'chartId',this.value)">
-          <input type="text" style="width:150px" placeholder="标题" value="${esc(g.title||'')}" onchange="setChart(${i},${j},'title',this.value)">
-          <select onchange="setChart(${i},${j},'kind',this.value)">
-            ${['series','dimension'].map(k=>`<option value="${k}" ${(g.binding&&g.binding.kind)===k?'selected':''}>${k}</option>`).join('')}
+      <div class="field"><div class="fl">📊 图表（数据由程序从 fact 绑定，LLM 零接触）</div>
+        ${(c.charts||[]).map((g,j)=>{ const kind=(g.binding&&g.binding.kind)||'series';
+          const kindDef = META.chartKinds.find(k=>k.kind===kind) || {types:['line','bar']};
+          const bindable = c.metrics.filter(m=>chartEligible(kind,m));
+          return `<div class="row" style="margin:4px 0;gap:6px;flex-wrap:wrap">
+          <input type="text" style="width:170px" placeholder="图表标题" value="${esc(g.title||'')}" onchange="setChart(${i},${j},'title',this.value)">
+          <select title="图表种类" onchange="setChart(${i},${j},'kind',this.value)">
+            ${META.chartKinds.map(k=>`<option value="${k.kind}" ${kind===k.kind?'selected':''}>${esc(k.label)}</option>`).join('')}
           </select>
-          <select onchange="setChart(${i},${j},'type',this.value)">
-            ${['line','bar','pie'].map(t=>`<option value="${t}" ${g.type===t?'selected':''}>${t}</option>`).join('')}
+          <select title="图形" onchange="setChart(${i},${j},'type',this.value)">
+            ${kindDef.types.map(t=>`<option value="${t}" ${g.type===t?'selected':''}>${esc(META.chartTypes[t]||t)}</option>`).join('')}
           </select>
-          <select onchange="setChart(${i},${j},'metricId',this.value)">
+          <select title="绑定指标（已按种类过滤：趋势=期间非派生无维度指标，构成=维度指标）" onchange="setChart(${i},${j},'metricId',this.value)">
             <option value="">绑定指标…</option>
-            ${c.metrics.map(m=>`<option value="${m}" ${(g.binding&&g.binding.metricId)===m?'selected':''}>${m}</option>`).join('')}
+            ${bindable.map(m=>{ const d=metricDef(m); return `<option value="${m}" ${(g.binding&&g.binding.metricId)===m?'selected':''}>${esc(d?d.name:m)}</option>`; }).join('')}
           </select>
-          <input type="number" style="width:80px" min="2" max="12" placeholder="periods" title="series 期数 2~12"
-            value="${g.binding&&g.binding.periods!=null?g.binding.periods:''}" onchange="setChart(${i},${j},'periods',this.value)">
+          ${kind==='series'?`<input type="number" style="width:70px" min="2" max="12" placeholder="期数" title="近 N 期（2~12）"
+            value="${g.binding&&g.binding.periods!=null?g.binding.periods:''}" onchange="setChart(${i},${j},'periods',this.value)">`:''}
           <button class="danger mini" onclick="delChart(${i},${j})">✕</button>
-        </div>`).join('')}
+        </div>`;}).join('')}
         <button class="ghost mini" onclick="addChart(${i})">+ 加图表</button></div>
       ${chapterErr(i).map(e=>`<div class="err">✖ ${esc(e.location)}：${esc(e.message)}</div>`).join('')}
     </div>`).join('');
@@ -224,6 +269,9 @@ function render(){
     </div>
     <div class="field"><div class="fl">匹配关键词（逗号分隔，必填——运行期召回依赖）</div>
       <input type="text" style="width:100%" value="${esc((EDIT.keywords||[]).join('，'))}" onchange="setKeywords(this.value)"></div>
+    <div class="field"><div class="fl">适用周期（不勾选 = 默认仅周报；勾选后各章「对比方式」选项随之过滤）</div>
+      ${META.periodTypes.map(p=>`<label class="metric"><input type="checkbox" ${(EDIT.periodTypes||[]).includes(p.code)?'checked':''}
+        onchange="togglePeriod('${p.code}')"> ${esc(p.label)}</label>`).join('')}</div>
     ${chaptersHtml}
     <div class="row"><button class="ghost" onclick="addCh()">＋ 添加章节</button></div>
     ${topErrs.length?`<div class="errlist">${topErrs.map(e=>`✖ ${esc(e.location||'-')}：${esc(e.message)}`).join('<br>')}</div>`:''}
@@ -263,20 +311,41 @@ function toggleMetric(i,m){
   arr.includes(m) ? arr.splice(arr.indexOf(m),1) : arr.push(m);
 }
 function setKeywords(v){ EDIT.keywords = v.split(/[,，]/).map(s=>s.trim()).filter(Boolean); }
-function addCh(){ EDIT.chapters.push({chapterId:'ch'+(EDIT.chapters.length+1), title:'', metrics:[], comparison:null, guidance:'', stylePrompt:''}); render(); }
+// chapterId 自动生成不再暴露（它是 fact 分组键，存量章节保留原 id 不重生成）
+function nextChapterId(){
+  let n = EDIT.chapters.length + 1;
+  while(EDIT.chapters.some(c=>c.chapterId==='ch'+n)) n++;
+  return 'ch'+n;
+}
+function addCh(){ EDIT.chapters.push({chapterId:nextChapterId(), title:'', metrics:[], comparisons:[], guidance:'', stylePrompt:''}); render(); }
 function delCh(i){ EDIT.chapters.splice(i,1); render(); }
+/* ---------- 指标元数据辅助（图表绑定预过滤） ---------- */
+function metricDef(id){ return METRICS.find(m=>m.metricId===id); }
+// 与服务端 TemplateValidator 同规则：series=期间(timeBound)非派生无维度；dimension=维度指标
+function chartEligible(kind, id){
+  const m = metricDef(id); if(!m) return true;   // 目录缺失时不拦（交服务端校验兜底）
+  const dim = !!(m.dimensions && m.dimensions.length);
+  return kind==='dimension' ? dim : (m.timeBound && !m.derived && !dim);
+}
 /* ---------- 图表配置（P4）：写入 chapter.charts[]，schema 校验在服务端（validate/保存把关） ---------- */
 function addChart(i){
-  (EDIT.chapters[i].charts = EDIT.chapters[i].charts || []).push(
-    {chartId:'chart_'+((EDIT.chapters[i].charts||[]).length+1), type:'line', title:'',
-     binding:{kind:'series', metricId:'', periods:6}});
+  const charts = (EDIT.chapters[i].charts = EDIT.chapters[i].charts || []);
+  let n = charts.length + 1;
+  while(charts.some(g=>g.chartId==='chart_'+n)) n++;   // chartId 自动生成不再暴露，删中间项后避撞
+  charts.push({chartId:'chart_'+n, type:'line', title:'', binding:{kind:'series', metricId:'', periods:6}});
   render();
 }
 function delChart(i,j){ EDIT.chapters[i].charts.splice(j,1); if(!EDIT.chapters[i].charts.length) EDIT.chapters[i].charts=null; render(); }
 function setChart(i,j,k,v){
   const g = EDIT.chapters[i].charts[j];
   if(k==='chartId'||k==='title'||k==='type'){ g[k]=v; }
-  else if(k==='kind'){ g.binding.kind=v; if(v==='dimension'){ g.binding.periods=null; if(g.type==='line') g.type='pie'; } else if(g.binding.periods==null){ g.binding.periods=6; if(g.type==='pie') g.type='line'; } }
+  else if(k==='kind'){
+    g.binding.kind=v;
+    if(v==='dimension'){ g.binding.periods=null; if(g.type==='line') g.type='pie'; }
+    else if(g.binding.periods==null){ g.binding.periods=6; if(g.type==='pie') g.type='line'; }
+    // 种类切换后原绑定指标可能不再合法（趋势/构成的适用指标集不同）→ 清空待重选
+    if(g.binding.metricId && !chartEligible(v, g.binding.metricId)) g.binding.metricId='';
+  }
   else if(k==='metricId'){ g.binding.metricId=v; }
   else if(k==='periods'){ g.binding.periods = v==='' ? null : parseInt(v,10); }
   render();
@@ -285,7 +354,14 @@ function moveCh(i,d){ const c=EDIT.chapters.splice(i,1)[0]; EDIT.chapters.splice
 
 function payload(){
   const t = JSON.parse(JSON.stringify(EDIT)); delete t._versions; delete t._unresolved; delete t._notes;
-  t.chapters.forEach(c=>{ if(!c.stylePrompt) delete c.stylePrompt; if(!c.guidance) c.guidance=''; });
+  // 空数组一律省略字段：periodTypes 空 → null（保持缺省 WEEK 语义）；
+  // comparisons 空 → null（空数组会回退旧单值 comparison，必须省略）；旧字段 comparison 永不再写
+  if(!t.periodTypes || !t.periodTypes.length) delete t.periodTypes;
+  t.chapters.forEach(c=>{
+    if(!c.stylePrompt) delete c.stylePrompt; if(!c.guidance) c.guidance='';
+    if(!c.comparisons || !c.comparisons.length) delete c.comparisons;
+    delete c.comparison;
+  });
   return { template: t, createdBy: 'admin-page', remark: $('remark') ? $('remark').value : '' };
 }
 
@@ -303,7 +379,7 @@ async function doDraft(){
   try{
     const r = await api('/templates/draft', {method:'POST', body: JSON.stringify({description: desc, createdBy: 'admin-page'})});
     CUR = null; IS_NEW = true; ERRORS = []; OKMSG = '';
-    EDIT = r.draft; EDIT._versions = []; EDIT._unresolved = r.unresolved||[]; EDIT._notes = r.notes||[];
+    EDIT = normalizeTpl(r.draft); EDIT._versions = []; EDIT._unresolved = r.unresolved||[]; EDIT._notes = r.notes||[];
     render(); loadList();
   }catch(e){
     $('draftErr').textContent = e.message + (e.details&&e.details.length ? '\n' + e.details.map(d=>d.location+' '+d.message).join('\n') : '');
@@ -359,9 +435,12 @@ async function viewVersion(v){
 /* ---------- 启动 ---------- */
 (async function init(){
   try{
+    // 保留完整指标对象（timeBound/derived/dimensions 用于图表绑定预过滤，后续批次还要用 description/category）
     const a = await api('/assets');
-    METRICS = (a.metrics||[]).map(m=>({metricId:m.metricId, name:m.name}));
+    METRICS = a.metrics || [];
   }catch(e){ /* 指标目录取不到时编辑器仍可用，勾选列表为空 */ }
+  try{ META = await api('/templates/meta'); }
+  catch(e){ /* meta 取不到时对比/周期选项为空，保存仍由服务端校验兜底 */ }
   // 制作指标回跳：恢复编辑态 + 自动勾选新指标（目录已重拉，新发布指标已在 METRICS 中）
   const p = new URLSearchParams(location.search);
   const newMetric = p.get('newMetric');

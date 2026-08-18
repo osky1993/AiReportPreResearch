@@ -6,6 +6,8 @@ import com.treasury.nl2sql.report.asset.TemplateDraftService;
 import com.treasury.nl2sql.report.asset.TemplateAdminService.NotFoundException;
 import com.treasury.nl2sql.report.asset.TemplateAdminService.ValidationFailedException;
 import com.treasury.nl2sql.report.asset.TemplateValidator.ValidationError;
+import com.treasury.nl2sql.report.pipeline.ComparisonType;
+import com.treasury.nl2sql.report.pipeline.PeriodResolver;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -54,6 +56,38 @@ public class TemplateAdminController {
     public TemplateAdminController(TemplateAdminService service, TemplateDraftService draftService) {
         this.service = service;
         this.draftService = draftService;
+    }
+
+    /**
+     * 编辑器选项元数据：对比方式 / 周期粒度 / 图表种类的中文标签与约束矩阵。
+     * <p>数据源是 {@link ComparisonType} 枚举（比较规则的单一权威定义）——前端不硬编码任何
+     * token 或矩阵，规则演进只改枚举一处，本端点与校验器自动同步，避免前后端漂移。</p>
+     */
+    @GetMapping("/meta")
+    public Map<String, Object> meta() {
+        Map<String, String> unitWord = Map.of(
+                PeriodResolver.TYPE_WEEK, "周", PeriodResolver.TYPE_MONTH, "月", PeriodResolver.TYPE_QUARTER, "季");
+        List<String> allPeriodTypes = List.of(
+                PeriodResolver.TYPE_WEEK, PeriodResolver.TYPE_MONTH, PeriodResolver.TYPE_QUARTER);
+        List<Map<String, Object>> comparisons = new java.util.ArrayList<>();
+        for (ComparisonType ct : ComparisonType.values()) {
+            List<String> allowed = allPeriodTypes.stream().filter(ct::allows).toList();
+            // UI 措辞由枚举数据推导：同比固定「较去年同期」；环比按其唯一适用粒度拼「较上周/月/季」
+            String label = "同比".equals(ct.label())
+                    ? "较去年同期（同比）"
+                    : "较上" + unitWord.get(allowed.get(0)) + "（环比）";
+            comparisons.add(Map.of("token", ct.token(), "label", label, "kind", ct.label(), "periodTypes", allowed));
+        }
+        return Map.of(
+                "comparisons", comparisons,
+                "periodTypes", List.of(
+                        Map.of("code", PeriodResolver.TYPE_WEEK, "label", "周报"),
+                        Map.of("code", PeriodResolver.TYPE_MONTH, "label", "月报"),
+                        Map.of("code", PeriodResolver.TYPE_QUARTER, "label", "季报")),
+                "chartKinds", List.of(
+                        Map.of("kind", "series", "label", "趋势（近 N 期）", "types", List.of("line", "bar")),
+                        Map.of("kind", "dimension", "label", "构成（按维度）", "types", List.of("pie", "bar"))),
+                "chartTypes", Map.of("line", "折线图", "bar", "柱状图", "pie", "饼图"));
     }
 
     /**

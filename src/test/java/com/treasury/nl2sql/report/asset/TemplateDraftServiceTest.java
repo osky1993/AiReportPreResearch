@@ -178,6 +178,88 @@ class TemplateDraftServiceTest {
     }
 
     /**
+     * 验证扩展 schema：LLM 输出的 periodTypes 与 comparisons 数组原样进入草案，
+     * 且草案只写新字段 comparisons（旧单值 comparison 恒为 null，校验器禁双字段同填）。
+     */
+    @Test
+    void periodTypesAndComparisonsParsedThrough() {
+        DraftResult r = serviceWithLlm("""
+            {"template":{"templateId":"fund-monthly","name":"资金月报","keywords":["月报"],
+              "periodTypes":["MONTH"],
+              "chapters":[{"chapterId":"a","title":"一、头寸","metrics":["cny_total_balance"],
+                "comparisons":["month_over_month","year_over_year"],"guidance":"g"}]},
+             "unresolved":[],"unanswerable":false}""")
+                .draft("每月给资金部领导看的资金月报，要环比和同比");
+        assertEquals(List.of("MONTH"), r.draft().periodTypes());
+        ReportTemplateDef.ChapterDef ch = r.draft().chapters().get(0);
+        assertNull(ch.comparison(), "草案不写旧单值字段");
+        assertEquals(List.of("month_over_month", "year_over_year"), ch.comparisons());
+    }
+
+    /**
+     * 验证未知比较 token 剔除转 notes（降噪不整案拒绝），合法 token 保留。
+     */
+    @Test
+    void unknownComparisonTokenRemovedWithNote() {
+        DraftResult r = serviceWithLlm("""
+            {"template":{"templateId":"fx-w","name":"外汇周报","keywords":["外汇"],
+              "chapters":[{"chapterId":"a","title":"一、头寸","metrics":["cny_total_balance"],
+                "comparisons":["day_over_day","week_over_week"],"guidance":"g"}]},
+             "unresolved":[],"unanswerable":false}""")
+                .draft("每周给资金部领导看的外汇风险报告");
+        assertEquals(List.of("week_over_week"), r.draft().chapters().get(0).comparisons());
+        assertTrue(r.notes().stream().anyMatch(n -> n.contains("day_over_day") && n.contains("未知比较类型")));
+    }
+
+    /**
+     * 验证与周期粒度矩阵不符的比较剔除（月报模板里 wow 不合法，yoy 保留）——同校验器规则，
+     * 单个幻觉 token 不再导致整个草案被终检毙掉。
+     */
+    @Test
+    void granularityMismatchedComparisonRemoved() {
+        DraftResult r = serviceWithLlm("""
+            {"template":{"templateId":"fund-m","name":"资金月报","keywords":["月报"],
+              "periodTypes":["MONTH"],
+              "chapters":[{"chapterId":"a","title":"一、头寸","metrics":["cny_total_balance"],
+                "comparisons":["week_over_week","year_over_year"],"guidance":"g"}]},
+             "unresolved":[],"unanswerable":false}""")
+                .draft("每月给资金部领导看的资金月报");
+        assertEquals(List.of("year_over_year"), r.draft().chapters().get(0).comparisons());
+        assertTrue(r.notes().stream().anyMatch(n -> n.contains("week_over_week") && n.contains("不匹配")));
+    }
+
+    /**
+     * 验证非法 periodTypes 值剔除转 notes；剔完为空 → null（保持缺省 WEEK 语义不显式化）。
+     */
+    @Test
+    void illegalPeriodTypeRemovedAndEmptyBecomesNull() {
+        DraftResult r = serviceWithLlm("""
+            {"template":{"templateId":"fx-w","name":"外汇周报","keywords":["外汇"],
+              "periodTypes":["DAILY"],
+              "chapters":[{"chapterId":"a","title":"一、头寸","metrics":["cny_total_balance"],"guidance":"g"}]},
+             "unresolved":[],"unanswerable":false}""")
+                .draft("每周给资金部领导看的外汇风险报告");
+        assertNull(r.draft().periodTypes(), "非法值剔完为空须回落 null 缺省");
+        assertTrue(r.notes().stream().anyMatch(n -> n.contains("DAILY")));
+    }
+
+    /**
+     * 验证 LLM 仍按旧 schema 输出单值 comparison 时自动迁移进 comparisons 新字段。
+     */
+    @Test
+    void legacySingleComparisonFieldMigrated() {
+        DraftResult r = serviceWithLlm("""
+            {"template":{"templateId":"fx-w","name":"外汇周报","keywords":["外汇"],
+              "chapters":[{"chapterId":"a","title":"一、头寸","metrics":["cny_total_balance"],
+                "comparison":"week_over_week","guidance":"g"}]},
+             "unresolved":[],"unanswerable":false}""")
+                .draft("每周给资金部领导看的外汇风险报告");
+        ReportTemplateDef.ChapterDef ch = r.draft().chapters().get(0);
+        assertNull(ch.comparison());
+        assertEquals(List.of("week_over_week"), ch.comparisons());
+    }
+
+    /**
      * 验证终检规则（keywords/chapterId/长度）不满足时抛出可解释的字段定位错误。
      */
     @Test

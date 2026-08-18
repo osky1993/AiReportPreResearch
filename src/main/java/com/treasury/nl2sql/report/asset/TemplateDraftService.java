@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.treasury.nl2sql.llm.LlmClient;
 import com.treasury.nl2sql.report.asset.TemplateAdminService.ValidationFailedException;
 import com.treasury.nl2sql.report.asset.TemplateValidator.ValidationError;
+import com.treasury.nl2sql.report.domain.MetricQuerySpec;
+import com.treasury.nl2sql.report.pipeline.ComparisonType;
+import com.treasury.nl2sql.report.pipeline.PeriodResolver;
 import com.treasury.nl2sql.report.pipeline.TemplateMatcher;
 import com.treasury.nl2sql.report.store.TemplateAssetRepository;
 import org.slf4j.Logger;
@@ -89,6 +92,9 @@ public class TemplateDraftService {
         List<String> notes = new ArrayList<>();
 
         // ③④⑤ chapterId 重排（结构规整）+ 幻觉指标剔除转 unresolved + 剔空章节
+        //     + 非法 periodTypes/comparisons token 剔除转 notes（降噪，失败关闭仍由 ⑧ 终检兜底）
+        List<String> periodTypes = sanitizePeriodTypes(raw.periodTypes(), notes);
+        List<String> effectivePeriods = (periodTypes == null) ? List.of(PeriodResolver.TYPE_WEEK) : periodTypes;
         Map<String, MetricDefinition> catalog = assets.allMetrics();
         List<ReportTemplateDef.ChapterDef> chapters = new ArrayList<>();
         int idx = 1;
@@ -107,8 +113,10 @@ public class TemplateDraftService {
                 notes.add("章节「" + ch.title() + "」因无可用指标已移除");
                 continue;
             }
+            List<String> comps = sanitizeComparisons(ch, effectivePeriods, notes);
+            // 草案只写新字段 comparisons，旧单值 comparison 一律置 null（校验器禁止双字段同填）
             chapters.add(new ReportTemplateDef.ChapterDef("ch" + idx++, ch.title(), kept,
-                    ch.comparison(), ch.comparisons(), ch.guidance(), ch.stylePrompt(), ch.charts()));
+                    null, comps.isEmpty() ? null : comps, ch.guidance(), ch.stylePrompt(), ch.charts()));
         }
         // ⑥ 失败关闭：剔除后起草不出合法草案
         if (chapters.isEmpty()) {
@@ -119,7 +127,7 @@ public class TemplateDraftService {
         // ⑦ templateId slugify + 撞库避让
         String templateId = uniqueSlug(raw.templateId());
         ReportTemplateDef draft = new ReportTemplateDef(templateId, raw.name(), raw.keywords(),
-                raw.periodTypes(), chapters);
+                periodTypes, chapters);
 
         // ⑧ 终检（保存同款规则；通过 = 编辑器里点保存必过）
         List<ValidationError> errors = TemplateValidator.validate(draft, catalog);
@@ -172,9 +180,10 @@ public class TemplateDraftService {
                 "templateId": "小写连字符命名，如 fx-risk-weekly",
                 "name": "模板中文名",
                 "keywords": ["3~6 个中文匹配关键词（运行期按需求文本召回模板，必填）"],
+                "periodTypes": ["适用周期粒度数组，取值 WEEK/MONTH/QUARTER；由描述中的周期措辞推断（周报→WEEK、月报→MONTH、季报→QUARTER），推断不出则 null"],
                 "chapters": [
                   { "chapterId": "ch1", "title": "一、…", "metrics": ["指标目录中的 id"],
-                    "comparison": null 或 "week_over_week",
+                    "comparisons": ["本章比较声明数组，可空；合法 token 仅限：%s"],
                     "guidance": "本章写作指引（必写，≤1000 字）",
                     "stylePrompt": "本章文风要求（可省略）" }
                 ]
@@ -188,12 +197,64 @@ public class TemplateDraftService {
             - metrics 只允许使用指标目录中的 id，**禁止发明新指标 id**；描述中对应不上的口径放进 unresolved 原样列出。
             - 每个章节至少 1 个指标；凑不出指标的章节不要产出。
             - 章节数建议 2~4 章，结构参照示例：概览在前、明细居中、风险事项在后。
+            - comparisons 必须与 periodTypes 粒度匹配：WEEK 只能用 week_over_week；MONTH 可用
+              month_over_month/year_over_year；QUARTER 可用 quarter_over_quarter/year_over_year；
+              同一章节同粒度环比至多一个。拿不准就留空数组——比较方式可由人工在编辑器里补。
             - 描述与资金/司库领域完全无关（如人事、库存、天气），或空泛到无法确定报告主题时，
               输出 {"unanswerable": true, "reason": "..."}——不要硬编。
-            """.formatted(assets.metricCatalogText(), fewShotJson);
+            """.formatted(assets.metricCatalogText(), fewShotJson, ComparisonType.legalTokens());
     }
 
     // ---------- 工具 ----------
+
+    /**
+     * periodTypes 降噪：剔除 WEEK/MONTH/QUARTER 之外的幻觉值并去重；剔完为空 → null
+     * （保持「旧资产无此字段 → effectivePeriodTypes() 缺省 WEEK」的既有语义，不显式化缺省）。
+     */
+    private static List<String> sanitizePeriodTypes(List<String> rawTypes, List<String> notes) {
+        if (rawTypes == null || rawTypes.isEmpty()) return null;
+        Set<String> legal = Set.of(PeriodResolver.TYPE_WEEK, PeriodResolver.TYPE_MONTH, PeriodResolver.TYPE_QUARTER);
+        List<String> kept = new ArrayList<>();
+        for (String t : new LinkedHashSet<>(rawTypes)) {
+            if (legal.contains(t)) {
+                kept.add(t);
+            } else {
+                notes.add("已剔除非法周期粒度 " + t + "（合法值 WEEK/MONTH/QUARTER）");
+            }
+        }
+        return kept.isEmpty() ? null : kept;
+    }
+
+    /**
+     * 章节比较声明降噪（与幻觉指标剔除同型：剔除转 notes，不整案拒绝）：
+     * ① 未知 token 剔除；② 与模板周期粒度矩阵不符的剔除（须对每个粒度都适用，同校验器规则）；
+     * ③ 同粒度环比（purpose=COMPARE）至多保留第一个。终检 TemplateValidator 仍是最后闸门。
+     */
+    private static List<String> sanitizeComparisons(ReportTemplateDef.ChapterDef ch,
+                                                    List<String> effectivePeriods, List<String> notes) {
+        List<String> kept = new ArrayList<>();
+        boolean hasCompare = false;
+        for (String token : new LinkedHashSet<>(ch.effectiveComparisons())) {
+            var ct = ComparisonType.of(token).orElse(null);
+            if (ct == null) {
+                notes.add("章节「" + ch.title() + "」：已剔除未知比较类型 " + token
+                        + "（合法值 " + ComparisonType.legalTokens() + "）");
+                continue;
+            }
+            if (!effectivePeriods.stream().allMatch(ct::allows)) {
+                notes.add("章节「" + ch.title() + "」：已剔除与周期粒度不匹配的比较 " + token);
+                continue;
+            }
+            boolean isCompare = MetricQuerySpec.PURPOSE_COMPARE.equals(ct.purpose());
+            if (isCompare && hasCompare) {
+                notes.add("章节「" + ch.title() + "」：同粒度环比只保留一个，已剔除 " + token);
+                continue;
+            }
+            hasCompare |= isCompare;
+            kept.add(token);
+        }
+        return kept;
+    }
 
     /**
      * 命名归一化策略：
