@@ -185,6 +185,61 @@ class MetricAdminServiceTest {
     }
 
     /**
+     * 验证存量改版（PUT，Gate2 补元数据通路）：id 已存在时通过五重校验落新版本 DRAFT，
+     * body_json 携带 description/category。
+     */
+    @Test
+    void saveNewVersionOnExistingMetricCarriesMetadata() {
+        stubHappyTrial();
+        when(repo.existsById("invest_out_amount")).thenReturn(true);
+        when(repo.insertNewVersion(anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString(), anyString())).thenReturn(2);
+        MetricDefinition base = periodMetric();
+        MetricDefinition withMeta = new MetricDefinition(base.metricId(), base.name(), base.unit(),
+                base.timeBound(), base.comparable(), base.valueColumn(), base.nullPolicy(),
+                base.qualityChecks(), base.dimensions(), base.anomalyRules(), base.mqlTemplate(),
+                base.derived(), "本期投资类流出金额合计", "交易与收支");
+        MetricAdminService.SaveResult r = service.saveNewVersion("invest_out_amount", withMeta, "admin", null);
+        assertEquals("DRAFT", r.status());
+        assertEquals(2, r.version());
+        verify(repo).insertNewVersion(eq("invest_out_amount"), anyString(),
+                contains("本期投资类流出金额合计"), eq("DRAFT"), eq("MANUAL"), eq("admin"), eq("存量改版"));
+    }
+
+    /**
+     * 验证存量改版对不存在的 id 失败关闭（与新建的重名拒绝互补）。
+     */
+    @Test
+    void saveNewVersionRejectsUnknownId() {
+        when(repo.existsById("invest_out_amount")).thenReturn(false);
+        ValidationFailedException e = assertThrows(ValidationFailedException.class,
+                () -> service.saveNewVersion("invest_out_amount", periodMetric(), "admin", null));
+        assertTrue(e.errors().get(0).message().contains("不存在"));
+    }
+
+    /**
+     * 验证存量改版允许派生指标（向导新建不收，但改版必须能覆盖种子里的 derived 指标）：
+     * 跳过取数校验链，仅查派生引用存在性。
+     */
+    @Test
+    void saveNewVersionAcceptsDerivedMetricWithValidRefs() {
+        when(repo.existsById("week_net_inflow_cny")).thenReturn(true);
+        Map<String, MetricDefinition> catalog = new LinkedHashMap<>();
+        catalog.put("week_inflow_amount_cny", null);
+        catalog.put("week_outflow_amount_cny", null);
+        when(assets.allMetrics()).thenReturn(catalog);
+        when(repo.insertNewVersion(anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString(), anyString())).thenReturn(2);
+        MetricDefinition derived = new MetricDefinition("week_net_inflow_cny", "本期净流入", "CNY",
+                true, true, null, "ZERO", null, null, null, null,
+                new MetricDefinition.Derived("subtract", "week_inflow_amount_cny", "week_outflow_amount_cny"),
+                "流入减流出的差额", "交易与收支");
+        MetricAdminService.SaveResult r = service.saveNewVersion("week_net_inflow_cny", derived, "admin", null);
+        assertEquals("DRAFT", r.status());
+        verify(trial, never()).execute(any());
+    }
+
+    /**
      * 验证仅 DRAFT 可发布，发布成功会更新状态并刷新注册表缓存。
      */
     @Test

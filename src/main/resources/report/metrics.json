@@ -3,120 +3,266 @@
     "metricId": "cny_total_balance",
     "name": "人民币活跃账户余额合计",
     "unit": "CNY",
+    "description": "全部 ACTIVE 状态人民币账户的当前余额加总，快照口径不含冻结/销户账户",
+    "category": "账户与头寸",
     "timeBound": false,
     "comparable": false,
     "valueColumn": "total_balance",
     "nullPolicy": "BLOCK",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "account",
       "filter": [
-        { "field": "currency", "op": "=", "value": "CNY" },
-        { "field": "status", "op": "=", "value": "ACTIVE" }
+        {
+          "field": "currency",
+          "op": "=",
+          "value": "CNY"
+        },
+        {
+          "field": "status",
+          "op": "=",
+          "value": "ACTIVE"
+        }
       ],
-      "metrics": [ { "op": "sum", "field": "balance", "alias": "total_balance" } ]
+      "metrics": [
+        {
+          "op": "sum",
+          "field": "balance",
+          "alias": "total_balance"
+        }
+      ]
     }
   },
   {
     "metricId": "active_account_count",
     "name": "活跃账户数",
     "unit": "户",
+    "description": "当前状态为 ACTIVE 的账户数量，反映在用账户规模",
+    "category": "账户与头寸",
     "timeBound": false,
     "comparable": false,
     "valueColumn": "cnt",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "account",
-      "filter": [ { "field": "status", "op": "=", "value": "ACTIVE" } ],
-      "metrics": [ { "op": "count", "alias": "cnt" } ]
+      "filter": [
+        {
+          "field": "status",
+          "op": "=",
+          "value": "ACTIVE"
+        }
+      ],
+      "metrics": [
+        {
+          "op": "count",
+          "alias": "cnt"
+        }
+      ]
     }
   },
   {
     "metricId": "frozen_account_count",
     "name": "冻结账户数",
     "unit": "户",
+    "description": "当前状态为 FROZEN 的账户数量，非零须在报告中点名提示",
+    "category": "风险与待办",
     "timeBound": false,
     "comparable": false,
     "valueColumn": "cnt",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "account",
-      "filter": [ { "field": "status", "op": "=", "value": "FROZEN" } ],
-      "metrics": [ { "op": "count", "alias": "cnt" } ]
+      "filter": [
+        {
+          "field": "status",
+          "op": "=",
+          "value": "FROZEN"
+        }
+      ],
+      "metrics": [
+        {
+          "op": "count",
+          "alias": "cnt"
+        }
+      ]
     }
   },
   {
     "metricId": "deposit_balance",
     "name": "人民币定期存款账户余额",
     "unit": "CNY",
+    "description": "人民币定期存款类账户余额合计，代表头寸中的定期占位部分",
+    "category": "账户与头寸",
     "timeBound": false,
     "comparable": false,
     "valueColumn": "total_balance",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "account",
       "filter": [
-        { "field": "account_type", "op": "=", "value": "DEPOSIT" },
-        { "field": "status", "op": "=", "value": "ACTIVE" },
-        { "field": "currency", "op": "=", "value": "CNY" }
+        {
+          "field": "account_type",
+          "op": "=",
+          "value": "DEPOSIT"
+        },
+        {
+          "field": "status",
+          "op": "=",
+          "value": "ACTIVE"
+        },
+        {
+          "field": "currency",
+          "op": "=",
+          "value": "CNY"
+        }
       ],
-      "metrics": [ { "op": "sum", "field": "balance", "alias": "total_balance" } ]
+      "metrics": [
+        {
+          "op": "sum",
+          "field": "balance",
+          "alias": "total_balance"
+        }
+      ]
     }
   },
   {
     "metricId": "week_txn_count",
     "name": "本期交易笔数（不含失败）",
     "unit": "笔",
+    "description": "报告期内状态非 FAILED 的交易笔数，衡量交易活跃度",
+    "category": "交易与收支",
     "timeBound": true,
     "comparable": true,
     "valueColumn": "cnt",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "cash_transaction",
       "filter": [
-        { "field": "txn_date", "op": ">=", "value": "{{period_start}}" },
-        { "field": "txn_date", "op": "<=", "value": "{{period_end}}" },
-        { "field": "status", "op": "!=", "value": "FAILED" }
+        {
+          "field": "txn_date",
+          "op": ">=",
+          "value": "{{period_start}}"
+        },
+        {
+          "field": "txn_date",
+          "op": "<=",
+          "value": "{{period_end}}"
+        },
+        {
+          "field": "status",
+          "op": "!=",
+          "value": "FAILED"
+        }
       ],
-      "metrics": [ { "op": "count", "alias": "cnt" } ]
+      "metrics": [
+        {
+          "op": "count",
+          "alias": "cnt"
+        }
+      ]
     }
   },
   {
     "metricId": "week_txn_amount_cny",
     "name": "本期交易总额（折人民币）",
     "unit": "CNY",
+    "description": "报告期内全部成功交易金额按汇率折人民币加总",
+    "category": "交易与收支",
     "timeBound": true,
     "comparable": true,
     "valueColumn": "total_cny",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "anomalyRules": [
-      { "type": "volatility", "basis": "wow", "absPct": 30, "dimensionMetricId": "week_txn_amount_by_currency" },
-      { "type": "volatility", "basis": "mom", "absPct": 30, "dimensionMetricId": "week_txn_amount_by_currency" },
-      { "type": "volatility", "basis": "yoy", "absPct": 50 }
+      {
+        "type": "volatility",
+        "basis": "wow",
+        "absPct": 30,
+        "dimensionMetricId": "week_txn_amount_by_currency"
+      },
+      {
+        "type": "volatility",
+        "basis": "mom",
+        "absPct": 30,
+        "dimensionMetricId": "week_txn_amount_by_currency"
+      },
+      {
+        "type": "volatility",
+        "basis": "yoy",
+        "absPct": 50
+      }
     ],
     "mqlTemplate": {
       "table": "cash_transaction",
       "joins": [
-        { "table": "currency_rate", "type": "inner",
-          "on": [ { "left": "cash_transaction.currency", "right": "currency_rate.currency" } ] }
+        {
+          "table": "currency_rate",
+          "type": "inner",
+          "on": [
+            {
+              "left": "cash_transaction.currency",
+              "right": "currency_rate.currency"
+            }
+          ]
+        }
       ],
       "filter": [
-        { "field": "currency_rate.rate_date", "op": "=",
-          "subquery": { "table": "currency_rate",
-                        "metrics": [ { "op": "max", "field": "rate_date", "alias": "latest" } ] } },
-        { "field": "cash_transaction.txn_date", "op": ">=", "value": "{{period_start}}" },
-        { "field": "cash_transaction.txn_date", "op": "<=", "value": "{{period_end}}" },
-        { "field": "cash_transaction.status", "op": "!=", "value": "FAILED" }
+        {
+          "field": "currency_rate.rate_date",
+          "op": "=",
+          "subquery": {
+            "table": "currency_rate",
+            "metrics": [
+              {
+                "op": "max",
+                "field": "rate_date",
+                "alias": "latest"
+              }
+            ]
+          }
+        },
+        {
+          "field": "cash_transaction.txn_date",
+          "op": ">=",
+          "value": "{{period_start}}"
+        },
+        {
+          "field": "cash_transaction.txn_date",
+          "op": "<=",
+          "value": "{{period_end}}"
+        },
+        {
+          "field": "cash_transaction.status",
+          "op": "!=",
+          "value": "FAILED"
+        }
       ],
       "metrics": [
-        { "op": "sum",
-          "fieldExpr": { "left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny" },
-          "alias": "total_cny" }
+        {
+          "op": "sum",
+          "fieldExpr": {
+            "left": "cash_transaction.amount",
+            "arith": "*",
+            "right": "currency_rate.rate_to_cny"
+          },
+          "alias": "total_cny"
+        }
       ]
     }
   },
@@ -124,30 +270,75 @@
     "metricId": "week_inflow_amount_cny",
     "name": "本期流入金额（折人民币）",
     "unit": "CNY",
+    "description": "报告期内流入方向交易金额折人民币加总",
+    "category": "交易与收支",
     "timeBound": true,
     "comparable": true,
     "valueColumn": "total_cny",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "cash_transaction",
       "joins": [
-        { "table": "currency_rate", "type": "inner",
-          "on": [ { "left": "cash_transaction.currency", "right": "currency_rate.currency" } ] }
+        {
+          "table": "currency_rate",
+          "type": "inner",
+          "on": [
+            {
+              "left": "cash_transaction.currency",
+              "right": "currency_rate.currency"
+            }
+          ]
+        }
       ],
       "filter": [
-        { "field": "currency_rate.rate_date", "op": "=",
-          "subquery": { "table": "currency_rate",
-                        "metrics": [ { "op": "max", "field": "rate_date", "alias": "latest" } ] } },
-        { "field": "cash_transaction.direction", "op": "=", "value": "IN" },
-        { "field": "cash_transaction.txn_date", "op": ">=", "value": "{{period_start}}" },
-        { "field": "cash_transaction.txn_date", "op": "<=", "value": "{{period_end}}" },
-        { "field": "cash_transaction.status", "op": "!=", "value": "FAILED" }
+        {
+          "field": "currency_rate.rate_date",
+          "op": "=",
+          "subquery": {
+            "table": "currency_rate",
+            "metrics": [
+              {
+                "op": "max",
+                "field": "rate_date",
+                "alias": "latest"
+              }
+            ]
+          }
+        },
+        {
+          "field": "cash_transaction.direction",
+          "op": "=",
+          "value": "IN"
+        },
+        {
+          "field": "cash_transaction.txn_date",
+          "op": ">=",
+          "value": "{{period_start}}"
+        },
+        {
+          "field": "cash_transaction.txn_date",
+          "op": "<=",
+          "value": "{{period_end}}"
+        },
+        {
+          "field": "cash_transaction.status",
+          "op": "!=",
+          "value": "FAILED"
+        }
       ],
       "metrics": [
-        { "op": "sum",
-          "fieldExpr": { "left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny" },
-          "alias": "total_cny" }
+        {
+          "op": "sum",
+          "fieldExpr": {
+            "left": "cash_transaction.amount",
+            "arith": "*",
+            "right": "currency_rate.rate_to_cny"
+          },
+          "alias": "total_cny"
+        }
       ]
     }
   },
@@ -155,30 +346,75 @@
     "metricId": "week_outflow_amount_cny",
     "name": "本期流出金额（折人民币）",
     "unit": "CNY",
+    "description": "报告期内流出方向交易金额折人民币加总",
+    "category": "交易与收支",
     "timeBound": true,
     "comparable": true,
     "valueColumn": "total_cny",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "cash_transaction",
       "joins": [
-        { "table": "currency_rate", "type": "inner",
-          "on": [ { "left": "cash_transaction.currency", "right": "currency_rate.currency" } ] }
+        {
+          "table": "currency_rate",
+          "type": "inner",
+          "on": [
+            {
+              "left": "cash_transaction.currency",
+              "right": "currency_rate.currency"
+            }
+          ]
+        }
       ],
       "filter": [
-        { "field": "currency_rate.rate_date", "op": "=",
-          "subquery": { "table": "currency_rate",
-                        "metrics": [ { "op": "max", "field": "rate_date", "alias": "latest" } ] } },
-        { "field": "cash_transaction.direction", "op": "=", "value": "OUT" },
-        { "field": "cash_transaction.txn_date", "op": ">=", "value": "{{period_start}}" },
-        { "field": "cash_transaction.txn_date", "op": "<=", "value": "{{period_end}}" },
-        { "field": "cash_transaction.status", "op": "!=", "value": "FAILED" }
+        {
+          "field": "currency_rate.rate_date",
+          "op": "=",
+          "subquery": {
+            "table": "currency_rate",
+            "metrics": [
+              {
+                "op": "max",
+                "field": "rate_date",
+                "alias": "latest"
+              }
+            ]
+          }
+        },
+        {
+          "field": "cash_transaction.direction",
+          "op": "=",
+          "value": "OUT"
+        },
+        {
+          "field": "cash_transaction.txn_date",
+          "op": ">=",
+          "value": "{{period_start}}"
+        },
+        {
+          "field": "cash_transaction.txn_date",
+          "op": "<=",
+          "value": "{{period_end}}"
+        },
+        {
+          "field": "cash_transaction.status",
+          "op": "!=",
+          "value": "FAILED"
+        }
       ],
       "metrics": [
-        { "op": "sum",
-          "fieldExpr": { "left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny" },
-          "alias": "total_cny" }
+        {
+          "op": "sum",
+          "fieldExpr": {
+            "left": "cash_transaction.amount",
+            "arith": "*",
+            "right": "currency_rate.rate_to_cny"
+          },
+          "alias": "total_cny"
+        }
       ]
     }
   },
@@ -186,161 +422,366 @@
     "metricId": "week_net_inflow_cny",
     "name": "本期净流入（折人民币）",
     "unit": "CNY",
+    "description": "流入减流出的差额（派生指标，由程序从流入/流出事实计算，不单独取数）",
+    "category": "交易与收支",
     "timeBound": true,
     "comparable": true,
     "valueColumn": null,
     "nullPolicy": "ZERO",
     "qualityChecks": [],
-    "derived": { "op": "subtract", "left": "week_inflow_amount_cny", "right": "week_outflow_amount_cny" }
+    "derived": {
+      "op": "subtract",
+      "left": "week_inflow_amount_cny",
+      "right": "week_outflow_amount_cny"
+    }
   },
   {
     "metricId": "payroll_out_amount",
     "name": "本期工资发放金额（人民币）",
     "unit": "CNY",
+    "description": "报告期内工资类流出交易的人民币金额合计",
+    "category": "交易与收支",
     "timeBound": true,
     "comparable": true,
     "valueColumn": "total_amount",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "cash_transaction",
       "filter": [
-        { "field": "direction", "op": "=", "value": "OUT" },
-        { "field": "category", "op": "=", "value": "PAYROLL" },
-        { "field": "currency", "op": "=", "value": "CNY" },
-        { "field": "txn_date", "op": ">=", "value": "{{period_start}}" },
-        { "field": "txn_date", "op": "<=", "value": "{{period_end}}" },
-        { "field": "status", "op": "!=", "value": "FAILED" }
+        {
+          "field": "direction",
+          "op": "=",
+          "value": "OUT"
+        },
+        {
+          "field": "category",
+          "op": "=",
+          "value": "PAYROLL"
+        },
+        {
+          "field": "currency",
+          "op": "=",
+          "value": "CNY"
+        },
+        {
+          "field": "txn_date",
+          "op": ">=",
+          "value": "{{period_start}}"
+        },
+        {
+          "field": "txn_date",
+          "op": "<=",
+          "value": "{{period_end}}"
+        },
+        {
+          "field": "status",
+          "op": "!=",
+          "value": "FAILED"
+        }
       ],
-      "metrics": [ { "op": "sum", "field": "amount", "alias": "total_amount" } ]
+      "metrics": [
+        {
+          "op": "sum",
+          "field": "amount",
+          "alias": "total_amount"
+        }
+      ]
     }
   },
   {
     "metricId": "tax_txn_count",
     "name": "本期税款缴纳笔数",
     "unit": "笔",
+    "description": "报告期内税款缴纳类交易笔数",
+    "category": "交易与收支",
     "timeBound": true,
     "comparable": true,
     "valueColumn": "cnt",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "cash_transaction",
       "filter": [
-        { "field": "category", "op": "=", "value": "TAX" },
-        { "field": "txn_date", "op": ">=", "value": "{{period_start}}" },
-        { "field": "txn_date", "op": "<=", "value": "{{period_end}}" },
-        { "field": "status", "op": "!=", "value": "FAILED" }
+        {
+          "field": "category",
+          "op": "=",
+          "value": "TAX"
+        },
+        {
+          "field": "txn_date",
+          "op": ">=",
+          "value": "{{period_start}}"
+        },
+        {
+          "field": "txn_date",
+          "op": "<=",
+          "value": "{{period_end}}"
+        },
+        {
+          "field": "status",
+          "op": "!=",
+          "value": "FAILED"
+        }
       ],
-      "metrics": [ { "op": "count", "alias": "cnt" } ]
+      "metrics": [
+        {
+          "op": "count",
+          "alias": "cnt"
+        }
+      ]
     }
   },
   {
     "metricId": "large_txn_count",
     "name": "本期大额交易笔数（人民币单笔≥50万）",
     "unit": "笔",
+    "description": "报告期内人民币单笔金额≥50万的交易笔数，大额资金流动监控口径",
+    "category": "风险与待办",
     "timeBound": true,
     "comparable": true,
     "valueColumn": "cnt",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "cash_transaction",
       "filter": [
-        { "field": "currency", "op": "=", "value": "CNY" },
-        { "field": "amount", "op": ">=", "value": 500000 },
-        { "field": "txn_date", "op": ">=", "value": "{{period_start}}" },
-        { "field": "txn_date", "op": "<=", "value": "{{period_end}}" },
-        { "field": "status", "op": "!=", "value": "FAILED" }
+        {
+          "field": "currency",
+          "op": "=",
+          "value": "CNY"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000
+        },
+        {
+          "field": "txn_date",
+          "op": ">=",
+          "value": "{{period_start}}"
+        },
+        {
+          "field": "txn_date",
+          "op": "<=",
+          "value": "{{period_end}}"
+        },
+        {
+          "field": "status",
+          "op": "!=",
+          "value": "FAILED"
+        }
       ],
-      "metrics": [ { "op": "count", "alias": "cnt" } ]
+      "metrics": [
+        {
+          "op": "count",
+          "alias": "cnt"
+        }
+      ]
     }
   },
   {
     "metricId": "in_transit_txn_count",
     "name": "在途交易笔数（当前快照）",
     "unit": "笔",
+    "description": "当前处于在途状态的交易笔数（快照），反映清算中资金",
+    "category": "风险与待办",
     "timeBound": false,
     "comparable": false,
     "valueColumn": "cnt",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "cash_transaction",
-      "filter": [ { "field": "status", "op": "=", "value": "IN_TRANSIT" } ],
-      "metrics": [ { "op": "count", "alias": "cnt" } ]
+      "filter": [
+        {
+          "field": "status",
+          "op": "=",
+          "value": "IN_TRANSIT"
+        }
+      ],
+      "metrics": [
+        {
+          "op": "count",
+          "alias": "cnt"
+        }
+      ]
     }
   },
   {
     "metricId": "pending_payment_count",
     "name": "待审批付款单数（当前快照）",
     "unit": "单",
+    "description": "当前待审批状态的付款单数量（快照）",
+    "category": "风险与待办",
     "timeBound": false,
     "comparable": false,
     "valueColumn": "cnt",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "payment_order",
-      "filter": [ { "field": "status", "op": "=", "value": "PENDING" } ],
-      "metrics": [ { "op": "count", "alias": "cnt" } ]
+      "filter": [
+        {
+          "field": "status",
+          "op": "=",
+          "value": "PENDING"
+        }
+      ],
+      "metrics": [
+        {
+          "op": "count",
+          "alias": "cnt"
+        }
+      ]
     }
   },
   {
     "metricId": "loan_outstanding_balance",
     "name": "人民币贷款本金余额",
     "unit": "CNY",
+    "description": "人民币贷款合同的未偿本金余额合计",
+    "category": "融资与偿付",
     "timeBound": false,
     "comparable": false,
     "valueColumn": "total_principal",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "loan",
-      "filter": [ { "field": "currency", "op": "=", "value": "CNY" } ],
-      "metrics": [ { "op": "sum", "field": "principal", "alias": "total_principal" } ]
+      "filter": [
+        {
+          "field": "currency",
+          "op": "=",
+          "value": "CNY"
+        }
+      ],
+      "metrics": [
+        {
+          "op": "sum",
+          "field": "principal",
+          "alias": "total_principal"
+        }
+      ]
     }
   },
   {
     "metricId": "due_repayment_count",
     "name": "未偿还还款计划项数（当前快照）",
     "unit": "项",
+    "description": "还款计划中尚未偿还的计划项数（快照），逾期风险跟踪口径",
+    "category": "融资与偿付",
     "timeBound": false,
     "comparable": false,
     "valueColumn": "cnt",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
     "mqlTemplate": {
       "table": "loan_repayment",
-      "filter": [ { "field": "paid", "op": "=", "value": 0 } ],
-      "metrics": [ { "op": "count", "alias": "cnt" } ]
+      "filter": [
+        {
+          "field": "paid",
+          "op": "=",
+          "value": 0
+        }
+      ],
+      "metrics": [
+        {
+          "op": "count",
+          "alias": "cnt"
+        }
+      ]
     }
   },
   {
     "metricId": "week_txn_amount_by_currency",
     "name": "本期交易金额按币种拆解（折人民币）",
     "unit": "CNY",
+    "description": "报告期交易金额按币种维度拆解后折人民币，用于币种构成分析",
+    "category": "交易与收支",
     "timeBound": true,
     "comparable": false,
     "valueColumn": "total_cny",
     "nullPolicy": "ZERO",
-    "qualityChecks": ["NON_NEGATIVE"],
-    "dimensions": ["currency"],
+    "qualityChecks": [
+      "NON_NEGATIVE"
+    ],
+    "dimensions": [
+      "currency"
+    ],
     "mqlTemplate": {
       "table": "cash_transaction",
-      "joins": [ { "table": "currency_rate", "type": "inner",
-                   "on": [ { "left": "cash_transaction.currency", "right": "currency_rate.currency" } ] } ],
-      "filter": [
-        { "field": "currency_rate.rate_date", "op": "=",
-          "subquery": { "table": "currency_rate", "metrics": [ { "op": "max", "field": "rate_date", "alias": "latest" } ] } },
-        { "field": "cash_transaction.txn_date", "op": ">=", "value": "{{period_start}}" },
-        { "field": "cash_transaction.txn_date", "op": "<=", "value": "{{period_end}}" },
-        { "field": "cash_transaction.status", "op": "!=", "value": "FAILED" }
+      "joins": [
+        {
+          "table": "currency_rate",
+          "type": "inner",
+          "on": [
+            {
+              "left": "cash_transaction.currency",
+              "right": "currency_rate.currency"
+            }
+          ]
+        }
       ],
-      "groupBy": ["cash_transaction.currency"],
-      "metrics": [ { "op": "sum",
-                     "fieldExpr": { "left": "cash_transaction.amount", "arith": "*", "right": "currency_rate.rate_to_cny" },
-                     "alias": "total_cny" } ]
+      "filter": [
+        {
+          "field": "currency_rate.rate_date",
+          "op": "=",
+          "subquery": {
+            "table": "currency_rate",
+            "metrics": [
+              {
+                "op": "max",
+                "field": "rate_date",
+                "alias": "latest"
+              }
+            ]
+          }
+        },
+        {
+          "field": "cash_transaction.txn_date",
+          "op": ">=",
+          "value": "{{period_start}}"
+        },
+        {
+          "field": "cash_transaction.txn_date",
+          "op": "<=",
+          "value": "{{period_end}}"
+        },
+        {
+          "field": "cash_transaction.status",
+          "op": "!=",
+          "value": "FAILED"
+        }
+      ],
+      "groupBy": [
+        "cash_transaction.currency"
+      ],
+      "metrics": [
+        {
+          "op": "sum",
+          "fieldExpr": {
+            "left": "cash_transaction.amount",
+            "arith": "*",
+            "right": "currency_rate.rate_to_cny"
+          },
+          "alias": "total_cny"
+        }
+      ]
     }
   }
 ]

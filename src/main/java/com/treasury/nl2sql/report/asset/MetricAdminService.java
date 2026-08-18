@@ -117,6 +117,66 @@ public class MetricAdminService {
         checkStructure(m, errors);
         failIfAny(errors);
 
+        validateFetchChain(m);
+
+        String remark = tryQuestion == null || tryQuestion.isBlank() ? "指标向导制作"
+                : "试查问法: " + tryQuestion;
+        // 新建永远写 DRAFT：必须经过独立发布动作才允许上线，避免生成即发布带来的误发布风险。
+        int v = repo.insertNewVersion(m.metricId(), m.name(), toJson(m),
+                "DRAFT", "MANUAL", blankTo(createdBy), remark);
+        log.info("[METRIC-ADMIN] 新建指标 {} v{} DRAFT by {}", m.metricId(), v, createdBy);
+        return new SaveResult(m.metricId(), v, "DRAFT");
+    }
+
+    /**
+     * 存量指标发新版（Gate2：补 description/category 元数据、修口径等）。与 save() 的差异仅两点：
+     * ① id 必须已存在（save 是拒绝重名新建）；② 允许派生指标（种子里有 derived 指标，向导不做但改版要能覆盖）——
+     * 派生指标无 MQL，跳过取数校验链，只查派生引用存在性；深层引用规则由 publish 时 assets.reload() 自检兜底（失败回滚）。
+     * 产物一律新版本 DRAFT——行不可变，绝无 UPDATE body_json。
+     */
+    public SaveResult saveNewVersion(String metricId, MetricDefinition m, String createdBy, String remark) {
+        List<ValidationError> errors = new ArrayList<>();
+        if (m == null) {
+            throw new ValidationFailedException(List.of(err("STRUCTURE", "指标体为空")));
+        }
+        if (!metricId.equals(m.metricId())) {
+            errors.add(err("STRUCTURE", "路径 id 与指标体 metricId 不一致: " + metricId + " ≠ " + m.metricId()));
+        }
+        if (!repo.existsById(metricId)) {
+            errors.add(err("STRUCTURE", "指标不存在，存量改版要求 id 已入库: " + metricId));
+        }
+        checkCommonStructure(m, errors);
+        if (m.isDerivedMetric()) {
+            if (m.mqlTemplate() != null && !m.mqlTemplate().isNull()) {
+                errors.add(err("STRUCTURE", "派生指标不得同时携带 mqlTemplate"));
+            }
+            Map<String, MetricDefinition> catalog = assets.allMetrics();
+            for (String ref : List.of(String.valueOf(m.derived().left()), String.valueOf(m.derived().right()))) {
+                if (!catalog.containsKey(ref)) {
+                    errors.add(err("STRUCTURE", "派生引用的指标不存在: " + ref));
+                }
+            }
+            failIfAny(errors);
+        } else {
+            if (m.valueColumn() == null || m.valueColumn().isBlank()) {
+                errors.add(err("STRUCTURE", "valueColumn 不能为空"));
+            }
+            if (m.mqlTemplate() == null || m.mqlTemplate().isNull()) {
+                errors.add(err("STRUCTURE", "缺少 mqlTemplate"));
+            }
+            failIfAny(errors);
+            validateFetchChain(m);
+        }
+        int v = repo.insertNewVersion(metricId, m.name(), toJson(m),
+                "DRAFT", "MANUAL", blankTo(createdBy),
+                remark == null || remark.isBlank() ? "存量改版" : remark);
+        log.info("[METRIC-ADMIN] 指标 {} 存量改版 v{} DRAFT by {}", metricId, v, createdBy);
+        return new SaveResult(metricId, v, "DRAFT");
+    }
+
+    /** 取数指标的 ②~⑤ 重校验（占位符/白名单/试执行/结果形状），save 与 saveNewVersion 共用。 */
+    private void validateFetchChain(MetricDefinition m) {
+        List<ValidationError> errors = new ArrayList<>();
         // ② PLACEHOLDER：哨兵填充无残留 + timeBound 双向一致性
         String tplStr = m.mqlTemplate().toString();
         if (m.timeBound() && !tplStr.contains("{{")) {
@@ -176,14 +236,6 @@ public class MetricAdminService {
             throw new ValidationFailedException(List.of(err("RESULT_SHAPE",
                     "试执行结果中不存在 valueColumn「" + m.valueColumn() + "」，实际列: " + rows.get(0).keySet())));
         }
-
-        String remark = tryQuestion == null || tryQuestion.isBlank() ? "指标向导制作"
-                : "试查问法: " + tryQuestion;
-        // 新建永远写 DRAFT：必须经过独立发布动作才允许上线，避免生成即发布带来的误发布风险。
-        int v = repo.insertNewVersion(m.metricId(), m.name(), toJson(m),
-                "DRAFT", "MANUAL", blankTo(createdBy), remark);
-        log.info("[METRIC-ADMIN] 新建指标 {} v{} DRAFT by {}", m.metricId(), v, createdBy);
-        return new SaveResult(m.metricId(), v, "DRAFT");
     }
 
     /**
@@ -195,25 +247,32 @@ public class MetricAdminService {
             errors.add(err("STRUCTURE", "指标体为空"));
             return;
         }
-        if (m.metricId() == null || !METRIC_ID.matcher(m.metricId()).matches()) {
-            errors.add(err("STRUCTURE", "metricId 必须匹配 ^[a-z][a-z0-9_]{2,63}$（当前: " + m.metricId() + "）"));
-        } else if (repo.existsById(m.metricId())) {
+        checkCommonStructure(m, errors);
+        if (m.metricId() != null && METRIC_ID.matcher(m.metricId()).matches()
+                && repo.existsById(m.metricId())) {
             errors.add(err("STRUCTURE", "指标已存在，不允许重名新建: " + m.metricId()));
         }
-        if (m.name() == null || m.name().isBlank()) errors.add(err("STRUCTURE", "指标名称不能为空"));
-        if (m.unit() == null || m.unit().isBlank()) errors.add(err("STRUCTURE", "单位不能为空"));
         if (m.valueColumn() == null || m.valueColumn().isBlank()) errors.add(err("STRUCTURE", "valueColumn 不能为空"));
-        if (m.nullPolicy() == null || !NULL_POLICIES.contains(m.nullPolicy())) {
-            errors.add(err("STRUCTURE", "nullPolicy 只允许 ZERO/BLOCK（当前: " + m.nullPolicy() + "）"));
-        }
-        if (m.qualityChecks() != null && !QUALITY_CHECKS.containsAll(m.qualityChecks())) {
-            errors.add(err("STRUCTURE", "qualityChecks 只支持 NON_NEGATIVE（当前: " + m.qualityChecks() + "）"));
-        }
         if (m.derived() != null) {
             errors.add(err("STRUCTURE", "向导只制作取数指标，不接受 derived 派生定义"));
         }
         if (m.mqlTemplate() == null || m.mqlTemplate().isNull()) {
             errors.add(err("STRUCTURE", "缺少 mqlTemplate"));
+        }
+    }
+
+    /** 新建与存量改版共用的字段级结构校验（id 形态/名称/单位/nullPolicy/质量断言/可比一致性）。 */
+    private void checkCommonStructure(MetricDefinition m, List<ValidationError> errors) {
+        if (m.metricId() == null || !METRIC_ID.matcher(m.metricId()).matches()) {
+            errors.add(err("STRUCTURE", "metricId 必须匹配 ^[a-z][a-z0-9_]{2,63}$（当前: " + m.metricId() + "）"));
+        }
+        if (m.name() == null || m.name().isBlank()) errors.add(err("STRUCTURE", "指标名称不能为空"));
+        if (m.unit() == null || m.unit().isBlank()) errors.add(err("STRUCTURE", "单位不能为空"));
+        if (m.nullPolicy() == null || !NULL_POLICIES.contains(m.nullPolicy())) {
+            errors.add(err("STRUCTURE", "nullPolicy 只允许 ZERO/BLOCK（当前: " + m.nullPolicy() + "）"));
+        }
+        if (m.qualityChecks() != null && !QUALITY_CHECKS.containsAll(m.qualityChecks())) {
+            errors.add(err("STRUCTURE", "qualityChecks 只支持 NON_NEGATIVE（当前: " + m.qualityChecks() + "）"));
         }
         if (m.comparable() && !m.timeBound()) {
             errors.add(err("STRUCTURE", "comparable=true 要求 timeBound=true（快照指标无环比可言）"));

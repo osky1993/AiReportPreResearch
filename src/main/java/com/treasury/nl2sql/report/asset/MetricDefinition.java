@@ -23,6 +23,10 @@ import java.util.List;
  *                    未声明（null/空）= 单值指标，行为与 Phase03 前完全一致
  * @param anomalyRules 异常规则（Phase05 契约1，程序判定零 LLM）：命中产 ANOMALY fact；
  *                     null/空 = 不做异常检测，行为与 Phase05 前完全一致
+ * @param description 业务口径一句话描述（展示层元数据：选择器提示 + 喂给起草/大纲 prompt 提升映射命中率；
+ *                    可空——旧资产无此字段，不参与取数/校验/事实链路）
+ * @param category    业务分组名（如「账户与头寸」「交易与收支」；展示层元数据，选择器分组用；
+ *                    可空——前端对无分组指标按启发式兜底分组）
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)   // 入库 body_json 不带 null 字段（否则 mqlTemplate:null 会回读成 NullNode）
@@ -38,7 +42,18 @@ public record MetricDefinition(
         List<String> dimensions,
         List<AnomalyRule> anomalyRules,
         JsonNode mqlTemplate,
-        Derived derived) {
+        Derived derived,
+        String description,
+        String category) {
+
+    /** 旧签名兼容构造器（Phase06 前的调用方/测试无描述与分组）：description/category 置 null。 */
+    public MetricDefinition(String metricId, String name, String unit, boolean timeBound, boolean comparable,
+                            String valueColumn, String nullPolicy, List<String> qualityChecks,
+                            List<String> dimensions, List<AnomalyRule> anomalyRules,
+                            JsonNode mqlTemplate, Derived derived) {
+        this(metricId, name, unit, timeBound, comparable, valueColumn, nullPolicy,
+                qualityChecks, dimensions, anomalyRules, mqlTemplate, derived, null, null);
+    }
 
     /** 空值处理策略：ZERO=空窗口按0继续；BLOCK=出现 null 立即失败关闭。 */
     public static final String NULL_ZERO = "ZERO";

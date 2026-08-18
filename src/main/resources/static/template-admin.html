@@ -219,10 +219,11 @@ function render(){
           return avail.map(mc=>`<label class="metric"><input type="checkbox" ${(c.comparisons||[]).includes(mc.token)?'checked':''}
             onchange="toggleComp(${i},'${mc.token}')"> ${esc(mc.label)}</label>`).join('');
         })()}</div>
-      <div class="field"><div class="fl">指标（勾选，选项来自指标资产）</div>
-        ${METRICS.map(m=>`<label class="metric"><input type="checkbox" ${c.metrics.includes(m.metricId)?'checked':''}
-          onchange="toggleMetric(${i},'${m.metricId}')"> ${esc(m.name)} <span class="muted">${esc(m.metricId)}</span></label>`).join('')}
-        <a href="#" onclick="goMakeMetric(${i});return false" style="font-size:12px;color:var(--accent);white-space:nowrap">没有想要的指标？去制作 →</a>
+      <div class="field"><div class="fl">指标（搜索 / 按业务分组勾选；悬停查看口径描述）
+          <a href="#" onclick="goMakeMetric(${i});return false" style="font-size:12px;color:var(--accent);white-space:nowrap;margin-left:8px">没有想要的指标？去制作 →</a></div>
+        <input type="text" style="width:260px;margin-bottom:4px" placeholder="搜索指标 id / 名称 / 描述…"
+          value="${esc(MSEARCH[i]||'')}" oninput="MSEARCH[${i}]=this.value; $('msel-${i}').innerHTML=metricListHtml(${i})">
+        <div id="msel-${i}">${metricListHtml(i)}</div>
       </div>
       <div class="field"><div class="fl">写作指引 guidance</div>
         <textarea onchange="setCh(${i},'guidance',this.value)">${esc(c.guidance||'')}</textarea></div>
@@ -319,6 +320,43 @@ function nextChapterId(){
 }
 function addCh(){ EDIT.chapters.push({chapterId:nextChapterId(), title:'', metrics:[], comparisons:[], guidance:'', stylePrompt:''}); render(); }
 function delCh(i){ EDIT.chapters.splice(i,1); render(); }
+/* ---------- 指标选择器（搜索 + 分组 + 口径提示） ---------- */
+let MSEARCH = {};   // 各章节搜索词（编辑态瞬态，不入 payload）
+
+// 无 category 元数据的存量指标按 id 启发式兜底分组（补元数据发新版后自动切真实分组）
+function heuristicCategory(m){
+  const id = m.metricId || '';
+  if(/loan|repay/.test(id)) return '融资与偿付';
+  if(/frozen|large|in_transit|pending/.test(id)) return '风险与待办';
+  if(/account|balance|deposit/.test(id)) return '账户与头寸';
+  if(/txn|inflow|outflow|payroll|tax|invest/.test(id)) return '交易与收支';
+  return '其他';
+}
+
+function metricTooltip(m){
+  const parts = [];
+  if(m.description) parts.push(m.description);
+  parts.push('单位 ' + (m.unit||'-') + ' · ' + (m.timeBound?'期间指标':'快照指标')
+    + (m.dimensions&&m.dimensions.length ? ' · 维度:'+m.dimensions.join('/') : '')
+    + (m.derived ? ' · 派生指标' : ''));
+  return parts.join('\n');
+}
+
+function metricListHtml(i){
+  const c = EDIT.chapters[i];
+  const q = (MSEARCH[i]||'').trim().toLowerCase();
+  const hit = METRICS.filter(m => !q ||
+    (m.metricId + (m.name||'') + (m.description||'')).toLowerCase().includes(q));
+  if(!hit.length) return '<span class="muted">无匹配指标</span>';
+  const groups = {};
+  hit.forEach(m => { const g = m.category || heuristicCategory(m); (groups[g]=groups[g]||[]).push(m); });
+  return Object.entries(groups).map(([g,ms])=>`<details open style="margin:2px 0">
+    <summary style="cursor:pointer;font-size:12px;color:var(--muted)">${esc(g)}（${ms.length}）</summary>
+    ${ms.map(m=>`<label class="metric" title="${esc(metricTooltip(m))}"><input type="checkbox" ${c.metrics.includes(m.metricId)?'checked':''}
+      onchange="toggleMetric(${i},'${m.metricId}')"> ${esc(m.name)} <span class="muted">${esc(m.metricId)}</span></label>`).join('')}
+  </details>`).join('');
+}
+
 /* ---------- 指标元数据辅助（图表绑定预过滤） ---------- */
 function metricDef(id){ return METRICS.find(m=>m.metricId===id); }
 // 与服务端 TemplateValidator 同规则：series=期间(timeBound)非派生无维度；dimension=维度指标

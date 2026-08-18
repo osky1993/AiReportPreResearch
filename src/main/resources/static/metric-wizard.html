@@ -93,7 +93,8 @@ function fresh(){
   return { step: 1, question: '', tryResult: null, explain: null,
            suggestions: null, applied: [], mqlTemplate: null, snapshotConfirmed: false,
            meta: { metricId:'', name:'', unit:'CNY', valueColumn:'', timeBound:null,
-                   comparable:false, nullPolicy:'ZERO', nonNegative:true },
+                   comparable:false, nullPolicy:'ZERO', nonNegative:true,
+                   description:'', category:'' },
            saved: null, errors: [], okmsg: '', returnTo: null, chapterIdx: null };
 }
 function load(){ try{ return JSON.parse(sessionStorage.getItem('metric-wizard')); }catch(e){ return null; } }
@@ -299,6 +300,12 @@ function step4(){
       <div class="field"><div class="fl">质量断言</div>
         <label style="font-size:13px"><input type="checkbox" ${m.nonNegative?'checked':''}
           onchange="WIZ.meta.nonNegative=this.checked;persist()"> NON_NEGATIVE（负值失败关闭）</label></div>
+      <div class="field"><div class="fl">口径描述（可选——模板编辑器悬停提示 + AI 起草指标映射参考；第 2 步核验过的口径说明可直接粘贴）</div>
+        <textarea style="min-height:40px" onchange="WIZ.meta.description=this.value.trim();persist()">${esc(m.description||'')}</textarea></div>
+      <div class="field"><div class="fl">业务分组（可选——模板编辑器指标选择器按此分组，如「账户与头寸」「交易与收支」「风险与待办」「融资与偿付」）</div>
+        <input type="text" style="width:220px" value="${esc(m.category||'')}" list="cat-hints"
+          onchange="WIZ.meta.category=this.value.trim();persist()">
+        <datalist id="cat-hints"><option>账户与头寸</option><option>交易与收支</option><option>风险与待办</option><option>融资与偿付</option></datalist></div>
     </div>
     <div class="row"><button class="okbtn" onclick="goto(5)">下一步：提交 →</button></div>
     ${errBox()}</div>`;
@@ -311,7 +318,8 @@ function metricPayload(){
            timeBound: !!m.timeBound, comparable: !!m.comparable,
            valueColumn: m.valueColumn, nullPolicy: m.nullPolicy,
            qualityChecks: m.nonNegative ? ['NON_NEGATIVE'] : [],
-           mqlTemplate: WIZ.mqlTemplate };
+           mqlTemplate: WIZ.mqlTemplate,
+           description: m.description || null, category: m.category || null };
 }
 
 function step5(){

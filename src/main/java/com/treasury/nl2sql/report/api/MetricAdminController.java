@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -102,6 +103,16 @@ public class MetricAdminController {
     public ResponseEntity<MetricAdminService.SaveResult> save(@RequestBody SaveRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(service.save(req.metric(), req.tryQuestion(), req.createdBy()));
+    }
+
+    /**
+     * 存量指标发新版（Gate2：补 description/category 元数据、修口径描述等）。
+     * <p>与 POST 新建互补：id 必须已存在；产物一律新版本 DRAFT，须独立 publish 才生效——行不可变。</p>
+     */
+    @PutMapping("/{id}")
+    public MetricAdminService.SaveResult saveNewVersion(@PathVariable String id, @RequestBody SaveRequest req) {
+        return service.saveNewVersion(id, req.metric(), req.createdBy(),
+                req.tryQuestion() == null || req.tryQuestion().isBlank() ? null : "试查问法: " + req.tryQuestion());
     }
 
     /**

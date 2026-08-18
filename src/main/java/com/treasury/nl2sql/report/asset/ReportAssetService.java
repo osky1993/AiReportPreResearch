@@ -352,13 +352,19 @@ public class ReportAssetService {
         return defs;
     }
 
-    /** 指标目录（给 ① 的 LLM prompt：只暴露 id/名称/单位/是否期间指标，不暴露 MQL）。 */
+    /** 指标目录（给 ① 的 LLM prompt：只暴露 id/名称/单位/是否期间指标/口径描述，不暴露 MQL）。 */
     public String metricCatalogText() {
         StringBuilder sb = new StringBuilder();
         for (VersionedMetric vm : metrics.values()) {
             MetricDefinition m = vm.def();
             sb.append("- ").append(m.metricId()).append("：").append(m.name())
-              .append("（单位 ").append(m.unit()).append(m.timeBound() ? "，期间指标" : "，快照指标").append("）\n");
+              .append("（单位 ").append(m.unit()).append(m.timeBound() ? "，期间指标" : "，快照指标").append("）");
+            // 口径描述截断喂给 prompt（大纲选模板与起草的指标映射都靠目录语义，描述直接提升命中率）
+            if (m.description() != null && !m.description().isBlank()) {
+                String d = m.description().strip();
+                sb.append(' ').append(d.length() > 40 ? d.substring(0, 40) + "…" : d);
+            }
+            sb.append('\n');
         }
         return sb.toString();
     }
